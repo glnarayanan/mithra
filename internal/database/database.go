@@ -665,6 +665,9 @@ func CheckReady(ctx context.Context, db *sql.DB) error {
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate SQLite foreign-key check: %w", err)
 	}
+	if err := checkSearchIndex(ctx, db); err != nil {
+		return err
+	}
 
 	var integrity string
 	if err := db.QueryRowContext(ctx, "PRAGMA integrity_check").Scan(&integrity); err != nil {
@@ -672,6 +675,20 @@ func CheckReady(ctx context.Context, db *sql.DB) error {
 	}
 	if integrity != "ok" {
 		return fmt.Errorf("SQLite integrity check failed: %s", integrity)
+	}
+	return nil
+}
+
+func checkSearchIndex(ctx context.Context, db *sql.DB) error {
+	var exists int
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='search_entries_fts')`).Scan(&exists); err != nil {
+		return fmt.Errorf("inspect search index: %w", err)
+	}
+	if exists == 0 {
+		return nil
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO search_entries_fts(search_entries_fts, rank) VALUES('integrity-check', 1)`); err != nil {
+		return errors.New("search index contains an orphaned row")
 	}
 	return nil
 }

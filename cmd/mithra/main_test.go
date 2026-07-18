@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"net"
 	"net/http"
@@ -247,6 +248,19 @@ func TestRuntimeIdentityConfiguration(t *testing.T) {
 	for _, raw := range []string{"http://mithra.example", "https://mithra.example/path", ""} {
 		if _, err := secureCookiesForOrigin(raw); err == nil {
 			t.Fatalf("secureCookiesForOrigin(%q) unexpectedly succeeded", raw)
+		}
+	}
+}
+
+func TestDecodeMasterKeyRequiresThirtyTwoRandomBytes(t *testing.T) {
+	encoded := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32))
+	key, err := decodeMasterKey(encoded)
+	if err != nil || len(key) != 32 {
+		t.Fatalf("decoded key = %d bytes, %v", len(key), err)
+	}
+	for _, invalid := range []string{"", "not-base64", base64.RawURLEncoding.EncodeToString(make([]byte, 31)), base64.RawURLEncoding.EncodeToString(make([]byte, 33))} {
+		if _, err := decodeMasterKey(invalid); err == nil {
+			t.Fatalf("invalid master key %q accepted", invalid)
 		}
 	}
 }

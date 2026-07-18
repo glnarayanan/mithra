@@ -49,10 +49,29 @@ ledger stores each version, filename, SHA-256 checksum, and application time.
 Startup rejects a changed historical checksum and a database created by a newer
 binary. Migration SQL cannot include transaction-control statements, so every
 accepted migration remains inside the runtime's outer atomic transaction. After
-migrations, readiness also runs SQLite foreign-key and integrity checks. U1
-deliberately creates no seeded household or synthetic insight data:
-later import and household paths must use the same runtime path for every valid
-household.
+migrations, readiness also runs SQLite foreign-key, FTS external-content, and
+integrity checks. Mithra deliberately creates no seeded household or synthetic
+insight data: later import and household paths use the same runtime path for
+every valid household.
+
+## Secure processing spine
+
+`internal/secrets` derives separate settings, source, and backup AES-256-GCM
+keys from one 32-byte master key. `internal/storage` writes authenticated source
+ciphertext to a same-directory staging file, syncs and atomically renames it,
+then commits immutable source metadata. Startup reconciliation removes only
+recognized staging and unreferenced ciphertext and refuses a live row with a
+missing file. SQLite scope triggers bind source, provenance, and search rows to
+an active household member; external-content FTS triggers and readiness checks
+reject index orphans.
+
+`internal/jobs` stores only identifiers and revision snapshots. Lease tokens
+are hashed, lease generations fence stale workers, and publication happens in
+the same transaction as active membership, live source, and shared/personal
+revision checks. `internal/providers` uses fixed OpenAI HTTPS endpoints, strict
+Responses schemas with `store: false`, bounded responses, and the dedicated
+audio transcription endpoint. The composition root owns these concrete
+services; there is no provider abstraction or browser-visible credential.
 
 ## Browser shell
 
@@ -64,10 +83,9 @@ status region plus an honest empty state. The tiny JavaScript enhancement writes
 updates with `textContent`, never HTML, so untrusted future import/model text
 remains text.
 
-No authentication, source ingestion, jobs, encrypted storage, AI calls, or
-typed finance/health/planning records are introduced in U1. Those features are
-added by their dedicated implementation units, on top of this process and
-database spine.
+Authentication, encrypted source infrastructure, durable jobs, and the OpenAI
+boundary now build on this runtime. Typed finance, health, planning, capture,
+import, and coaching services remain in their dedicated units.
 
 ## Verification
 

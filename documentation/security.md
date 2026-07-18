@@ -72,3 +72,22 @@ Runtime logs are allowlisted to request IDs and stable error codes. They omit
 emails, token URLs, queries, filenames, credential paths and values, provider
 bodies, and household content. Startup errors intentionally emit only
 `error_code=startup_failed`.
+
+## Encryption and provider boundary
+
+The service receives a base64url-encoded 32-byte master key through a private
+credential file. HKDF derives isolated settings, source, and backup keys;
+version, purpose, and immutable record context are AES-GCM authenticated.
+Source ciphertext is synced and renamed before its live database row commits,
+and startup reconciliation removes only recognizable Mithra orphans. Losing or
+changing the master key makes encrypted state unreadable, so recovery retains
+the original credential independently.
+
+Only the active owner can validate, replace, or remove the household OpenAI
+key. Validation occurs before replacement, the saved key is encrypted, and the
+UI never reads it back. Without a key, deterministic records remain available
+and provider-dependent actions queue no work. Responses requests go only to the
+fixed OpenAI HTTPS endpoint, use strict JSON schemas and `store: false`, and
+return generic bounded errors. Audio uses the fixed transcription endpoint.
+Jobs store identifiers rather than prompts and recheck membership, source
+state, and shared/personal revisions transactionally before publication.

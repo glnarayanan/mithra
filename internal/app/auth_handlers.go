@@ -37,11 +37,12 @@ type AuthView struct {
 }
 
 type SettingsView struct {
-	Members []household.Member
-	Owner   bool
-	CSRF    string
-	Status  string
-	Error   string
+	Members          []household.Member
+	Owner            bool
+	OpenAIConfigured bool
+	CSRF             string
+	Status           string
+	Error            string
 }
 
 func canonicalOrigin(raw string, secure bool) (*url.URL, error) {
@@ -263,23 +264,16 @@ func (a *App) settings(w http.ResponseWriter, r *http.Request) {
 			a.renderSettings(r.Context(), w, scope, csrf, "", "We could not verify that request. Please try again.")
 			return
 		}
-		email, _, ok := formFields(r, "email")
-		if !ok {
-			a.renderSettings(r.Context(), w, scope, csrf, "", "Enter an allowlisted email address.")
-			return
+		switch r.PostForm.Get("action") {
+		case "invite":
+			a.invitePartner(w, r, scope, csrf)
+		case "save_openai":
+			a.saveOpenAISetting(w, r, scope, csrf)
+		case "remove_openai":
+			a.removeOpenAISetting(w, r, scope, csrf)
+		default:
+			a.renderSettings(r.Context(), w, scope, csrf, "", "Choose one available settings action.")
 		}
-		invitation, err := a.auth.CreateInvitation(r.Context(), scope, email, invitationLifetime)
-		if err != nil {
-			a.renderSettings(r.Context(), w, scope, csrf, "", inviteError(err))
-			return
-		}
-		link := a.canonicalLink("/auth/invitation", "token", invitation.Token)
-		if err := a.mailer.Send(r.Context(), providers.Message{To: email, Subject: "You have been invited to Mithra", Text: "Join this Mithra household within seven days:\n" + link}); err != nil {
-			logRequestError(a.logger, r.Context(), "invitation_delivery_failed")
-			a.renderSettings(r.Context(), w, scope, csrf, "", "The invitation could not be delivered. Try again later.")
-			return
-		}
-		a.renderSettings(r.Context(), w, scope, csrf, "Invitation sent. Your partner can choose a password from the secure link.", "")
 	}
 }
 
@@ -483,7 +477,13 @@ func (a *App) renderSettings(ctx context.Context, w http.ResponseWriter, scope p
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
-	a.renderTemplate(ctx, w, "settings.html", SettingsView{Members: members, Owner: scope.Role == "owner", CSRF: csrf, Status: status, Error: problem})
+	configured, err := a.providerSettings.Configured(ctx, scope)
+	if err != nil {
+		logRequestError(a.logger, ctx, "settings_provider_state_failed")
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	a.renderTemplate(ctx, w, "settings.html", SettingsView{Members: members, Owner: scope.Role == "owner", OpenAIConfigured: configured, CSRF: csrf, Status: status, Error: problem})
 }
 
 func (a *App) renderTemplate(ctx context.Context, w http.ResponseWriter, name string, view any) {

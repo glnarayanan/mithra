@@ -15,6 +15,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -22,7 +23,10 @@ import (
 
 	"github.com/glnarayanan/mithra/internal/auth"
 	"github.com/glnarayanan/mithra/internal/database"
+	"github.com/glnarayanan/mithra/internal/jobs"
 	"github.com/glnarayanan/mithra/internal/providers"
+	"github.com/glnarayanan/mithra/internal/secrets"
+	"github.com/glnarayanan/mithra/internal/storage"
 	"github.com/glnarayanan/mithra/web"
 )
 
@@ -41,22 +45,29 @@ type Config struct {
 	SecureCookies   bool
 	TrustedProxy    bool
 	Mailer          providers.Mailer
+	MasterKey       []byte
+	OpenAIClient    *http.Client // fixed-endpoint transport seam for tests.
+	SourceRoot      string
 	Auth            *auth.Service // test seam; production constructs the standard service.
 }
 
 // App owns the initialized database and the embedded HTML renderer.
 type App struct {
-	db           *sql.DB
-	templates    *template.Template
-	logger       *log.Logger
-	auth         *auth.Service
-	mailer       providers.Mailer
-	origin       *url.URL
-	secure       bool
-	trustedProxy bool
-	closed       atomic.Bool
-	closeOnce    sync.Once
-	closeErr     error
+	db               *sql.DB
+	templates        *template.Template
+	logger           *log.Logger
+	auth             *auth.Service
+	mailer           providers.Mailer
+	providerSettings *secrets.SettingsStore
+	openAIClient     *http.Client
+	sources          *storage.Service
+	jobs             *jobs.Service
+	origin           *url.URL
+	secure           bool
+	trustedProxy     bool
+	closed           atomic.Bool
+	closeOnce        sync.Once
+	closeErr         error
 }
 
 // ShellView is deliberately limited to text and route state. html/template
@@ -109,7 +120,30 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	if mailer == nil {
 		mailer = unavailableMailer{}
 	}
-	return &App{db: db, templates: templates, logger: log.Default(), auth: service, mailer: mailer, origin: origin, secure: cfg.SecureCookies, trustedProxy: cfg.TrustedProxy}, nil
+	providerSettings, err := secrets.NewSettingsStore(db, cfg.MasterKey)
+	if err != nil {
+		_ = db.Close()
+		return nil, errors.New("initialize encrypted settings")
+	}
+	sourceRoot := strings.TrimSpace(cfg.SourceRoot)
+	if sourceRoot == "" {
+		sourceRoot = filepath.Join(filepath.Dir(cfg.DatabasePath), "sources")
+	}
+	sourceRoot, err = filepath.Abs(sourceRoot)
+	if err != nil {
+		_ = db.Close()
+		return nil, errors.New("initialize source storage")
+	}
+	sources, err := storage.New(db, sourceRoot, cfg.MasterKey)
+	if err != nil {
+		_ = db.Close()
+		return nil, errors.New("initialize source storage")
+	}
+	if err := sources.Reconcile(ctx); err != nil {
+		_ = db.Close()
+		return nil, errors.New("reconcile source storage")
+	}
+	return &App{db: db, templates: templates, logger: log.Default(), auth: service, mailer: mailer, providerSettings: providerSettings, openAIClient: cfg.OpenAIClient, sources: sources, jobs: jobs.New(db), origin: origin, secure: cfg.SecureCookies, trustedProxy: cfg.TrustedProxy}, nil
 }
 
 // Close prevents future readiness responses and closes the owned database.

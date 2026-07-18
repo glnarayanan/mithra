@@ -1,0 +1,54 @@
+package app
+
+import (
+	"context"
+	"net/http"
+	"strings"
+
+	"github.com/glnarayanan/mithra/internal/policy"
+	"github.com/glnarayanan/mithra/internal/providers"
+)
+
+func (a *App) invitePartner(w http.ResponseWriter, r *http.Request, scope policy.ActorScope, csrf string) {
+	email := r.PostForm.Get("email")
+	if strings.TrimSpace(email) == "" || len(email) > 254 {
+		a.renderSettings(r.Context(), w, scope, csrf, "", "Enter an allowlisted email address.")
+		return
+	}
+	invitation, err := a.auth.CreateInvitation(r.Context(), scope, email, invitationLifetime)
+	if err != nil {
+		a.renderSettings(r.Context(), w, scope, csrf, "", inviteError(err))
+		return
+	}
+	link := a.canonicalLink("/auth/invitation", "token", invitation.Token)
+	if err := a.mailer.Send(r.Context(), providers.Message{To: email, Subject: "You have been invited to Mithra", Text: "Join this Mithra household within seven days:\n" + link}); err != nil {
+		logRequestError(a.logger, r.Context(), "invitation_delivery_failed")
+		a.renderSettings(r.Context(), w, scope, csrf, "", "The invitation could not be delivered. Try again later.")
+		return
+	}
+	a.renderSettings(r.Context(), w, scope, csrf, "Invitation sent. Your partner can choose a password from the secure link.", "")
+}
+
+func (a *App) saveOpenAISetting(w http.ResponseWriter, r *http.Request, scope policy.ActorScope, csrf string) {
+	apiKey := r.PostForm.Get("api_key")
+	err := a.providerSettings.ReplaceOpenAI(r.Context(), scope, apiKey, func(ctx context.Context, candidate string) error {
+		client, err := providers.NewOpenAI(providers.OpenAIConfig{APIKey: candidate, Client: a.openAIClient})
+		if err != nil {
+			return err
+		}
+		return client.Validate(ctx)
+	})
+	if err != nil {
+		a.renderSettings(r.Context(), w, scope, csrf, "", "That OpenAI key could not be validated. The current connection was not changed.")
+		return
+	}
+	a.renderSettings(r.Context(), w, scope, csrf, "OpenAI is connected. Mithra never displays the saved key.", "")
+}
+
+func (a *App) removeOpenAISetting(w http.ResponseWriter, r *http.Request, scope policy.ActorScope, csrf string) {
+	if err := a.providerSettings.RemoveOpenAI(r.Context(), scope); err != nil {
+		a.renderSettings(r.Context(), w, scope, csrf, "", "Only the active household owner can remove the OpenAI connection.")
+		return
+	}
+	a.renderSettings(r.Context(), w, scope, csrf, "OpenAI was disconnected. Deterministic household records remain available.", "")
+}

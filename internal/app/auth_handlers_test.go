@@ -306,7 +306,7 @@ func activateInvitation(t *testing.T, application *App, password string, invitat
 }
 
 func settingsPost(session browserSession, email string) *http.Request {
-	return authForm(http.MethodPost, "/settings", url.Values{"email": {email}, "csrf": {session.csrf.Value}}, []*http.Cookie{session.session, session.csrf})
+	return authForm(http.MethodPost, "/settings", url.Values{"action": {"invite"}, "email": {email}, "csrf": {session.csrf.Value}}, []*http.Cookie{session.session, session.csrf})
 }
 
 func authForm(method, path string, values url.Values, cookies []*http.Cookie) *http.Request {

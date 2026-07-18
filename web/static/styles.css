@@ -342,6 +342,34 @@ h2 {
   white-space: nowrap;
 }
 
+.settings-divider {
+  margin: 1.75rem 0;
+  border-top: 0.0625rem solid var(--line);
+}
+
+.provider-state {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0.75rem 0 0.35rem;
+  color: var(--muted-ink);
+  font-weight: 700;
+}
+
+.provider-connected {
+  color: var(--moss);
+}
+
+.field-help {
+  margin: -0.35rem 0 0.25rem;
+  color: var(--muted-ink);
+  font-size: 0.84rem;
+}
+
+.inline-form {
+  margin-top: 0.8rem;
+}
+
 .empty-state {
   padding: var(--space);
   border: 0.0625rem solid var(--line);

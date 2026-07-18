@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"flag"
 	"fmt"
@@ -55,10 +56,12 @@ func run(args []string) error {
 	address := flags.String("addr", environmentDefault("MITHRA_ADDR", "127.0.0.1:8090"), "loopback address to listen on")
 	socketPath := flags.String("socket", environmentDefault("MITHRA_SOCKET", ""), "absolute Unix socket path to listen on")
 	databasePath := flags.String("db", environmentDefault("MITHRA_DB", "data/mithra.sqlite3"), "SQLite database path")
+	sourceRoot := flags.String("source-dir", environmentDefault("MITHRA_SOURCE_DIR", "data/sources"), "encrypted source directory")
 	allowedRaw := flags.String("allowed-emails", environmentDefault("ALLOWED_EMAILS", ""), "comma-separated allowed adult emails")
 	originRaw := flags.String("origin", environmentDefault("MITHRA_CANONICAL_ORIGIN", ""), "canonical browser origin")
 	resendKeyFile := flags.String("resend-key-file", environmentDefault("MITHRA_RESEND_KEY_FILE", ""), "Resend credential file")
 	resendFrom := flags.String("resend-from", environmentDefault("MITHRA_RESEND_FROM", ""), "Resend sender identity")
+	masterKeyFile := flags.String("master-key-file", environmentDefault("MITHRA_MASTER_KEY_FILE", ""), "Mithra master-key credential file")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -95,6 +98,14 @@ func run(args []string) error {
 	if err != nil {
 		return errors.New("Resend configuration is invalid")
 	}
+	masterCredential, err := readCredentialFile(*masterKeyFile)
+	if err != nil {
+		return err
+	}
+	masterKey, err := decodeMasterKey(masterCredential)
+	if err != nil {
+		return err
+	}
 	application, err := app.New(context.Background(), app.Config{
 		DatabasePath:    *databasePath,
 		AllowedEmails:   allowedEmails,
@@ -102,6 +113,8 @@ func run(args []string) error {
 		SecureCookies:   secureCookies,
 		TrustedProxy:    strings.TrimSpace(*socketPath) != "",
 		Mailer:          mailer,
+		MasterKey:       masterKey,
+		SourceRoot:      *sourceRoot,
 	})
 	if err != nil {
 		return fmt.Errorf("initialize Mithra: %w", err)
@@ -174,6 +187,14 @@ func runRecoverOwner(args []string) error {
 		return errors.New("recover Mithra household owner")
 	}
 	return nil
+}
+
+func decodeMasterKey(encoded string) ([]byte, error) {
+	value, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(encoded))
+	if err != nil || len(value) != 32 {
+		return nil, errors.New("Mithra master-key credential is invalid")
+	}
+	return value, nil
 }
 
 func listen(address, socketPath string, addressConfigured bool) (net.Listener, error) {
