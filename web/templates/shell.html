@@ -1,0 +1,80 @@
+{{define "shell.html"}}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5efe2">
+    <meta name="color-scheme" content="light">
+    <meta name="description" content="A calm, factual household brief for finance, health, and planning.">
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="stylesheet" href="/assets/styles.css">
+    <script defer src="/assets/app.js"></script>
+    <title>Mithra</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <header class="site-header">
+      <div class="page-shell header-content">
+        <a class="brand" href="/" aria-label="Mithra homepage">
+          <span class="brand-mark" aria-hidden="true">M</span>
+          <span>Mithra</span>
+        </a>
+        <nav class="desktop-navigation" aria-label="Primary navigation">
+          <ul class="navigation-list">
+            {{range .Navigation}}
+            <li><a href="{{.Path}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a></li>
+            {{end}}
+          </ul>
+        </nav>
+        <details class="mobile-navigation">
+          <summary>Menu</summary>
+          <nav aria-label="Primary navigation">
+            <ul class="navigation-list">
+              {{range .Navigation}}
+              <li><a href="{{.Path}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a></li>
+              {{end}}
+            </ul>
+          </nav>
+        </details>
+      </div>
+    </header>
+
+    <main id="main-content" tabindex="-1">
+      <section class="brief-introduction">
+        <div class="page-shell">
+          <p class="eyebrow">Family brief</p>
+          <h1>A quieter way to keep the household in view.</h1>
+          <p class="introduction-copy">Mithra brings finance, health, and planning into one factual household view. It will only surface records and changes that you choose to keep here.</p>
+          <p class="status-message" role="status" aria-live="polite" data-status>{{.Status}}</p>
+        </div>
+      </section>
+
+      <section class="brief-content" aria-labelledby="empty-state-heading">
+        <div class="page-shell">
+          <div class="empty-state">
+            <p class="eyebrow">A fresh start</p>
+            <h2 id="empty-state-heading">No household records yet</h2>
+            <p>When a household adds its first record, Mithra will organize it in the right lens and keep its source visible. Until then, there is no generated brief to interpret.</p>
+          </div>
+          <div class="lens-overview" aria-label="Mithra lenses">
+            <section>
+              <h2>Finance</h2>
+              <p>Changes and obligations will stay traceable to the records behind them.</p>
+            </section>
+            <section>
+              <h2>Health</h2>
+              <p>Observed values and dates will remain a timeline, not a diagnosis.</p>
+            </section>
+            <section>
+              <h2>Planning</h2>
+              <p>Dates, milestones, and constraints will become a shared calendar view.</p>
+            </section>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
+{{end}}

@@ -1,0 +1,18 @@
+.worktrees/
+/mithra
+bin/
+dist/
+coverage.out
+*.prof
+*.test
+
+# Local runtime state and operator secrets
+.local/
+data/
+backups/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.env
+.env.*
+!.env.example
