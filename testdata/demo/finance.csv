@@ -1,0 +1,4 @@
+kind,label,category,date,status,amount
+income,Household income,Income,2026-07-01,,180000
+spending,Groceries,Home,2026-07-10,,14500
+obligation,Insurance renewal,Insurance,2026-07-28,pending,24000

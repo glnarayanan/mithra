@@ -16,3 +16,4 @@ backups/
 .env
 .env.*
 !.env.example
+documentation/deployment-receipt.local.md

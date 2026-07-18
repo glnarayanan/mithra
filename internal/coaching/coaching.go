@@ -296,8 +296,30 @@ func queryFacts(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visibi
 	 (SELECT incomplete_reason FROM finance_liabilities WHERE id=se.record_id AND active=1),
 	 (SELECT incomplete_reason FROM finance_budgets WHERE id=se.record_id AND active=1),
 	 (SELECT incomplete_reason FROM finance_obligations WHERE id=se.record_id AND active=1),'')
-	FROM search_entries se JOIN evidence_links el ON el.record_family=se.record_family AND el.record_id=se.record_id AND el.household_id=se.household_id JOIN sources src ON src.id=el.source_id AND src.state='live' AND src.household_id=se.household_id
-	WHERE se.household_id=? AND se.visibility=?`+ownerClause+` GROUP BY se.record_family,se.record_id,se.content,se.visibility,el.source_id,el.created_at ORDER BY el.created_at,se.record_family,se.record_id`, args...)
+	FROM search_entries se
+	JOIN evidence_links el ON el.record_family=se.record_family AND el.record_id=se.record_id AND el.household_id=se.household_id AND el.visibility=se.visibility AND el.owner_user_id=se.owner_user_id
+	JOIN sources src ON src.id=el.source_id AND src.state='live' AND src.household_id=se.household_id
+	  AND ((se.visibility='shared' AND src.visibility='shared') OR (se.visibility='personal' AND (src.visibility='shared' OR (src.visibility='personal' AND src.owner_user_id=se.owner_user_id))))
+	WHERE se.household_id=? AND se.visibility=?`+ownerClause+`
+	AND (
+	 (se.record_family='finance' AND EXISTS (
+	  SELECT 1 FROM finance_income WHERE id=se.record_id AND active=1 UNION ALL
+	  SELECT 1 FROM finance_spending WHERE id=se.record_id AND active=1 UNION ALL
+	  SELECT 1 FROM finance_assets WHERE id=se.record_id AND active=1 UNION ALL
+	  SELECT 1 FROM finance_liabilities WHERE id=se.record_id AND active=1 UNION ALL
+	  SELECT 1 FROM finance_budgets WHERE id=se.record_id AND active=1 UNION ALL
+	  SELECT 1 FROM finance_obligations WHERE id=se.record_id AND active=1))
+	 OR (se.record_family='health' AND EXISTS (
+	  SELECT 1 FROM health_observations WHERE id=se.record_id AND active=1 UNION ALL
+	  SELECT 1 FROM health_appointments WHERE id=se.record_id AND active=1 UNION ALL
+	  SELECT 1 FROM health_care_routines WHERE id=se.record_id AND active=1))
+	 OR (se.record_family='planning' AND EXISTS (
+	  SELECT 1 FROM planning_goals WHERE id=se.record_id AND active=1 UNION ALL
+	  SELECT 1 FROM planning_plans WHERE id=se.record_id AND active=1 UNION ALL
+	  SELECT 1 FROM planning_milestones WHERE id=se.record_id AND active=1 UNION ALL
+	  SELECT 1 FROM planning_events WHERE id=se.record_id AND active=1))
+	)
+	GROUP BY se.record_family,se.record_id,se.content,se.visibility,el.source_id,el.created_at ORDER BY el.created_at,se.record_family,se.record_id`, args...)
 	if err != nil {
 		return nil, err
 	}

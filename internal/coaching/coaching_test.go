@@ -282,3 +282,31 @@ func TestNudgeIsIdempotentAndFollowupIsExplicit(t *testing.T) {
 		t.Fatalf("stale state=%q err=%v", state, err)
 	}
 }
+
+func TestContextDropsPrivacyChangedSourcesAndInactiveRecords(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	source := f.source(t, f.owner, policy.Shared, "shared source")
+	record, err := f.finance.Create(ctx, f.owner, finance.Draft{Kind: finance.Spending, Visibility: policy.Shared, Label: "Shared expense", Category: "Home", Date: "2026-07-18", AmountText: "100", Provenance: financeProvenance(source)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	contextBefore, err := f.service.BuildContext(ctx, f.owner, policy.Shared)
+	if err != nil || len(contextBefore.Facts) != 1 {
+		t.Fatalf("initial context facts=%d err=%v", len(contextBefore.Facts), err)
+	}
+	if _, err := f.db.Exec(`UPDATE sources SET visibility='personal',updated_at=? WHERE id=?`, time.Now().UTC().Format(time.RFC3339Nano), source.ID); err != nil {
+		t.Fatal(err)
+	}
+	privateSource, err := f.service.BuildContext(ctx, f.owner, policy.Shared)
+	if err != nil || len(privateSource.Facts) != 0 {
+		t.Fatalf("privacy-changed source facts=%d err=%v", len(privateSource.Facts), err)
+	}
+	if _, err := f.db.Exec(`UPDATE sources SET visibility='shared',updated_at=? WHERE id=?; UPDATE finance_spending SET active=0,version=version+1,updated_at=? WHERE id=?`, time.Now().UTC().Format(time.RFC3339Nano), source.ID, time.Now().UTC().Format(time.RFC3339Nano), record.ID); err != nil {
+		t.Fatal(err)
+	}
+	inactive, err := f.service.BuildContext(ctx, f.owner, policy.Shared)
+	if err != nil || len(inactive.Facts) != 0 {
+		t.Fatalf("inactive record facts=%d err=%v", len(inactive.Facts), err)
+	}
+}

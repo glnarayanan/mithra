@@ -36,3 +36,14 @@ func TestReadBoundedRejectsSymlinkAndListenerDoesNotExposeSecrets(t *testing.T) 
 		t.Fatalf("proxy listener = %q", got)
 	}
 }
+
+func TestInstalledAllowlistFencesDemoAccounts(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "mithra.env")
+	if err := os.WriteFile(path, []byte("ALLOWED_EMAILS=owner@example.com,partner@example.com\nMITHRA_DB=/var/lib/mithra/mithra.sqlite3\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	allowed := installedAllowlist(path)
+	if !emailAllowed(allowed, "OWNER@example.com") || !emailAllowed(allowed, "partner@example.com") || emailAllowed(allowed, "unknown@example.com") {
+		t.Fatalf("installed allowlist = %#v", allowed)
+	}
+}

@@ -83,6 +83,33 @@ master key. `purge` prints and requires confirmation of the exact Mithra data,
 backup, and master-key targets. It does not use a wildcard and cannot target an
 Arivu path.
 
+## Seeded demo reset
+
+`mithra-installer reset-demo` is the only production demo-reset path. It stops
+the Mithra service and backup timer, acquires an exclusive maintenance lock,
+and refuses any ordinary or unmarked household. The fixed household marker is
+stored separately from user-entered data and binds the fixture version to the
+same two account identities on every repeat reset.
+
+Before changing the fixture, reset creates and verifies a normal encrypted
+`.mbackup` outside the live data directory. Seed finance CSV, health PDF, and
+planning text are written through the same encrypted source store,
+document-review commit, capture, domain validators, evidence links, and
+coaching context used by arbitrary households. A failure after any partial
+write closes SQLite and restores the exact backed-up generation; unrelated
+households, files, jobs, caches, and access state remain unchanged.
+
+```bash
+sudo mithra-installer reset-demo \
+  --owner-email judge-owner@example.com \
+  --partner-email judge-partner@example.com
+```
+
+Both addresses must be current allowlist entries. Reset revokes their browser
+sessions and reset tokens, preserves established password hashes and account
+states, and restarts the service after the verified candidate completes. Judge
+credentials are delivered only through the private submission channel.
+
 ## Recovery ownership
 
 Keep three things independently: the master-key credential, at least one

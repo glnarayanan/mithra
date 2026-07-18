@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/glnarayanan/mithra/internal/demo"
 	"github.com/glnarayanan/mithra/internal/installer"
 )
 
@@ -33,7 +34,7 @@ func main() {
 
 func run(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("operation required: plan, install, upgrade, reconfigure, backup, restore, status, uninstall, or purge")
+		return errors.New("operation required: plan, install, upgrade, reconfigure, backup, restore, status, reset-demo, uninstall, or purge")
 	}
 	operation := installer.Operation(args[0])
 	if operation == "plan" {
@@ -53,6 +54,9 @@ func run(ctx context.Context, args []string) error {
 	signaturePath := flags.String("signature", "", "detached Ed25519 signature")
 	resendPath := flags.String("resend-key-file", "", "input Resend credential file")
 	resendFrom := flags.String("resend-from", "", "validated Resend sender identity")
+	ownerEmail := flags.String("owner-email", "", "seed household owner email")
+	partnerEmail := flags.String("partner-email", "", "seed household partner email")
+	masterKeyPath := flags.String("master-key-file", "", "retained master-key credential file")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -73,6 +77,31 @@ func run(ctx context.Context, args []string) error {
 	}
 	facts := installer.DetectHost(ctx, *root, *domain, *port)
 	paths := installer.OwnedPaths(*root, installer.ProxyMode(*proxy))
+	if args[0] == "reset-demo" {
+		if len(allowed) == 0 {
+			allowed = installedAllowlist(paths.Config)
+		}
+		if !emailAllowed(allowed, *ownerEmail) || !emailAllowed(allowed, *partnerEmail) {
+			return errors.New("both demo accounts must already be in the installed allowlist")
+		}
+		if *masterKeyPath == "" {
+			*masterKeyPath = paths.MasterKey
+		}
+		key, err := readMasterKey(*masterKeyPath)
+		if err != nil {
+			return err
+		}
+		defer clear(key)
+		restart, err := quiesce(ctx, *root)
+		if err != nil {
+			return err
+		}
+		receipt, err := demo.Reset(ctx, demo.Config{DatabasePath: paths.Database, SourceRoot: paths.Sources, BackupRoot: paths.Backups, OwnerEmail: *ownerEmail, PartnerEmail: *partnerEmail, MasterKey: key})
+		if restartErr := restart(); err != nil || restartErr != nil {
+			return errors.Join(err, restartErr)
+		}
+		return json.NewEncoder(os.Stdout).Encode(receipt)
+	}
 	if operation == installer.Upgrade || operation == installer.Reconfigure {
 		facts.MigrationClean, facts.SQLiteClean, facts.KeyMatches, facts.BackupExists = false, false, false, false
 		if installer.DatabasePreflight(ctx, paths.Database) == nil {
@@ -97,11 +126,10 @@ func run(ctx context.Context, args []string) error {
 			clear(key)
 			return err
 		}
-		defer restart()
 		archive, err := installer.CreateBackup(ctx, paths, key, time.Now())
 		clear(key)
-		if err != nil {
-			return err
+		if restartErr := restart(); err != nil || restartErr != nil {
+			return errors.Join(err, restartErr)
 		}
 		fmt.Println(archive)
 		return nil
@@ -153,9 +181,9 @@ func run(ctx context.Context, args []string) error {
 		err = installer.RestoreBackup(ctx, paths, *archive, key, allowed, health)
 		clear(key)
 		if err != nil {
-			restart()
+			return errors.Join(err, restart())
 		}
-		return err
+		return nil
 	case installer.Status:
 		statusProxy := installer.ProxyMode(*proxy)
 		if statusProxy == "" {
@@ -249,7 +277,7 @@ func installRelease(ctx context.Context, plan installer.Plan, artifactPath, mani
 	paths := installer.OwnedPaths(plan.Options.Root, plan.Proxy)
 	var masterKey []byte
 	var rollbackArchive string
-	var recoveryRestart func()
+	var recoveryRestart func() error
 	if plan.Options.Operation == installer.Upgrade || plan.Options.Operation == installer.Reconfigure {
 		masterKey, err = readMasterKey(paths.MasterKey)
 		if err != nil {
@@ -262,12 +290,10 @@ func installRelease(ctx context.Context, plan installer.Plan, artifactPath, mani
 		}
 		rollbackArchive, err = installer.CreateBackup(ctx, paths, masterKey, time.Now())
 		if err != nil {
-			recoveryRestart()
-			return err
+			return errors.Join(err, recoveryRestart())
 		}
 		if err := installer.RehearseMigrations(ctx, paths.Database); err != nil {
-			recoveryRestart()
-			return err
+			return errors.Join(err, recoveryRestart())
 		}
 	}
 	freshDirectories := map[string]bool{}
@@ -289,7 +315,7 @@ func installRelease(ctx context.Context, plan installer.Plan, artifactPath, mani
 				return errors.Join(err, rollbackErr)
 			}
 		} else if recoveryRestart != nil {
-			recoveryRestart()
+			err = errors.Join(err, recoveryRestart())
 		} else if plan.Options.Root == "/" {
 			_ = exec.CommandContext(ctx, "systemctl", "disable", "--now", "mithra.service", "mithra-backup.timer").Run()
 		}
@@ -312,9 +338,8 @@ func installRelease(ctx context.Context, plan installer.Plan, artifactPath, mani
 		if err != nil {
 			return err
 		}
-		defer restart()
-		_, err = installer.CreateBackup(ctx, paths, masterKey, time.Now())
-		return err
+		_, backupErr := installer.CreateBackup(ctx, paths, masterKey, time.Now())
+		return errors.Join(backupErr, restart())
 	}
 	return nil
 }
@@ -324,16 +349,20 @@ func pathExists(path string) bool {
 	return err == nil
 }
 
-func quiesce(ctx context.Context, root string) (func(), error) {
+func quiesce(ctx context.Context, root string) (func() error, error) {
 	if root != "/" {
-		return func() {}, nil
+		return func() error { return nil }, nil
 	}
 	output, err := exec.CommandContext(ctx, "systemctl", "stop", "mithra.service", "mithra-backup.timer").CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("quiesce Mithra: %s: %w", strings.TrimSpace(string(output)), err)
 	}
-	return func() {
-		_ = exec.CommandContext(context.Background(), "systemctl", "start", "mithra.service", "mithra-backup.timer").Run()
+	return func() error {
+		output, err := exec.CommandContext(context.Background(), "systemctl", "start", "mithra.service", "mithra-backup.timer").CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("restart Mithra: %s: %w", strings.TrimSpace(string(output)), err)
+		}
+		return nil
 	}, nil
 }
 
@@ -622,4 +651,27 @@ func installedRuntime(path string) (installer.ProxyMode, string, int) {
 	}
 	port, _ := strconv.Atoi(portText)
 	return installer.AppOnly, "", port
+}
+
+func installedAllowlist(path string) []string {
+	raw, err := os.ReadFile(path)
+	if err != nil || len(raw) > 64<<10 {
+		return nil
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		if value, ok := strings.CutPrefix(line, "ALLOWED_EMAILS="); ok {
+			return splitEmails(strings.Trim(strings.TrimSpace(value), `"`))
+		}
+	}
+	return nil
+}
+
+func emailAllowed(allowed []string, candidate string) bool {
+	candidate = strings.ToLower(strings.TrimSpace(candidate))
+	for _, email := range allowed {
+		if email == candidate {
+			return true
+		}
+	}
+	return false
 }

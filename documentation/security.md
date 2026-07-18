@@ -59,6 +59,14 @@ editable by both adults; personal records only by their owner. Every mutation
 checks the resource household and expected version, so cross-household and stale
 edits fail without revealing foreign existence.
 
+The Build Week seed is not a privileged application branch. A dedicated table
+marks one fixed fixture household and its two existing account identities.
+Offline reset refuses an unmarked household, makes a verified encrypted backup,
+and invokes the production source, import, capture, domain, evidence, and
+coaching services. Failure restores the prior complete generation. Seed data
+does not contain credentials, API keys, reset links, sessions, real personal
+data, or an alternative authorization path.
+
 ## Email credential and logs
 
 The Resend key is read from an absolute, regular, service-user-owned credential
