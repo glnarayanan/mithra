@@ -73,6 +73,24 @@ Responses schemas with `store: false`, bounded responses, and the dedicated
 audio transcription endpoint. The composition root owns these concrete
 services; there is no provider abstraction or browser-visible credential.
 
+## Finance domain
+
+`internal/finance` stores income, spending, assets, liabilities, budgets, and
+obligations in six typed tables over the shared source/evidence spine. Amounts
+use bounded integer coefficient-and-scale values; Go owns exact totals,
+month-to-month category changes, and upcoming-date queries. Invalid or missing
+amounts and dates remain source-linked incomplete records and are excluded from
+affected calculations. A source may declare at most one validation-only
+currency context; no currency field, selector, conversion, or symbol is stored
+as finance meaning or rendered by the lens.
+
+Finance reads recheck active membership and apply the same shared/personal
+scope used by encrypted source downloads. Corrections use optimistic versions,
+create a user-owned superseding record, remove the old search entry, and bump
+only the applicable shared or personal revision. The server-rendered finance
+lens remains useful without OpenAI and exposes exact totals, factual changes,
+upcoming obligations, incomplete explanations, and authorized provenance.
+
 ## Browser shell
 
 `web/templates/shell.html`, `web/static/styles.css`, and `web/static/app.js`
@@ -83,9 +101,9 @@ status region plus an honest empty state. The tiny JavaScript enhancement writes
 updates with `textContent`, never HTML, so untrusted future import/model text
 remains text.
 
-Authentication, encrypted source infrastructure, durable jobs, and the OpenAI
-boundary now build on this runtime. Typed finance, health, planning, capture,
-import, and coaching services remain in their dedicated units.
+Authentication, encrypted source infrastructure, durable jobs, the OpenAI
+boundary, and typed finance now build on this runtime. Health, planning,
+capture, import, and coaching services remain in their dedicated units.
 
 ## Verification
 

@@ -1,0 +1,9 @@
+kind,label,category,date,end_date,status,amount,visibility,currency_context
+income,Monthly income,Income,2026-07-01,,,"5,000.00",shared,
+spending,June groceries,Groceries,2026-06-10,,,123.45,shared,
+spending,July groceries,Groceries,2026-07-10,,,150.55,shared,
+asset,Savings balance,Savings,2026-07-01,,,12000,shared,
+liability,Home loan balance,Home,2026-07-01,,,250000,shared,
+budget,Groceries budget,Groceries,2026-07-01,2026-07-31,,400,shared,
+obligation,Insurance payment,Insurance,2026-07-25,,pending,1200,shared,
+spending,Unclear receipt,Household,2026-07-12,,,twelve,shared,

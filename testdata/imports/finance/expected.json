@@ -1,0 +1,16 @@
+{
+  "complete": 7,
+  "incomplete": 1,
+  "totals": {
+    "asset": "12000",
+    "budget": "400",
+    "income": "5000.00",
+    "liability": "250000",
+    "obligation": "1200",
+    "spending": "274.00"
+  },
+  "groceries_previous": "123.45",
+  "groceries_current": "150.55",
+  "groceries_change": "27.10",
+  "upcoming": ["Insurance payment"]
+}

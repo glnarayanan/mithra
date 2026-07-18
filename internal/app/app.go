@@ -23,6 +23,7 @@ import (
 
 	"github.com/glnarayanan/mithra/internal/auth"
 	"github.com/glnarayanan/mithra/internal/database"
+	"github.com/glnarayanan/mithra/internal/finance"
 	"github.com/glnarayanan/mithra/internal/jobs"
 	"github.com/glnarayanan/mithra/internal/providers"
 	"github.com/glnarayanan/mithra/internal/secrets"
@@ -62,6 +63,7 @@ type App struct {
 	openAIClient     *http.Client
 	sources          *storage.Service
 	jobs             *jobs.Service
+	finance          *finance.Service
 	origin           *url.URL
 	secure           bool
 	trustedProxy     bool
@@ -99,7 +101,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		return nil, err
 	}
 
-	templates, err := template.ParseFS(web.Files, "templates/shell.html", "templates/auth/*.html", "templates/settings/*.html")
+	templates, err := template.ParseFS(web.Files, "templates/shell.html", "templates/auth/*.html", "templates/finance/*.html", "templates/settings/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse embedded templates: %w", err)
 	}
@@ -143,7 +145,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		_ = db.Close()
 		return nil, errors.New("reconcile source storage")
 	}
-	return &App{db: db, templates: templates, logger: log.Default(), auth: service, mailer: mailer, providerSettings: providerSettings, openAIClient: cfg.OpenAIClient, sources: sources, jobs: jobs.New(db), origin: origin, secure: cfg.SecureCookies, trustedProxy: cfg.TrustedProxy}, nil
+	return &App{db: db, templates: templates, logger: log.Default(), auth: service, mailer: mailer, providerSettings: providerSettings, openAIClient: cfg.OpenAIClient, sources: sources, jobs: jobs.New(db), finance: finance.New(db), origin: origin, secure: cfg.SecureCookies, trustedProxy: cfg.TrustedProxy}, nil
 }
 
 // Close prevents future readiness responses and closes the owned database.
@@ -164,6 +166,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("/healthz", a.health)
 	mux.HandleFunc("/api/health", a.health)
 	mux.HandleFunc("/assets/", a.asset)
+	mux.HandleFunc("/favicon.ico", a.favicon)
 	mux.HandleFunc("/manifest.webmanifest", a.manifest)
 	mux.HandleFunc("/auth/login", a.login)
 	mux.HandleFunc("/auth/forgot-password", a.forgotPassword)
@@ -172,6 +175,8 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("/auth/password", a.passwordSetup)
 	mux.HandleFunc("/auth/logout", a.logout)
 	mux.HandleFunc("/settings", a.settings)
+	mux.HandleFunc("/finance", a.financeLens)
+	mux.HandleFunc("/sources/", a.sourceFile)
 	mux.HandleFunc("/", a.shell)
 	return withHTTPGuards(mux, a.logger)
 }
@@ -215,6 +220,14 @@ func (a *App) manifest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.serveEmbeddedFile(w, r, "static/manifest.webmanifest", "application/manifest+json; charset=utf-8")
+}
+
+func (a *App) favicon(w http.ResponseWriter, r *http.Request) {
+	if !allowsRead(r.Method) {
+		methodNotAllowed(w)
+		return
+	}
+	a.serveEmbeddedFile(w, r, "static/favicon.svg", "image/svg+xml")
 }
 
 func (a *App) serveEmbeddedFile(w http.ResponseWriter, r *http.Request, name, contentType string) {
@@ -304,6 +317,7 @@ func methodNotAllowedFor(w http.ResponseWriter, allow string) {
 var assetContentTypes = map[string]string{
 	"styles.css":  "text/css; charset=utf-8",
 	"app.js":      "application/javascript; charset=utf-8",
+	"finance.js":  "application/javascript; charset=utf-8",
 	"favicon.svg": "image/svg+xml",
 }
 

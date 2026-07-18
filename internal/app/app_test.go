@@ -257,6 +257,11 @@ func TestEmbeddedFaviconIsServedWithoutBrowserConsoleFallback(t *testing.T) {
 	if body := response.Body.String(); !strings.Contains(body, "<svg") || !strings.Contains(body, "Mithra") {
 		t.Fatalf("favicon body is not the embedded Mithra mark: %q", body)
 	}
+	fallback := httptest.NewRecorder()
+	application.Handler().ServeHTTP(fallback, httptest.NewRequest(http.MethodGet, "/favicon.ico", nil))
+	if fallback.Code != http.StatusOK || fallback.Header().Get("Content-Type") != "image/svg+xml" {
+		t.Fatalf("favicon fallback = %d %q", fallback.Code, fallback.Header().Get("Content-Type"))
+	}
 }
 
 func newTestApp(t *testing.T) *App {
