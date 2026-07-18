@@ -11,6 +11,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -19,11 +20,16 @@ import (
 	"time"
 
 	"github.com/glnarayanan/mithra/internal/app"
+	"github.com/glnarayanan/mithra/internal/auth"
+	"github.com/glnarayanan/mithra/internal/database"
+	"github.com/glnarayanan/mithra/internal/household"
+	"github.com/glnarayanan/mithra/internal/providers"
 )
 
 const shutdownTimeout = 20 * time.Second
 
 const unixSocketMode = 0o660
+const maxCredentialBytes = 16 << 10
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -37,6 +43,9 @@ func logStartupFailure(output io.Writer) {
 }
 
 func run(args []string) error {
+	if len(args) > 0 && args[0] == "recover-owner" {
+		return runRecoverOwner(args[1:])
+	}
 	if len(args) > 0 && args[0] == "serve" {
 		args = args[1:]
 	}
@@ -46,6 +55,10 @@ func run(args []string) error {
 	address := flags.String("addr", environmentDefault("MITHRA_ADDR", "127.0.0.1:8090"), "loopback address to listen on")
 	socketPath := flags.String("socket", environmentDefault("MITHRA_SOCKET", ""), "absolute Unix socket path to listen on")
 	databasePath := flags.String("db", environmentDefault("MITHRA_DB", "data/mithra.sqlite3"), "SQLite database path")
+	allowedRaw := flags.String("allowed-emails", environmentDefault("ALLOWED_EMAILS", ""), "comma-separated allowed adult emails")
+	originRaw := flags.String("origin", environmentDefault("MITHRA_CANONICAL_ORIGIN", ""), "canonical browser origin")
+	resendKeyFile := flags.String("resend-key-file", environmentDefault("MITHRA_RESEND_KEY_FILE", ""), "Resend credential file")
+	resendFrom := flags.String("resend-from", environmentDefault("MITHRA_RESEND_FROM", ""), "Resend sender identity")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -66,7 +79,30 @@ func run(args []string) error {
 	}
 	defer listener.Close()
 
-	application, err := app.New(context.Background(), app.Config{DatabasePath: *databasePath})
+	allowedEmails, err := parseAllowedEmails(*allowedRaw)
+	if err != nil {
+		return err
+	}
+	secureCookies, err := secureCookiesForOrigin(*originRaw)
+	if err != nil {
+		return err
+	}
+	credential, err := readCredentialFile(*resendKeyFile)
+	if err != nil {
+		return err
+	}
+	mailer, err := providers.NewResend(providers.ResendConfig{APIKey: credential, From: strings.TrimSpace(*resendFrom)})
+	if err != nil {
+		return errors.New("Resend configuration is invalid")
+	}
+	application, err := app.New(context.Background(), app.Config{
+		DatabasePath:    *databasePath,
+		AllowedEmails:   allowedEmails,
+		CanonicalOrigin: strings.TrimSpace(*originRaw),
+		SecureCookies:   secureCookies,
+		TrustedProxy:    strings.TrimSpace(*socketPath) != "",
+		Mailer:          mailer,
+	})
 	if err != nil {
 		return fmt.Errorf("initialize Mithra: %w", err)
 	}
@@ -106,6 +142,38 @@ func run(args []string) error {
 		}
 		return nil
 	}
+}
+
+func runRecoverOwner(args []string) error {
+	flags := flag.NewFlagSet("mithra recover-owner", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	databasePath := flags.String("db", environmentDefault("MITHRA_DB", "data/mithra.sqlite3"), "SQLite database path")
+	allowedRaw := flags.String("allowed-emails", environmentDefault("ALLOWED_EMAILS", ""), "comma-separated allowed adult emails")
+	householdID := flags.String("household", "", "closed household identifier")
+	email := flags.String("email", "", "allowlisted replacement owner email")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 || strings.TrimSpace(*householdID) == "" || strings.TrimSpace(*email) == "" {
+		return errors.New("recover-owner requires --household and --email")
+	}
+	allowedEmails, err := parseAllowedEmails(*allowedRaw)
+	if err != nil {
+		return err
+	}
+	db, err := database.Open(context.Background(), *databasePath)
+	if err != nil {
+		return errors.New("open Mithra database for recovery")
+	}
+	defer db.Close()
+	service := auth.New(db, auth.Config{})
+	if err := service.SynchronizeAllowlist(context.Background(), allowedEmails); err != nil {
+		return errors.New("synchronize allowlist for recovery")
+	}
+	if err := service.RecoverOwner(context.Background(), strings.TrimSpace(*householdID), strings.TrimSpace(*email)); err != nil {
+		return errors.New("recover Mithra household owner")
+	}
+	return nil
 }
 
 func listen(address, socketPath string, addressConfigured bool) (net.Listener, error) {
@@ -216,4 +284,70 @@ func environmentDefault(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func parseAllowedEmails(raw string) ([]string, error) {
+	parts := strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || r == ';' || r == '\n' })
+	if len(parts) == 0 {
+		return nil, errors.New("allowed email configuration is required")
+	}
+	seen := make(map[string]struct{}, len(parts))
+	emails := make([]string, 0, len(parts))
+	for _, value := range parts {
+		email, err := household.NormalizeEmail(value)
+		if err != nil {
+			return nil, errors.New("allowed email configuration is invalid")
+		}
+		if _, exists := seen[email]; exists {
+			continue
+		}
+		seen[email] = struct{}{}
+		emails = append(emails, email)
+	}
+	return emails, nil
+}
+
+func secureCookiesForOrigin(raw string) (bool, error) {
+	origin, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || origin.Scheme == "" || origin.Host == "" || origin.User != nil || origin.Path != "" || origin.RawQuery != "" || origin.Fragment != "" {
+		return false, errors.New("canonical origin configuration is invalid")
+	}
+	if origin.Scheme == "https" {
+		return true, nil
+	}
+	if origin.Scheme == "http" {
+		ip := net.ParseIP(origin.Hostname())
+		if ip != nil && ip.IsLoopback() {
+			return false, nil
+		}
+	}
+	return false, errors.New("canonical origin must use HTTPS or literal loopback HTTP")
+}
+
+func readCredentialFile(path string) (string, error) {
+	if !filepath.IsAbs(strings.TrimSpace(path)) {
+		return "", errors.New("Resend credential file is invalid")
+	}
+	pathInfo, err := os.Lstat(path)
+	if err != nil || !pathInfo.Mode().IsRegular() || pathInfo.Mode()&os.ModeSymlink != 0 || pathInfo.Mode().Perm()&0o077 != 0 {
+		return "", errors.New("Resend credential file is invalid")
+	}
+	stat, ok := pathInfo.Sys().(*syscall.Stat_t)
+	if !ok || stat.Uid != uint32(os.Geteuid()) {
+		return "", errors.New("Resend credential file is invalid")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return "", errors.New("Resend credential file is invalid")
+	}
+	defer file.Close()
+	openedInfo, err := file.Stat()
+	if err != nil || !os.SameFile(pathInfo, openedInfo) {
+		return "", errors.New("Resend credential file is invalid")
+	}
+	value, err := io.ReadAll(io.LimitReader(file, maxCredentialBytes+1))
+	if err != nil || len(value) > maxCredentialBytes || strings.TrimSpace(string(value)) == "" {
+		return "", errors.New("Resend credential file is invalid")
+	}
+	return strings.TrimSpace(string(value)), nil
 }

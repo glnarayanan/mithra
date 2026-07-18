@@ -1,0 +1,35 @@
+{{define "settings.html"}}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5efe2">
+    <meta name="referrer" content="same-origin">
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/assets/styles.css">
+    <title>Settings · Mithra</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <header class="site-header"><div class="page-shell header-content"><a class="brand" href="/" aria-label="Mithra homepage"><span class="brand-mark" aria-hidden="true">M</span><span>Mithra</span></a><form method="post" action="/auth/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="quiet-button" type="submit">Sign out</button></form></div></header>
+    <main id="main-content" tabindex="-1" class="auth-main">
+      <section class="auth-card" aria-labelledby="page-title">
+        <p class="eyebrow">Household settings</p>
+        <h1 id="page-title">The adults in this household</h1>
+        <ul class="member-list">{{range .Members}}<li><span class="member-email">{{.Email}}</span><span class="member-meta">{{if eq .Role "owner"}}Owner{{else}}Partner{{end}} · {{.Status}}</span></li>{{end}}</ul>
+        {{if .Status}}<p class="status-message" role="status" aria-live="polite">{{.Status}}</p>{{end}}
+        {{if .Error}}<p class="form-message form-error" role="alert">{{.Error}}</p>{{end}}
+        {{if .Owner}}
+        <form method="post" action="/settings" class="auth-form">
+          <input type="hidden" name="csrf" value="{{.CSRF}}">
+          <label for="email">Invite your partner</label>
+          <input id="email" name="email" type="email" autocomplete="email" maxlength="254" required>
+          <button type="submit">Send invitation</button>
+        </form>
+        {{else}}<p class="introduction-copy">Only the household owner can send an invitation.</p>{{end}}
+      </section>
+    </main>
+  </body>
+</html>
+{{end}}

@@ -99,6 +99,9 @@ func TestHTTPGuardsBoundRequestsAndRejectUnsupportedMethods(t *testing.T) {
 	if response.Header().Get("Content-Security-Policy") == "" || response.Header().Get("X-Frame-Options") != "DENY" {
 		t.Fatalf("security headers = %#v, want CSP and frame protection", response.Header())
 	}
+	if got := response.Header().Get("Referrer-Policy"); got != "same-origin" {
+		t.Fatalf("Referrer-Policy = %q, want same-origin for browser CSRF evidence", got)
+	}
 
 	unsupported := httptest.NewRequest(http.MethodDelete, "/healthz", nil)
 	unsupportedResponse := httptest.NewRecorder()
@@ -212,7 +215,7 @@ func TestShellRendersAccessibleNavigationEmptyStateAndEscapesStatus(t *testing.T
 	}
 }
 
-func TestRenderFailureLogsIssuedRequestID(t *testing.T) {
+func TestRenderFailureLogsWithoutPartialTemplateOutput(t *testing.T) {
 	t.Parallel()
 
 	application := newTestApp(t)
@@ -220,8 +223,9 @@ func TestRenderFailureLogsIssuedRequestID(t *testing.T) {
 	application.logger = log.New(&logs, "", 0)
 	application.templates = template.Must(template.New("shell.html").Parse(`partial template secret{{template "missing" .}}`))
 	response := httptest.NewRecorder()
+	ctx := context.WithValue(context.Background(), requestIDContextKey{}, "test-request-id")
 
-	application.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+	application.renderShell(ctx, response, ShellView{Path: "/"})
 
 	if response.Code != http.StatusInternalServerError {
 		t.Fatalf("render failure status = %d, want %d", response.Code, http.StatusInternalServerError)
@@ -232,11 +236,7 @@ func TestRenderFailureLogsIssuedRequestID(t *testing.T) {
 	if strings.Contains(response.Body.String(), "partial template secret") {
 		t.Fatalf("render failure response retained partial template bytes: %q", response.Body.String())
 	}
-	requestID := response.Header().Get("X-Request-ID")
-	if !regexp.MustCompile(`^[a-f0-9]{32}$`).MatchString(requestID) {
-		t.Fatalf("request ID = %q, want 32 lower-case hex characters", requestID)
-	}
-	if got, want := logs.String(), "request_id="+requestID+" error_code=render_failed\n"; got != want {
+	if got, want := logs.String(), "request_id=test-request-id error_code=render_failed\n"; got != want {
 		t.Fatalf("render failure log = %q, want %q", got, want)
 	}
 }

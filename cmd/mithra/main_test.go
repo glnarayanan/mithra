@@ -11,6 +11,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/glnarayanan/mithra/internal/database"
+	"github.com/glnarayanan/mithra/internal/household"
 )
 
 func TestValidateLoopbackAddressAcceptsOnlyLiteralLoopbackAddresses(t *testing.T) {
@@ -176,6 +179,100 @@ func TestStartupFailureLoggingRedactsSensitiveCLIAndPathText(t *testing.T) {
 	}
 	if strings.Contains(logs.String(), sensitive) || strings.Contains(logs.String(), "/private/mithra") {
 		t.Fatalf("startup log leaked sensitive CLI data: %q", logs.String())
+	}
+}
+
+func TestRecoverOwnerCommandUsesCurrentAllowlistAndLeavesPasswordBootstrapPending(t *testing.T) {
+	ctx := context.Background()
+	databasePath := filepath.Join(t.TempDir(), "mithra.sqlite3")
+	db, err := database.Open(ctx, databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := household.New(db, household.Config{})
+	if err := service.SyncAllowlist(ctx, []string{"former@example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	stamp := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err := db.Exec(`UPDATE users SET status='active',password_hash='retired-hash' WHERE email='former@example.com'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO households(id,status,owner_user_id,created_at,updated_at) SELECT 'closed-home','active',id,?,? FROM users WHERE email='former@example.com'`, stamp, stamp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO household_members(household_id,user_id,role,created_at) SELECT 'closed-home',id,'owner',? FROM users WHERE email='former@example.com'`, stamp); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.SyncAllowlist(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := run([]string{"recover-owner", "--db", databasePath, "--allowed-emails", "former@example.com", "--household", "closed-home", "--email", "former@example.com"}); err != nil {
+		t.Fatalf("recover-owner command: %v", err)
+	}
+
+	db, err = database.Open(ctx, databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var householdStatus, userStatus string
+	if err := db.QueryRow(`SELECT h.status,u.status FROM households h JOIN users u ON u.id=h.owner_user_id WHERE h.id='closed-home'`).Scan(&householdStatus, &userStatus); err != nil {
+		t.Fatal(err)
+	}
+	if householdStatus != "active" || userStatus != "pending" {
+		t.Fatalf("recovery state = household %q user %q", householdStatus, userStatus)
+	}
+}
+
+func TestRuntimeIdentityConfiguration(t *testing.T) {
+	emails, err := parseAllowedEmails(" Owner@Example.com,partner@example.com;owner@example.com ")
+	if err != nil || len(emails) != 2 || emails[0] != "owner@example.com" || emails[1] != "partner@example.com" {
+		t.Fatalf("allowed emails = %#v, %v", emails, err)
+	}
+	for _, raw := range []string{"", "not-an-email"} {
+		if _, err := parseAllowedEmails(raw); err == nil {
+			t.Fatalf("parseAllowedEmails(%q) unexpectedly succeeded", raw)
+		}
+	}
+	if secure, err := secureCookiesForOrigin("https://mithra.example"); err != nil || !secure {
+		t.Fatalf("HTTPS origin = secure %t, %v", secure, err)
+	}
+	if secure, err := secureCookiesForOrigin("http://127.0.0.1:8090"); err != nil || secure {
+		t.Fatalf("loopback origin = secure %t, %v", secure, err)
+	}
+	for _, raw := range []string{"http://mithra.example", "https://mithra.example/path", ""} {
+		if _, err := secureCookiesForOrigin(raw); err == nil {
+			t.Fatalf("secureCookiesForOrigin(%q) unexpectedly succeeded", raw)
+		}
+	}
+}
+
+func TestReadCredentialFileRequiresPrivateStableRegularFile(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "resend")
+	if err := os.WriteFile(path, []byte("  re_test_secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	value, err := readCredentialFile(path)
+	if err != nil || value != "re_test_secret" {
+		t.Fatalf("read private credential = %q, %v", value, err)
+	}
+	if err := os.Chmod(path, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readCredentialFile(path); err == nil || strings.Contains(err.Error(), path) || strings.Contains(err.Error(), "re_test_secret") {
+		t.Fatalf("permissive credential error = %v", err)
+	}
+	link := filepath.Join(directory, "resend-link")
+	if err := os.Symlink(path, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readCredentialFile(link); err == nil {
+		t.Fatal("symlink credential unexpectedly accepted")
 	}
 }
 

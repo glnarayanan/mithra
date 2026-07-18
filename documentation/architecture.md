@@ -13,8 +13,10 @@ write permission. It may grant read/execute to the intended service/proxy group
 (for example, `0750`). Mithra creates its socket with `0660` permissions,
 refuses every pre-existing path (including stale sockets), and unlinks its
 socket during HTTP shutdown. The installer owns the service/proxy group and
-socket-directory provisioning. Mithra never treats forwarded headers as
-authoritative.
+socket-directory provisioning. Unix-socket mode accepts one validated
+`X-Forwarded-For` address only as an opaque throttle identity; TCP mode ignores
+it, and neither mode derives links, origins, actors, or authorization from
+forwarded headers.
 
 The server has bounded header, read, write, and idle timeouts, graceful
 `SIGINT`/`SIGTERM` shutdown, a one-megabyte request-body ceiling, panic

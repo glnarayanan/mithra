@@ -14,12 +14,15 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/glnarayanan/mithra/internal/auth"
 	"github.com/glnarayanan/mithra/internal/database"
+	"github.com/glnarayanan/mithra/internal/providers"
 	"github.com/glnarayanan/mithra/web"
 )
 
@@ -32,17 +35,28 @@ const (
 // Config is the application configuration required before the HTTP server can
 // listen. Network listener policy belongs to cmd/mithra.
 type Config struct {
-	DatabasePath string
+	DatabasePath    string
+	AllowedEmails   []string
+	CanonicalOrigin string
+	SecureCookies   bool
+	TrustedProxy    bool
+	Mailer          providers.Mailer
+	Auth            *auth.Service // test seam; production constructs the standard service.
 }
 
 // App owns the initialized database and the embedded HTML renderer.
 type App struct {
-	db        *sql.DB
-	templates *template.Template
-	logger    *log.Logger
-	closed    atomic.Bool
-	closeOnce sync.Once
-	closeErr  error
+	db           *sql.DB
+	templates    *template.Template
+	logger       *log.Logger
+	auth         *auth.Service
+	mailer       providers.Mailer
+	origin       *url.URL
+	secure       bool
+	trustedProxy bool
+	closed       atomic.Bool
+	closeOnce    sync.Once
+	closeErr     error
 }
 
 // ShellView is deliberately limited to text and route state. html/template
@@ -65,8 +79,16 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	if strings.TrimSpace(cfg.DatabasePath) == "" {
 		return nil, errors.New("application database path is required")
 	}
+	origin, err := canonicalOrigin(cfg.CanonicalOrigin, cfg.SecureCookies)
+	if err != nil {
+		return nil, err
+	}
+	allowedEmails, err := normalizeAllowlist(cfg.AllowedEmails)
+	if err != nil {
+		return nil, err
+	}
 
-	templates, err := template.ParseFS(web.Files, "templates/shell.html")
+	templates, err := template.ParseFS(web.Files, "templates/shell.html", "templates/auth/*.html", "templates/settings/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse embedded templates: %w", err)
 	}
@@ -75,7 +97,19 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		return nil, fmt.Errorf("initialize database: %w", err)
 	}
 
-	return &App{db: db, templates: templates, logger: log.Default()}, nil
+	service := cfg.Auth
+	if service == nil {
+		service = auth.New(db, auth.Config{})
+	}
+	if err := service.SynchronizeAllowlist(ctx, allowedEmails); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("synchronize allowlist: %w", err)
+	}
+	mailer := cfg.Mailer
+	if mailer == nil {
+		mailer = unavailableMailer{}
+	}
+	return &App{db: db, templates: templates, logger: log.Default(), auth: service, mailer: mailer, origin: origin, secure: cfg.SecureCookies, trustedProxy: cfg.TrustedProxy}, nil
 }
 
 // Close prevents future readiness responses and closes the owned database.
@@ -97,6 +131,13 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("/api/health", a.health)
 	mux.HandleFunc("/assets/", a.asset)
 	mux.HandleFunc("/manifest.webmanifest", a.manifest)
+	mux.HandleFunc("/auth/login", a.login)
+	mux.HandleFunc("/auth/forgot-password", a.forgotPassword)
+	mux.HandleFunc("/auth/reset", a.bootstrapReset)
+	mux.HandleFunc("/auth/invitation", a.bootstrapInvitation)
+	mux.HandleFunc("/auth/password", a.passwordSetup)
+	mux.HandleFunc("/auth/logout", a.logout)
+	mux.HandleFunc("/settings", a.settings)
 	mux.HandleFunc("/", a.shell)
 	return withHTTPGuards(mux, a.logger)
 }
@@ -162,6 +203,10 @@ func (a *App) shell(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
+	if _, ok := a.sessionScope(r); !ok {
+		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+		return
+	}
 	if r.Method == http.MethodHead {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
@@ -205,6 +250,7 @@ func navigationForPath(path string) []NavigationItem {
 		{Path: "/finance", Label: "Finance", Current: path == "/finance"},
 		{Path: "/health", Label: "Health", Current: path == "/health"},
 		{Path: "/planning", Label: "Planning", Current: path == "/planning"},
+		{Path: "/settings", Label: "Settings"},
 	}
 }
 
@@ -213,7 +259,11 @@ func allowsRead(method string) bool {
 }
 
 func methodNotAllowed(w http.ResponseWriter) {
-	w.Header().Set("Allow", "GET, HEAD")
+	methodNotAllowedFor(w, "GET, HEAD")
+}
+
+func methodNotAllowedFor(w http.ResponseWriter, allow string) {
+	w.Header().Set("Allow", allow)
 	writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 }
 
@@ -246,7 +296,7 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
 		w.Header().Set("Origin-Agent-Cluster", "?1")
 		w.Header().Set("Permissions-Policy", "camera=(), geolocation=(), microphone=(self)")
-		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Referrer-Policy", "same-origin")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-Permitted-Cross-Domain-Policies", "none")

@@ -1,0 +1,45 @@
+{{define "auth.html"}}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5efe2">
+    <meta name="referrer" content="same-origin">
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/assets/styles.css">
+    <title>{{.Title}} · Mithra</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <header class="site-header"><div class="page-shell header-content"><a class="brand" href="/auth/login" aria-label="Mithra sign in"><span class="brand-mark" aria-hidden="true">M</span><span>Mithra</span></a></div></header>
+    <main id="main-content" tabindex="-1" class="auth-main">
+      <section class="auth-card" aria-labelledby="page-title">
+        <p class="eyebrow">Private household space</p>
+        <h1 id="page-title">{{.Heading}}</h1>
+        {{if .Copy}}<p class="introduction-copy">{{.Copy}}</p>{{end}}
+        {{if .Status}}<p class="status-message" role="status" aria-live="polite">{{.Status}}</p>{{end}}
+        {{if .Error}}<p class="form-message form-error" role="alert">{{.Error}}</p>{{end}}
+        <form method="post" action="{{.Action}}" class="auth-form">
+          {{if .Password}}
+          <label for="password">New password</label>
+          <input id="password" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required autofocus>
+          <button type="submit">Save password</button>
+          {{else if eq .Title "Sign in"}}
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" autocomplete="username" maxlength="254" required autofocus>
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" minlength="12" maxlength="128" required>
+          <button type="submit">Sign in</button>
+          {{else}}
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" autocomplete="email" maxlength="254" required autofocus>
+          <button type="submit">Email me a password link</button>
+          {{end}}
+        </form>
+        {{if eq .Title "Sign in"}}<p class="form-help"><a href="/auth/forgot-password">Need to set or reset your password?</a></p>{{end}}
+      </section>
+    </main>
+  </body>
+</html>
+{{end}}
