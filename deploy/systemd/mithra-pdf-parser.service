@@ -1,0 +1,37 @@
+[Unit]
+Description=Mithra isolated PDF parser
+Requires=mithra-pdf-parser.socket
+After=mithra-pdf-parser.socket
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/mithra pdf-parser
+User=mithra-pdf
+Group=mithra
+NoNewPrivileges=true
+PrivateNetwork=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+LimitNOFILE=64
+MemoryMax=192M
+CPUQuota=50%
+TimeoutStartSec=15s
+TimeoutStopSec=5s
+RuntimeMaxSec=5min
+Restart=on-failure
+RestartSec=1s
+
+[Install]
+WantedBy=multi-user.target

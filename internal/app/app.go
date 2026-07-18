@@ -26,6 +26,7 @@ import (
 	"github.com/glnarayanan/mithra/internal/database"
 	"github.com/glnarayanan/mithra/internal/finance"
 	"github.com/glnarayanan/mithra/internal/health"
+	"github.com/glnarayanan/mithra/internal/imports"
 	"github.com/glnarayanan/mithra/internal/jobs"
 	"github.com/glnarayanan/mithra/internal/planning"
 	"github.com/glnarayanan/mithra/internal/providers"
@@ -52,7 +53,8 @@ type Config struct {
 	MasterKey       []byte
 	OpenAIClient    *http.Client // fixed-endpoint transport seam for tests.
 	SourceRoot      string
-	Auth            *auth.Service // test seam; production constructs the standard service.
+	ImportPDF       imports.PDFParser // isolated parser seam used by tests and deployment.
+	Auth            *auth.Service     // test seam; production constructs the standard service.
 }
 
 // App owns the initialized database and the embedded HTML renderer.
@@ -70,6 +72,8 @@ type App struct {
 	healthRecords    *health.Service
 	planningRecords  *planning.Service
 	captureRecords   *capture.Service
+	imports          *imports.Service
+	importExtractor  imports.Extractor
 	captureVoiceSlot chan struct{}
 	captureStop      context.CancelFunc
 	captureDone      chan struct{}
@@ -110,7 +114,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		return nil, err
 	}
 
-	templates, err := template.ParseFS(web.Files, "templates/shell.html", "templates/auth/*.html", "templates/capture/*.html", "templates/finance/*.html", "templates/health/*.html", "templates/planning/*.html", "templates/settings/*.html")
+	templates, err := template.ParseFS(web.Files, "templates/shell.html", "templates/auth/*.html", "templates/capture/*.html", "templates/finance/*.html", "templates/health/*.html", "templates/imports/*.html", "templates/planning/*.html", "templates/settings/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse embedded templates: %w", err)
 	}
@@ -154,13 +158,30 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		_ = db.Close()
 		return nil, errors.New("reconcile source storage")
 	}
+	deletionJournal, err := imports.NewDeletionJournal(filepath.Join(filepath.Dir(sourceRoot), "deletion.journal"), cfg.MasterKey)
+	if err != nil {
+		_ = db.Close()
+		return nil, errors.New("initialize deletion journal")
+	}
 	captureRecords := capture.New(db, sources)
 	if err := captureRecords.Cleanup(ctx, time.Now()); err != nil {
 		_ = db.Close()
 		return nil, errors.New("reconcile capture audio")
 	}
+	financeRecords := finance.New(db)
+	healthRecords := health.New(db)
+	planningRecords := planning.New(db)
+	importRecords := imports.NewService(db, sources, financeRecords, healthRecords, planningRecords, deletionJournal)
+	if err := importRecords.ReconcileDeletions(ctx); err != nil {
+		_ = db.Close()
+		return nil, errors.New("reconcile deletion journal")
+	}
+	if err := importRecords.CleanupAbandonedVisual(ctx); err != nil {
+		_ = db.Close()
+		return nil, errors.New("reconcile visual PDF staging")
+	}
 	cleanupContext, cleanupCancel := context.WithCancel(context.Background())
-	application := &App{db: db, templates: templates, logger: log.Default(), auth: service, mailer: mailer, providerSettings: providerSettings, openAIClient: cfg.OpenAIClient, sources: sources, jobs: jobs.New(db), finance: finance.New(db), healthRecords: health.New(db), planningRecords: planning.New(db), captureRecords: captureRecords, captureVoiceSlot: make(chan struct{}, 2), captureStop: cleanupCancel, captureDone: make(chan struct{}), origin: origin, secure: cfg.SecureCookies, trustedProxy: cfg.TrustedProxy}
+	application := &App{db: db, templates: templates, logger: log.Default(), auth: service, mailer: mailer, providerSettings: providerSettings, openAIClient: cfg.OpenAIClient, sources: sources, jobs: jobs.New(db), finance: financeRecords, healthRecords: healthRecords, planningRecords: planningRecords, captureRecords: captureRecords, imports: importRecords, importExtractor: imports.New(cfg.ImportPDF), captureVoiceSlot: make(chan struct{}, 2), captureStop: cleanupCancel, captureDone: make(chan struct{}), origin: origin, secure: cfg.SecureCookies, trustedProxy: cfg.TrustedProxy}
 	go application.cleanCaptureAudio(cleanupContext)
 	return application, nil
 }
@@ -214,6 +235,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("/settings", a.settings)
 	mux.HandleFunc("/capture", a.capture)
 	mux.HandleFunc("/capture/voice", a.captureVoice)
+	mux.HandleFunc("/imports", a.importDocuments)
 	mux.HandleFunc("/finance", a.financeLens)
 	mux.HandleFunc("/health", a.healthLens)
 	mux.HandleFunc("/health/correct", a.correctHealthObservation)
@@ -338,6 +360,7 @@ func navigationForPath(path string) []NavigationItem {
 	return []NavigationItem{
 		{Path: "/", Label: "Brief", Current: path == "/"},
 		{Path: "/capture", Label: "Capture", Current: path == "/capture"},
+		{Path: "/imports", Label: "Import", Current: path == "/imports"},
 		{Path: "/finance", Label: "Finance", Current: path == "/finance"},
 		{Path: "/health", Label: "Health", Current: path == "/health"},
 		{Path: "/planning", Label: "Planning", Current: path == "/planning"},
@@ -365,6 +388,7 @@ var assetContentTypes = map[string]string{
 	"health.js":   "application/javascript; charset=utf-8",
 	"planning.js": "application/javascript; charset=utf-8",
 	"capture.js":  "application/javascript; charset=utf-8",
+	"imports.js":  "application/javascript; charset=utf-8",
 	"favicon.svg": "image/svg+xml",
 }
 
@@ -375,8 +399,8 @@ func withHTTPGuards(next http.Handler, logger *log.Logger) http.Handler {
 func limitRequestBody(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		limit := int64(maxRequestBodyBytes)
-		if r.URL.Path == "/capture/voice" {
-			limit = 9 << 20
+		if r.URL.Path == "/capture/voice" || r.URL.Path == "/imports" {
+			limit = 11 << 20
 		}
 		if r.ContentLength > limit {
 			writeError(w, http.StatusRequestEntityTooLarge, "request body is too large")

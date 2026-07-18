@@ -1,0 +1,3 @@
+%PDF-1.4
+% A deliberately tiny corpus marker. Parser tests use bounded fakes because
+% valid PDF object streams are not useful as hand-authored product fixtures.

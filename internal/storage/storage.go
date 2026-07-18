@@ -219,21 +219,65 @@ func (s *Service) DeleteExpiredVoice(ctx context.Context, householdID, ownerID, 
 	return s.deleteSource(ctx, source)
 }
 
+// DeleteOwnedImport removes one exact CSV/XLSX/PDF source for lifecycle
+// cleanup after the actor may have lost membership. It is never an HTTP
+// authorization primitive; callers must first resolve an owned import row.
+func (s *Service) DeleteOwnedImport(ctx context.Context, householdID, ownerID, sourceID string) error {
+	if strings.TrimSpace(householdID) == "" || strings.TrimSpace(ownerID) == "" || strings.TrimSpace(sourceID) == "" {
+		return ErrNotFound
+	}
+	var source Source
+	err := s.db.QueryRowContext(ctx, `SELECT id,household_id,owner_user_id,visibility,family,source_version,state,storage_key FROM sources WHERE id=? AND household_id=? AND owner_user_id=? AND family IN ('csv','xlsx','pdf') AND state='live'`, sourceID, householdID, ownerID).Scan(&source.ID, &source.HouseholdID, &source.OwnerID, &source.Visibility, &source.Family, &source.Version, &source.State, &source.StorageKey)
+	if err != nil || !validStorageKey(source.StorageKey) {
+		return ErrNotFound
+	}
+	return s.deleteSource(ctx, source)
+}
+
 func (s *Service) deleteSource(ctx context.Context, source Source) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return ErrStorage
 	}
 	defer tx.Rollback()
-	result, err := tx.ExecContext(ctx, `UPDATE sources SET state='deleted',updated_at=? WHERE id=? AND state='live'`, s.now().UTC().Format(time.RFC3339Nano), source.ID)
-	if err != nil {
-		return ErrStorage
-	}
-	if changed, _ := result.RowsAffected(); changed != 1 {
-		return ErrNotFound
+	if _, err := s.TombstoneInTx(ctx, tx, source.HouseholdID, source.OwnerID, source.ID); err != nil {
+		return err
 	}
 	if err := tx.Commit(); err != nil {
 		return ErrStorage
+	}
+	return s.RemoveCiphertext(source)
+}
+
+// TombstoneInTx makes one exact owner source unreadable inside a caller-owned
+// transaction. Cross-domain deletion uses it as the final atomic boundary.
+func (s *Service) TombstoneInTx(ctx context.Context, tx *sql.Tx, householdID, ownerID, sourceID string) (Source, error) {
+	if tx == nil || householdID == "" || ownerID == "" || sourceID == "" {
+		return Source{}, ErrNotFound
+	}
+	var source Source
+	var visibility, created string
+	err := tx.QueryRowContext(ctx, `SELECT id,household_id,owner_user_id,visibility,family,source_version,state,storage_key,plaintext_size,plaintext_digest,locator_kind,locator_value,created_at FROM sources WHERE id=? AND household_id=? AND owner_user_id=? AND state='live'`, sourceID, householdID, ownerID).Scan(&source.ID, &source.HouseholdID, &source.OwnerID, &visibility, &source.Family, &source.Version, &source.State, &source.StorageKey, &source.PlaintextSize, &source.PlaintextDigest, &source.LocatorKind, &source.LocatorValue, &created)
+	if err != nil || !validStorageKey(source.StorageKey) {
+		return Source{}, ErrNotFound
+	}
+	source.Visibility = policy.Visibility(visibility)
+	source.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+	result, err := tx.ExecContext(ctx, `UPDATE sources SET state='deleted',updated_at=? WHERE id=? AND state='live'`, s.now().UTC().Format(time.RFC3339Nano), source.ID)
+	if err != nil {
+		return Source{}, ErrStorage
+	}
+	changed, _ := result.RowsAffected()
+	if changed != 1 {
+		return Source{}, ErrNotFound
+	}
+	return source, nil
+}
+
+// RemoveCiphertext is idempotent physical cleanup after a committed tombstone.
+func (s *Service) RemoveCiphertext(source Source) error {
+	if !validStorageKey(source.StorageKey) {
+		return ErrNotFound
 	}
 	if err := os.Remove(filepath.Join(s.root, source.StorageKey+".enc")); err != nil && !os.IsNotExist(err) {
 		return ErrStorage

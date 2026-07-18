@@ -154,6 +154,27 @@ type Service struct {
 func New(db *sql.DB) *Service { return &Service{db: db, now: time.Now} }
 
 func (s *Service) CreateObservation(ctx context.Context, actor policy.ActorScope, draft ObservationDraft) (Observation, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Observation{}, err
+	}
+	defer tx.Rollback()
+	observation, err := s.CreateObservationInTx(ctx, tx, actor, draft)
+	if err != nil {
+		return Observation{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Observation{}, err
+	}
+	return observation, nil
+}
+
+// CreateObservationInTx validates and inserts one observation into a
+// caller-owned transaction for atomic cross-domain imports.
+func (s *Service) CreateObservationInTx(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, draft ObservationDraft) (Observation, error) {
+	if tx == nil {
+		return Observation{}, ErrInvalidRecord
+	}
 	draft.Visibility = policy.PersonalDefault(draft.Visibility)
 	observation, err := prepareObservation(actor, draft, s.now().UTC())
 	if err != nil {
@@ -163,11 +184,6 @@ func (s *Service) CreateObservation(ctx context.Context, actor policy.ActorScope
 	if err != nil {
 		return Observation{}, ErrInvalidRecord
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return Observation{}, err
-	}
-	defer tx.Rollback()
 	if err := authorize(ctx, tx, actor); err != nil {
 		return Observation{}, err
 	}
@@ -178,9 +194,6 @@ func (s *Service) CreateObservation(ctx context.Context, actor policy.ActorScope
 		return Observation{}, err
 	}
 	if err := link(ctx, tx, "observation", observation.ID, actor, draft.Visibility, draft.Provenance, observation.Analyte+" "+observation.Subject); err != nil {
-		return Observation{}, err
-	}
-	if err := tx.Commit(); err != nil {
 		return Observation{}, err
 	}
 	return observation, nil

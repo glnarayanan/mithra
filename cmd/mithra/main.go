@@ -24,6 +24,7 @@ import (
 	"github.com/glnarayanan/mithra/internal/auth"
 	"github.com/glnarayanan/mithra/internal/database"
 	"github.com/glnarayanan/mithra/internal/household"
+	"github.com/glnarayanan/mithra/internal/imports"
 	"github.com/glnarayanan/mithra/internal/providers"
 )
 
@@ -44,6 +45,14 @@ func logStartupFailure(output io.Writer) {
 }
 
 func run(args []string) error {
+	if len(args) > 0 && args[0] == "pdf-parser" {
+		listener, err := imports.SystemdListener()
+		if err != nil {
+			return errors.New("open PDF parser socket")
+		}
+		defer listener.Close()
+		return imports.ServePDFParser(listener)
+	}
 	if len(args) > 0 && args[0] == "recover-owner" {
 		return runRecoverOwner(args[1:])
 	}
@@ -62,6 +71,7 @@ func run(args []string) error {
 	resendKeyFile := flags.String("resend-key-file", environmentDefault("MITHRA_RESEND_KEY_FILE", ""), "Resend credential file")
 	resendFrom := flags.String("resend-from", environmentDefault("MITHRA_RESEND_FROM", ""), "Resend sender identity")
 	masterKeyFile := flags.String("master-key-file", environmentDefault("MITHRA_MASTER_KEY_FILE", ""), "Mithra master-key credential file")
+	pdfParserSocket := flags.String("pdf-parser-socket", environmentDefault("MITHRA_PDF_PARSER_SOCKET", "/run/mithra/pdf-parser.sock"), "isolated PDF parser Unix socket")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -115,6 +125,7 @@ func run(args []string) error {
 		Mailer:          mailer,
 		MasterKey:       masterKey,
 		SourceRoot:      *sourceRoot,
+		ImportPDF:       imports.SocketPDFParser{Path: *pdfParserSocket},
 	})
 	if err != nil {
 		return fmt.Errorf("initialize Mithra: %w", err)

@@ -150,10 +150,28 @@ func ValidateCurrencyContexts(contexts []string) error {
 }
 
 func (s *Service) Create(ctx context.Context, actor policy.ActorScope, draft Draft) (Record, error) {
-	if !actor.Valid() {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Record{}, fmt.Errorf("begin finance record: %w", err)
+	}
+	defer tx.Rollback()
+	record, err := s.CreateInTx(ctx, tx, actor, draft)
+	if err != nil {
+		return Record{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Record{}, fmt.Errorf("commit finance record: %w", err)
+	}
+	return record, nil
+}
+
+// CreateInTx validates and inserts one record into a caller-owned transaction.
+// It exists so an import can publish records across domains atomically.
+func (s *Service) CreateInTx(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, draft Draft) (Record, error) {
+	if tx == nil || !actor.Valid() {
 		return Record{}, policy.ErrUnauthorized
 	}
-	if err := authorizeActor(ctx, s.db, actor); err != nil {
+	if err := authorizeActor(ctx, tx, actor); err != nil {
 		return Record{}, err
 	}
 	draft.Visibility = policy.PersonalDefault(draft.Visibility)
@@ -172,11 +190,6 @@ func (s *Service) Create(ctx context.Context, actor policy.ActorScope, draft Dra
 		return Record{}, errors.New("create finance record identifier")
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return Record{}, fmt.Errorf("begin finance record: %w", err)
-	}
-	defer tx.Rollback()
 	if err := setDataRevision(ctx, tx, &record); err != nil {
 		return Record{}, err
 	}
@@ -185,9 +198,6 @@ func (s *Service) Create(ctx context.Context, actor policy.ActorScope, draft Dra
 	}
 	if err := linkRecord(ctx, tx, record); err != nil {
 		return Record{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return Record{}, fmt.Errorf("commit finance record: %w", err)
 	}
 	return record, nil
 }

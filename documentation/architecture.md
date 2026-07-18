@@ -146,20 +146,35 @@ deletes raw audio while retaining transcript provenance. Cancellation, terminal
 failure, expiry, and startup reconciliation clean abandoned ciphertext. Two
 in-process voice slots bound provider work without adding a queue service.
 
+## Document imports
+
+CSV and XLSX extraction runs locally with bounded structure and output. PDF
+bytes cross bounded Unix-socket IPC to a separate, no-network parser identity;
+the parser receives no plaintext path, database, source store, or credentials.
+Ordinary provider requests contain only minimized locator-bearing text. A
+scanned PDF requires one actor-, source-, digest-, visibility-, membership-,
+version-, and expiry-bound confirmation before a single inline transfer.
+
+AI proposals remain in a revision-fenced review until one cross-domain SQLite
+transaction publishes every valid record. Source deletion first appends and
+fsyncs an authenticated encrypted intent outside SQLite, then atomically
+tombstones the source and dependent records, evidence, search entries, and jobs.
+Startup replays the journal before serving; ciphertext cleanup is idempotent.
+
 ## Browser shell
 
 `web/templates/shell.html`, `web/static/styles.css`, and `web/static/app.js`
 are embedded first-party assets. The mobile-first shell renders without
-JavaScript, exposes Brief, Capture, Finance, Health, and Planning navigation, has a
+JavaScript, exposes Brief, Capture, Import, Finance, Health, and Planning navigation, has a
 keyboard-visible skip link and focus treatment, and declares an accessible
 status region plus an honest empty state. The tiny JavaScript enhancement writes
 updates with `textContent`, never HTML, so untrusted future import/model text
 remains text.
 
 Authentication, encrypted source infrastructure, durable jobs, the OpenAI
-boundary, typed finance, typed health, typed planning, and conversational
-capture now build on this runtime. Import and coaching remain in their
-dedicated units.
+boundary, typed finance, typed health, typed planning, conversational capture,
+and document imports now build on this runtime. Coaching remains in its
+dedicated unit.
 
 ## Verification
 

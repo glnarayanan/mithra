@@ -152,65 +152,78 @@ func (s *Service) CreateMilestone(ctx context.Context, a policy.ActorScope, d Mi
 }
 
 func (s *Service) CreateEvent(ctx context.Context, a policy.ActorScope, d EventDraft) (Event, error) {
-	d.Visibility = policy.PersonalDefault(d.Visibility)
-	if !validEvent(d) || !validProvenance(d.Provenance) || !a.Valid() {
-		return Event{}, ErrInvalidRecord
-	}
-	id, err := newID()
-	if err != nil {
-		return Event{}, ErrInvalidRecord
-	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Event{}, err
 	}
 	defer tx.Rollback()
-	if err = authorize(ctx, tx, a); err != nil {
-		return Event{}, err
-	}
-	rev, err := revision(ctx, tx, a, d.Visibility)
+	id, err := s.CreateEventInTx(ctx, tx, a, d)
 	if err != nil {
-		return Event{}, err
-	}
-	p := d.Provenance
-	stamp := s.now().UTC().Format(time.RFC3339Nano)
-	_, err = tx.ExecContext(ctx, `INSERT INTO planning_events(id,household_id,owner_user_id,visibility,source_id,source_family,source_version,plan_id,milestone_id,title,description,location,all_day,starts_on,ends_on,starts_at,ends_at,timezone,status,generated_by,schema_version,data_revision,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, id, a.HouseholdID, a.ActorID, d.Visibility, p.SourceID, p.SourceFamily, p.SourceVersion, nullable(d.PlanID), nullable(d.MilestoneID), strings.TrimSpace(d.Title), strings.TrimSpace(d.Description), strings.TrimSpace(d.Location), boolInt(d.AllDay), d.StartsOn, d.EndsOn, d.StartsAt, d.EndsAt, d.Timezone, status(d.Status, "planned", "planned", "completed", "cancelled"), generated(p.GeneratedBy), schema(p.SchemaVersion), rev, stamp, stamp)
-	if err != nil {
-		return Event{}, err
-	}
-	for _, owner := range unique(d.OwnerIDs) {
-		if _, err = tx.ExecContext(ctx, `INSERT INTO planning_event_owners(event_id,user_id) VALUES(?,?)`, id, owner); err != nil {
-			return Event{}, err
-		}
-	}
-	for _, dep := range unique(d.DependsOn) {
-		linkID, idErr := newID()
-		if idErr != nil {
-			return Event{}, ErrInvalidRecord
-		}
-		if _, err = tx.ExecContext(ctx, `INSERT INTO planning_dependencies(id,event_id,depends_on_event_id) VALUES(?,?,?)`, linkID, id, dep); err != nil {
-			return Event{}, err
-		}
-	}
-	for _, c := range d.Constraints {
-		if strings.TrimSpace(c.Kind) == "" || strings.TrimSpace(c.Value) == "" {
-			return Event{}, ErrInvalidRecord
-		}
-		constraintID, idErr := newID()
-		if idErr != nil {
-			return Event{}, ErrInvalidRecord
-		}
-		if _, err = tx.ExecContext(ctx, `INSERT INTO planning_constraints(id,event_id,kind,value) VALUES(?,?,?,?)`, constraintID, id, strings.TrimSpace(c.Kind), strings.TrimSpace(c.Value)); err != nil {
-			return Event{}, err
-		}
-	}
-	if err = link(ctx, tx, id, a, d.Visibility, p, d.Title); err != nil {
 		return Event{}, err
 	}
 	if err = tx.Commit(); err != nil {
 		return Event{}, err
 	}
 	return s.GetEvent(ctx, a, id)
+}
+
+// CreateEventInTx validates and inserts one event into a caller-owned
+// transaction so document imports can publish all proposed records atomically.
+func (s *Service) CreateEventInTx(ctx context.Context, tx *sql.Tx, a policy.ActorScope, d EventDraft) (string, error) {
+	if tx == nil {
+		return "", ErrInvalidRecord
+	}
+	d.Visibility = policy.PersonalDefault(d.Visibility)
+	if !validEvent(d) || !validProvenance(d.Provenance) || !a.Valid() {
+		return "", ErrInvalidRecord
+	}
+	id, err := newID()
+	if err != nil {
+		return "", ErrInvalidRecord
+	}
+	if err = authorize(ctx, tx, a); err != nil {
+		return "", err
+	}
+	rev, err := revision(ctx, tx, a, d.Visibility)
+	if err != nil {
+		return "", err
+	}
+	p := d.Provenance
+	stamp := s.now().UTC().Format(time.RFC3339Nano)
+	_, err = tx.ExecContext(ctx, `INSERT INTO planning_events(id,household_id,owner_user_id,visibility,source_id,source_family,source_version,plan_id,milestone_id,title,description,location,all_day,starts_on,ends_on,starts_at,ends_at,timezone,status,generated_by,schema_version,data_revision,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, id, a.HouseholdID, a.ActorID, d.Visibility, p.SourceID, p.SourceFamily, p.SourceVersion, nullable(d.PlanID), nullable(d.MilestoneID), strings.TrimSpace(d.Title), strings.TrimSpace(d.Description), strings.TrimSpace(d.Location), boolInt(d.AllDay), d.StartsOn, d.EndsOn, d.StartsAt, d.EndsAt, d.Timezone, status(d.Status, "planned", "planned", "completed", "cancelled"), generated(p.GeneratedBy), schema(p.SchemaVersion), rev, stamp, stamp)
+	if err != nil {
+		return "", err
+	}
+	for _, owner := range unique(d.OwnerIDs) {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO planning_event_owners(event_id,user_id) VALUES(?,?)`, id, owner); err != nil {
+			return "", err
+		}
+	}
+	for _, dep := range unique(d.DependsOn) {
+		linkID, idErr := newID()
+		if idErr != nil {
+			return "", ErrInvalidRecord
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO planning_dependencies(id,event_id,depends_on_event_id) VALUES(?,?,?)`, linkID, id, dep); err != nil {
+			return "", err
+		}
+	}
+	for _, c := range d.Constraints {
+		if strings.TrimSpace(c.Kind) == "" || strings.TrimSpace(c.Value) == "" {
+			return "", ErrInvalidRecord
+		}
+		constraintID, idErr := newID()
+		if idErr != nil {
+			return "", ErrInvalidRecord
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO planning_constraints(id,event_id,kind,value) VALUES(?,?,?,?)`, constraintID, id, strings.TrimSpace(c.Kind), strings.TrimSpace(c.Value)); err != nil {
+			return "", err
+		}
+	}
+	if err = link(ctx, tx, id, a, d.Visibility, p, d.Title); err != nil {
+		return "", err
+	}
+	return id, nil
 }
 
 func (s *Service) CompleteEvent(ctx context.Context, a policy.ActorScope, id string, expected int64) error {

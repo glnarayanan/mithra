@@ -3,6 +3,7 @@ package providers
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -105,6 +106,36 @@ func (o *OpenAI) Structured(ctx context.Context, input StructuredRequest) (json.
 	if err != nil {
 		return nil, ErrInvalidResponse
 	}
+	return o.structuredPost(ctx, payload)
+}
+
+// StructuredWithPDF sends one explicitly confirmed PDF inline. Ordinary
+// imports use Structured with locally extracted text and never call this path.
+func (o *OpenAI) StructuredWithPDF(ctx context.Context, input StructuredRequest, pdf []byte) (json.RawMessage, error) {
+	if o == nil || o.client == nil || !validStructuredRequest(input) || len(pdf) < 5 || len(pdf) > maxAudioBytes || !bytes.HasPrefix(pdf, []byte("%PDF-")) {
+		return nil, ErrInvalidResponse
+	}
+	var schema any
+	if err := json.Unmarshal(input.Schema, &schema); err != nil {
+		return nil, ErrInvalidResponse
+	}
+	payload, err := json.Marshal(map[string]any{
+		"model": inputModel(), "instructions": input.Instructions, "store": false, "max_output_tokens": input.MaxOutputTokens,
+		"input": []any{map[string]any{"role": "user", "content": []any{
+			map[string]any{"type": "input_text", "text": input.Input},
+			map[string]any{"type": "input_file", "filename": "document.pdf", "file_data": "data:application/pdf;base64," + base64.StdEncoding.EncodeToString(pdf)},
+		}}},
+		"text": map[string]any{"format": map[string]any{"type": "json_schema", "name": input.SchemaName, "strict": true, "schema": schema}},
+	})
+	if err != nil {
+		return nil, ErrInvalidResponse
+	}
+	return o.structuredPost(ctx, payload)
+}
+
+func inputModel() string { return ResponsesModel }
+
+func (o *OpenAI) structuredPost(ctx context.Context, payload []byte) (json.RawMessage, error) {
 	response, err := o.post(ctx, responsesEndpoint, "application/json", bytes.NewReader(payload))
 	if err != nil {
 		return nil, err

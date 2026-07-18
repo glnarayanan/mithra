@@ -1,0 +1,12 @@
+[Unit]
+Description=Mithra isolated PDF parser socket
+
+[Socket]
+ListenStream=/run/mithra/pdf-parser.sock
+SocketMode=0660
+SocketUser=mithra
+SocketGroup=mithra
+RemoveOnStop=true
+
+[Install]
+WantedBy=sockets.target
