@@ -301,6 +301,10 @@ h2 {
   gap: clamp(2.5rem, 6vw, 4.5rem);
 }
 
+.finance-section {
+  min-width: 0;
+}
+
 .section-heading {
   align-items: end;
   padding-bottom: 1rem;
@@ -489,6 +493,150 @@ h2 {
 
 .number-cell {
   font-variant-numeric: tabular-nums;
+}
+
+.health-main {
+  padding-bottom: clamp(3rem, 8vw, 6rem);
+}
+
+.health-heading {
+  padding: clamp(2.5rem, 7vw, 5rem) 0 clamp(2rem, 5vw, 3.5rem);
+  background: linear-gradient(135deg, rgb(224 233 223 / 55%), transparent 62%);
+}
+
+.health-heading-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.health-heading h1 {
+  max-width: 14ch;
+  font-size: clamp(2.5rem, 6vw, 4.75rem);
+}
+
+.health-content {
+  display: grid;
+  gap: clamp(2.5rem, 6vw, 4.5rem);
+  padding-top: clamp(2rem, 5vw, 3.5rem);
+}
+
+.health-series-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.health-series-card {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  padding: clamp(1rem, 3vw, 1.5rem);
+  border: 0.0625rem solid var(--line);
+  border-radius: 1rem;
+  background: var(--paper);
+}
+
+.health-series-card h3,
+.health-series-card p {
+  margin: 0;
+}
+
+.health-series-card h3 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.4rem;
+}
+
+.health-series-card strong {
+  display: block;
+  margin-top: 0.5rem;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 2rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.health-series-card strong span,
+.health-series-card p {
+  color: var(--muted-ink);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.875rem;
+  font-weight: 400;
+}
+
+.health-series-card svg {
+  width: 100%;
+  height: 4rem;
+}
+
+.health-series-card polyline {
+  stroke: var(--moss);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.health-series-card a,
+.health-conflict-list a {
+  color: var(--moss);
+  font-weight: 700;
+}
+
+.health-conflict-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.health-conflict-list > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 1fr);
+  gap: 1.5rem;
+  padding: 1.25rem 0;
+  border-bottom: 0.0625rem solid var(--line);
+}
+
+.health-conflict-list > li:last-child {
+  border-bottom: 0;
+}
+
+.health-conflict-list p {
+  margin: 0.25rem 0 0.5rem;
+  color: var(--muted-ink);
+}
+
+.health-correction-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.health-correction-form label {
+  display: grid;
+  gap: 0.25rem;
+  color: var(--muted-ink);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.health-correction-form input,
+.health-correction-form button {
+  min-height: 2.75rem;
+  padding: 0.6rem 0.7rem;
+  border: 0.0625rem solid var(--line);
+  border-radius: 0.625rem;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+
+.health-correction-form button {
+  grid-column: 1 / -1;
+  background: var(--moss);
+  color: var(--paper);
+  cursor: pointer;
+  font-weight: 700;
 }
 
 .auth-main {
@@ -718,6 +866,20 @@ h2 {
 
   .obligation-list time {
     min-width: 0;
+  }
+
+  .health-heading-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .health-series-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .health-conflict-list > li,
+  .health-correction-form {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -1,0 +1,66 @@
+{{define "health.html"}}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5efe2">
+    <meta name="referrer" content="same-origin">
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/assets/styles.css">
+    <script defer src="/assets/health.js"></script>
+    <title>Health · Mithra</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <header class="site-header">
+      <div class="page-shell header-content">
+        <a class="brand" href="/" aria-label="Mithra homepage"><span class="brand-mark" aria-hidden="true">M</span><span>Mithra</span></a>
+        <nav class="desktop-navigation" aria-label="Primary navigation"><ul class="navigation-list">{{range .Navigation}}<li><a href="{{.Path}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a></li>{{end}}</ul></nav>
+        <details class="mobile-navigation"><summary>Menu</summary><nav aria-label="Primary navigation"><ul class="navigation-list">{{range .Navigation}}<li><a href="{{.Path}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a></li>{{end}}</ul></nav></details>
+      </div>
+    </header>
+    <main id="main-content" tabindex="-1" class="health-main">
+      <section class="health-heading">
+        <div class="page-shell health-heading-row">
+          <div>
+            <p class="eyebrow">Health lens</p>
+            <h1>Observed over time.</h1>
+            <p class="introduction-copy">Mithra keeps reported values, dates, units, and context together. It does not diagnose, interpret clinical significance, or recommend treatment. Discuss medical questions with a qualified clinician.</p>
+          </div>
+          <form class="scope-filter" method="get" action="/health" data-auto-submit>
+            <label for="health-scope">Records shown</label>
+            <select id="health-scope" name="scope"><option value="all"{{if eq .Scope "all"}} selected{{end}}>Shared and only you</option><option value="shared"{{if eq .Scope "shared"}} selected{{end}}>Shared</option><option value="personal"{{if eq .Scope "personal"}} selected{{end}}>Only you</option></select>
+            <button type="submit">Apply</button>
+          </form>
+        </div>
+      </section>
+      <div class="page-shell health-content">
+        {{if .Status}}<p class="status-message" role="status" aria-live="polite">{{.Status}}</p>{{end}}
+        {{if .Error}}<section class="finance-error" role="alert"><h2>Health records are temporarily unavailable</h2><p>{{.Error}}</p></section>
+        {{else if not .HasRecords}}
+        <section class="empty-state" aria-labelledby="health-empty-title"><p class="eyebrow">No health records</p><h2 id="health-empty-title">No observations or dates yet</h2><p>Imported reports, appointments, and care routines will remain source-linked and factual here.</p></section>
+        {{else}}
+        {{if .Series}}
+        <section aria-labelledby="health-series-title"><div class="section-heading"><div><p class="eyebrow">Comparable series</p><h2 id="health-series-title">Reported measurements</h2></div><p>Only matching analyte, subject, specimen, method, reference context, and compatible unit are joined.</p></div>
+          <div class="health-series-grid">{{range .Series}}<article class="health-series-card"><div><p>{{.Subject}}</p><h3>{{.Analyte}}</h3><strong>{{.LatestValue}} <span>{{.Unit}}</span></strong><p>{{.LatestDate}}{{if .ReferenceRange}} · Reported reference {{.ReferenceRange}}{{end}}</p></div><svg viewBox="0 0 220 64" role="img" aria-labelledby="series-title-{{.ID}} series-desc-{{.ID}}"><title id="series-title-{{.ID}}">{{.Analyte}} reported values</title><desc id="series-desc-{{.ID}}">{{.AccessibleSummary}}</desc><polyline points="{{.Points}}" fill="none" vector-effect="non-scaling-stroke"></polyline></svg><a href="{{.EvidenceURL}}">View latest source</a></article>{{end}}</div>
+        </section>
+        {{end}}
+        {{if .Conflicts}}
+        <section class="finance-section incomplete-panel" aria-labelledby="health-conflicts-title"><div class="section-heading"><div><p class="eyebrow">Needs your correction</p><h2 id="health-conflicts-title">Values kept separate</h2></div><p>Mithra did not guess a conversion.</p></div>
+          <ul class="health-conflict-list">{{range .Conflicts}}<li><div><strong>{{.Analyte}}</strong><p>{{.Reason}}</p><a href="{{.EvidenceURL}}">View source</a></div><form method="post" action="/health/correct" class="health-correction-form"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="record_id" value="{{.RecordID}}"><input type="hidden" name="version" value="{{.Version}}"><label>Correct value<input name="value" inputmode="decimal" maxlength="128" required></label><label>Correct unit<input name="unit" maxlength="64" required></label><button type="submit">Use corrected value</button></form></li>{{end}}</ul>
+        </section>
+        {{end}}
+        {{if .Appointments}}
+        <section class="finance-section" aria-labelledby="health-appointments-title"><div class="section-heading"><div><p class="eyebrow">Dates ahead</p><h2 id="health-appointments-title">Appointments</h2></div><p>Recorded dates only.</p></div><ol class="obligation-list">{{range .Appointments}}<li><time datetime="{{.DateISO}}">{{.DateLabel}}</time><div><strong>{{.Label}}</strong><span>{{.Subject}}{{if .Location}} · {{.Location}}{{end}}</span></div><a href="{{.EvidenceURL}}">View source</a></li>{{end}}</ol></section>
+        {{end}}
+        {{if .Routines}}
+        <section class="finance-section" aria-labelledby="health-routines-title"><div class="section-heading"><div><p class="eyebrow">As recorded</p><h2 id="health-routines-title">Care routines</h2></div><p>No treatment recommendation is implied.</p></div><ul class="issue-list">{{range .Routines}}<li><div><strong>{{.Label}}</strong><p>{{.Schedule}} · {{.Subject}}</p></div><a href="{{.EvidenceURL}}">View source</a></li>{{end}}</ul></section>
+        {{end}}
+        <section class="finance-section" aria-labelledby="health-records-title"><div class="section-heading"><div><p class="eyebrow">Source-linked</p><h2 id="health-records-title">Records in this view</h2></div><p>Observed values are shown without interpretation.</p></div><div class="record-table-wrap"><table class="record-table"><thead><tr><th scope="col">Record</th><th scope="col">Subject</th><th scope="col">Date</th><th scope="col">Observed</th><th scope="col">Context</th><th scope="col">Visibility</th><th scope="col">Source</th></tr></thead><tbody>{{range .Records}}<tr><th scope="row">{{.Label}}</th><td>{{.Subject}}</td><td>{{.Date}}</td><td class="number-cell">{{.Observed}}</td><td>{{.Context}}</td><td>{{.Scope}}</td><td><a href="{{.EvidenceURL}}">View</a></td></tr>{{end}}</tbody></table></div></section>
+        {{end}}
+      </div>
+    </main>
+  </body>
+</html>
+{{end}}

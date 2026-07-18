@@ -91,6 +91,22 @@ only the applicable shared or personal revision. The server-rendered finance
 lens remains useful without OpenAI and exposes exact totals, factual changes,
 upcoming obligations, incomplete explanations, and authorized provenance.
 
+## Health domain
+
+`internal/health` keeps observations, appointments, and care routines in three
+typed tables over the same source, evidence, visibility, and revision spine.
+Observed values and reported ranges use bounded coefficient-and-scale numbers.
+A small explicit registry handles only identity and simple dimension-preserving
+unit conversions; analyte-specific and unknown mismatches remain separate until
+the user supplies a corrected value and unit.
+
+Longitudinal series require the same analyte, subject, specimen, available
+method, reference context, and compatible-unit family. Corrections create an
+active user-owned superseding revision without changing the retained source.
+The health lens reports only stored observations and dates, links every item to
+an authorized source, and maintains a visible boundary against diagnosis,
+clinical interpretation, or treatment recommendations.
+
 ## Browser shell
 
 `web/templates/shell.html`, `web/static/styles.css`, and `web/static/app.js`
@@ -102,7 +118,7 @@ updates with `textContent`, never HTML, so untrusted future import/model text
 remains text.
 
 Authentication, encrypted source infrastructure, durable jobs, the OpenAI
-boundary, and typed finance now build on this runtime. Health, planning,
+boundary, typed finance, and typed health now build on this runtime. Planning,
 capture, import, and coaching services remain in their dedicated units.
 
 ## Verification

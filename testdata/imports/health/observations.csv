@@ -1,0 +1,6 @@
+subject,analyte,specimen,method,reference_context,date,value,unit,reference_low,reference_high,reference_unit,visibility
+Alex,Glucose,serum,hexokinase,lab-a,2026-05-01,1.00,g/L,0.70,1.10,g/L,shared
+Alex,Glucose,serum,hexokinase,lab-a,2026-06-01,105.0,mg/dL,70,110,mg/dL,shared
+Alex,Glucose,plasma,hexokinase,lab-a,2026-06-01,108,mg/dL,70,110,mg/dL,shared
+Alex,Potassium,serum,ise,lab-a,2026-06-01,4.2,mmol/L,3.5,5.1,mmol/L,shared
+Alex,Potassium,serum,ise,lab-a,2026-07-01,160,mg/dL,130,200,mg/dL,shared
