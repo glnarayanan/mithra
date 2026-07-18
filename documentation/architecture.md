@@ -181,3 +181,13 @@ dedicated unit.
 CI uses Go 1.25.12, the required SQLite tags, `gofmt`, `go mod verify`,
 `go vet`, tests, an application build, native Node syntax/test checks, and a
 pinned `govulncheck`. It does not install a frontend package manager.
+
+## Coaching boundary
+
+`internal/coaching` owns actor-scoped evidence contexts, deterministic Family
+Brief and Week in Review fallbacks, separately keyed shared/private caches,
+generated-output validation, and the one-nudge lifecycle. Browser page loads
+perform SQLite reads only. OpenAI is invoked only by an explicit refresh, with
+shared and personal facts sent in separate calls and publication fenced by a
+fresh membership, revision, source, and evidence check. See
+[`coaching.md`](coaching.md) for the privacy and notification contract.

@@ -177,17 +177,14 @@ func TestHTTPGuardsRejectOversizedResponses(t *testing.T) {
 	}
 }
 
-func TestShellRendersAccessibleNavigationEmptyStateAndEscapesStatus(t *testing.T) {
+func TestBriefRendersAccessibleNavigationEmptyStateAndEscapesStatus(t *testing.T) {
 	t.Parallel()
 
 	application := newTestApp(t)
 	response := httptest.NewRecorder()
 	malicious := `</script><script>window.pwned = true</script>`
 
-	application.renderShell(context.Background(), response, ShellView{
-		Path:   "/",
-		Status: malicious,
-	})
+	application.renderTemplate(context.Background(), response, "brief.html", BriefView{Navigation: navigationForPath("/"), Status: malicious, Freshness: "Live application view"})
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("shell status = %d, want %d", response.Code, http.StatusOK)
@@ -201,7 +198,7 @@ func TestShellRendersAccessibleNavigationEmptyStateAndEscapesStatus(t *testing.T
 		`href="/planning"`,
 		`href="/assets/favicon.svg"`,
 		`aria-live="polite"`,
-		`No household records yet`,
+		`Bring in the first household fact`,
 	} {
 		if !strings.Contains(body, required) {
 			t.Fatalf("shell is missing %q", required)
@@ -221,11 +218,11 @@ func TestRenderFailureLogsWithoutPartialTemplateOutput(t *testing.T) {
 	application := newTestApp(t)
 	var logs bytes.Buffer
 	application.logger = log.New(&logs, "", 0)
-	application.templates = template.Must(template.New("shell.html").Parse(`partial template secret{{template "missing" .}}`))
+	application.templates = template.Must(template.New("brief.html").Parse(`partial template secret{{template "missing" .}}`))
 	response := httptest.NewRecorder()
 	ctx := context.WithValue(context.Background(), requestIDContextKey{}, "test-request-id")
 
-	application.renderShell(ctx, response, ShellView{Path: "/"})
+	application.renderTemplate(ctx, response, "brief.html", BriefView{})
 
 	if response.Code != http.StatusInternalServerError {
 		t.Fatalf("render failure status = %d, want %d", response.Code, http.StatusInternalServerError)

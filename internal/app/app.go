@@ -23,6 +23,7 @@ import (
 
 	"github.com/glnarayanan/mithra/internal/auth"
 	"github.com/glnarayanan/mithra/internal/capture"
+	"github.com/glnarayanan/mithra/internal/coaching"
 	"github.com/glnarayanan/mithra/internal/database"
 	"github.com/glnarayanan/mithra/internal/finance"
 	"github.com/glnarayanan/mithra/internal/health"
@@ -73,6 +74,7 @@ type App struct {
 	planningRecords  *planning.Service
 	captureRecords   *capture.Service
 	imports          *imports.Service
+	coaching         *coaching.Service
 	importExtractor  imports.Extractor
 	captureVoiceSlot chan struct{}
 	captureStop      context.CancelFunc
@@ -83,14 +85,6 @@ type App struct {
 	closed           atomic.Bool
 	closeOnce        sync.Once
 	closeErr         error
-}
-
-// ShellView is deliberately limited to text and route state. html/template
-// escapes all text fields, including future import and model messages.
-type ShellView struct {
-	Path       string
-	Status     string
-	Navigation []NavigationItem
 }
 
 // NavigationItem is one primary shell destination.
@@ -114,7 +108,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		return nil, err
 	}
 
-	templates, err := template.ParseFS(web.Files, "templates/shell.html", "templates/auth/*.html", "templates/capture/*.html", "templates/finance/*.html", "templates/health/*.html", "templates/imports/*.html", "templates/planning/*.html", "templates/settings/*.html")
+	templates, err := template.ParseFS(web.Files, "templates/auth/*.html", "templates/brief/*.html", "templates/capture/*.html", "templates/finance/*.html", "templates/health/*.html", "templates/imports/*.html", "templates/planning/*.html", "templates/review/*.html", "templates/settings/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse embedded templates: %w", err)
 	}
@@ -172,6 +166,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	healthRecords := health.New(db)
 	planningRecords := planning.New(db)
 	importRecords := imports.NewService(db, sources, financeRecords, healthRecords, planningRecords, deletionJournal)
+	coachingRecords := coaching.New(db)
 	if err := importRecords.ReconcileDeletions(ctx); err != nil {
 		_ = db.Close()
 		return nil, errors.New("reconcile deletion journal")
@@ -181,7 +176,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		return nil, errors.New("reconcile visual PDF staging")
 	}
 	cleanupContext, cleanupCancel := context.WithCancel(context.Background())
-	application := &App{db: db, templates: templates, logger: log.Default(), auth: service, mailer: mailer, providerSettings: providerSettings, openAIClient: cfg.OpenAIClient, sources: sources, jobs: jobs.New(db), finance: financeRecords, healthRecords: healthRecords, planningRecords: planningRecords, captureRecords: captureRecords, imports: importRecords, importExtractor: imports.New(cfg.ImportPDF), captureVoiceSlot: make(chan struct{}, 2), captureStop: cleanupCancel, captureDone: make(chan struct{}), origin: origin, secure: cfg.SecureCookies, trustedProxy: cfg.TrustedProxy}
+	application := &App{db: db, templates: templates, logger: log.Default(), auth: service, mailer: mailer, providerSettings: providerSettings, openAIClient: cfg.OpenAIClient, sources: sources, jobs: jobs.New(db), finance: financeRecords, healthRecords: healthRecords, planningRecords: planningRecords, captureRecords: captureRecords, imports: importRecords, coaching: coachingRecords, importExtractor: imports.New(cfg.ImportPDF), captureVoiceSlot: make(chan struct{}, 2), captureStop: cleanupCancel, captureDone: make(chan struct{}), origin: origin, secure: cfg.SecureCookies, trustedProxy: cfg.TrustedProxy}
 	go application.cleanCaptureAudio(cleanupContext)
 	return application, nil
 }
@@ -236,13 +231,17 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("/capture", a.capture)
 	mux.HandleFunc("/capture/voice", a.captureVoice)
 	mux.HandleFunc("/imports", a.importDocuments)
+	mux.HandleFunc("/review", a.weekReview)
+	mux.HandleFunc("/brief/refresh", a.refreshBrief)
+	mux.HandleFunc("/review/refresh", a.refreshWeek)
+	mux.HandleFunc("/notifications/nudge", a.updateNudge)
 	mux.HandleFunc("/finance", a.financeLens)
 	mux.HandleFunc("/health", a.healthLens)
 	mux.HandleFunc("/health/correct", a.correctHealthObservation)
 	mux.HandleFunc("/planning", a.planningLens)
 	mux.HandleFunc("/planning/events/", a.planningICS)
 	mux.HandleFunc("/sources/", a.sourceFile)
-	mux.HandleFunc("/", a.shell)
+	mux.HandleFunc("/", a.brief)
 	return withHTTPGuards(mux, a.logger)
 }
 
@@ -306,65 +305,16 @@ func (a *App) serveEmbeddedFile(w http.ResponseWriter, r *http.Request, name, co
 	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(data))
 }
 
-func (a *App) shell(w http.ResponseWriter, r *http.Request) {
-	if !allowsRead(r.Method) {
-		methodNotAllowed(w)
-		return
-	}
-	if !isShellPath(r.URL.Path) {
-		writeError(w, http.StatusNotFound, "not found")
-		return
-	}
-	if _, ok := a.sessionScope(r); !ok {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
-		return
-	}
-	if r.Method == http.MethodHead {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-	a.renderShell(r.Context(), w, ShellView{Path: r.URL.Path})
-}
-
-func (a *App) renderShell(ctx context.Context, w http.ResponseWriter, view ShellView) {
-	if !isShellPath(view.Path) {
-		view.Path = "/"
-	}
-	if view.Status == "" {
-		view.Status = "Mithra is ready for the first household record."
-	}
-	if view.Navigation == nil {
-		view.Navigation = navigationForPath(view.Path)
-	}
-	rendered := newBufferedResponse(maxResponseBodyBytes)
-	if err := a.templates.ExecuteTemplate(rendered, "shell.html", view); err != nil || rendered.overflow {
-		logRequestError(a.logger, ctx, "render_failed")
-		writeError(w, http.StatusInternalServerError, "internal server error")
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	rendered.commit(w)
-}
-
-func isShellPath(path string) bool {
-	switch path {
-	case "/", "/finance", "/health", "/planning":
-		return true
-	default:
-		return false
-	}
-}
-
 func navigationForPath(path string) []NavigationItem {
 	return []NavigationItem{
 		{Path: "/", Label: "Brief", Current: path == "/"},
+		{Path: "/review", Label: "Week in Review", Current: path == "/review"},
 		{Path: "/capture", Label: "Capture", Current: path == "/capture"},
 		{Path: "/imports", Label: "Import", Current: path == "/imports"},
 		{Path: "/finance", Label: "Finance", Current: path == "/finance"},
 		{Path: "/health", Label: "Health", Current: path == "/health"},
 		{Path: "/planning", Label: "Planning", Current: path == "/planning"},
-		{Path: "/settings", Label: "Settings"},
+		{Path: "/settings", Label: "Settings", Current: path == "/settings"},
 	}
 }
 
@@ -388,6 +338,7 @@ var assetContentTypes = map[string]string{
 	"health.js":   "application/javascript; charset=utf-8",
 	"planning.js": "application/javascript; charset=utf-8",
 	"capture.js":  "application/javascript; charset=utf-8",
+	"brief.js":    "application/javascript; charset=utf-8",
 	"imports.js":  "application/javascript; charset=utf-8",
 	"favicon.svg": "image/svg+xml",
 }
