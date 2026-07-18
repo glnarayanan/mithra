@@ -19,7 +19,7 @@ it, and neither mode derives links, origins, actors, or authorization from
 forwarded headers.
 
 The server has bounded header, read, write, and idle timeouts, graceful
-`SIGINT`/`SIGTERM` shutdown, a one-megabyte request-body ceiling, panic
+`SIGINT`/`SIGTERM` shutdown, a one-megabyte default request-body ceiling, panic
 recovery, and a response request ID. Every route receives restrictive cache and
 browser security headers, including a self-only CSP and frame denial. Health is
 reported at `/healthz` (and `/api/health`) only after database initialization
@@ -27,6 +27,11 @@ has succeeded. Runtime failure logs contain only an applicable request ID and a
 stable safe error code; startup emits only its safe error code. The server does
 not log listener addresses, and its standard-library HTTP error log is discarded
 because it can include untrusted request details.
+
+The voice-capture route alone permits a nine-megabyte multipart envelope so it
+can enforce the product's eight-megabyte, 90-second audio limit. It keeps the
+uploaded part in bounded memory, accepts only supported audio media types, and
+rejects invalid, busy, or unauthenticated requests before any provider call.
 
 ## Database lifecycle
 
@@ -123,20 +128,38 @@ endings, escaping, UTF-8-safe folding, and correct exclusive all-day end dates.
 Google Calendar links open prefilled drafts for review. Mithra stores no OAuth
 token, calendar credential, subscription, or background synchronization state.
 
+## Conversational capture
+
+`internal/capture` accepts one strict finance, health, or planning proposal and
+commits it only through the corresponding typed domain service. The OpenAI
+Responses request receives quoted user text, no household identifiers, and a
+closed schema with `store: false`. A clear text update is confirmed immediately
+with a ten-minute revision-fenced Undo; a missing material owner, date, unit, or
+status creates one focused clarification and no derived record. User answers
+can fill only the field Mithra requested.
+
+Browser audio uses `MediaRecorder` as progressive enhancement. The server
+encrypts raw bytes in the source store before transcription, exposes no raw
+audio download route, and retains ciphertext only for a bounded retry or review
+window. The transcript and proposed typed record require confirmation; confirm
+deletes raw audio while retaining transcript provenance. Cancellation, terminal
+failure, expiry, and startup reconciliation clean abandoned ciphertext. Two
+in-process voice slots bound provider work without adding a queue service.
+
 ## Browser shell
 
 `web/templates/shell.html`, `web/static/styles.css`, and `web/static/app.js`
 are embedded first-party assets. The mobile-first shell renders without
-JavaScript, exposes Brief, Finance, Health, and Planning navigation, has a
+JavaScript, exposes Brief, Capture, Finance, Health, and Planning navigation, has a
 keyboard-visible skip link and focus treatment, and declares an accessible
 status region plus an honest empty state. The tiny JavaScript enhancement writes
 updates with `textContent`, never HTML, so untrusted future import/model text
 remains text.
 
 Authentication, encrypted source infrastructure, durable jobs, the OpenAI
-boundary, typed finance, typed health, and typed planning now build on this
-runtime. Capture, import, and coaching services remain in their dedicated
-units.
+boundary, typed finance, typed health, typed planning, and conversational
+capture now build on this runtime. Import and coaching remain in their
+dedicated units.
 
 ## Verification
 

@@ -197,6 +197,11 @@ func (a *App) sourceFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
+	metadata, err := a.sources.Info(r.Context(), scope, id)
+	if err != nil || metadata.Family == "voice" {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
 	plaintext, source, err := a.sources.Read(r.Context(), scope, id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "not found")

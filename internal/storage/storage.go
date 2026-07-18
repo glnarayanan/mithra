@@ -180,6 +180,70 @@ func (s *Service) Read(ctx context.Context, scope policy.ActorScope, sourceID st
 	return plaintext, source, nil
 }
 
+// Info returns authorized source metadata without decrypting its content.
+func (s *Service) Info(ctx context.Context, scope policy.ActorScope, sourceID string) (Source, error) {
+	if !scope.Valid() || strings.TrimSpace(sourceID) == "" {
+		return Source{}, ErrNotFound
+	}
+	source, err := s.lookup(ctx, scope, sourceID)
+	if err != nil {
+		return Source{}, ErrNotFound
+	}
+	return source, nil
+}
+
+// Delete makes a source unreadable before removing its encrypted ciphertext.
+// Reconcile removes a ciphertext left behind by an interrupted deletion.
+func (s *Service) Delete(ctx context.Context, scope policy.ActorScope, sourceID string) error {
+	if !scope.Valid() || strings.TrimSpace(sourceID) == "" {
+		return ErrNotFound
+	}
+	source, err := s.lookup(ctx, scope, sourceID)
+	if err != nil || source.OwnerID != scope.ActorID {
+		return ErrNotFound
+	}
+	return s.deleteSource(ctx, source)
+}
+
+// DeleteExpiredVoice removes only an exact owner/household voice source. It is
+// used by the capture janitor after membership may have expired, never by HTTP.
+func (s *Service) DeleteExpiredVoice(ctx context.Context, householdID, ownerID, sourceID string) error {
+	if strings.TrimSpace(householdID) == "" || strings.TrimSpace(ownerID) == "" || strings.TrimSpace(sourceID) == "" {
+		return ErrNotFound
+	}
+	var source Source
+	err := s.db.QueryRowContext(ctx, `SELECT id,household_id,owner_user_id,visibility,family,source_version,state,storage_key FROM sources WHERE id=? AND household_id=? AND owner_user_id=? AND family='voice' AND state='live'`, sourceID, householdID, ownerID).Scan(&source.ID, &source.HouseholdID, &source.OwnerID, &source.Visibility, &source.Family, &source.Version, &source.State, &source.StorageKey)
+	if err != nil || !validStorageKey(source.StorageKey) {
+		return ErrNotFound
+	}
+	return s.deleteSource(ctx, source)
+}
+
+func (s *Service) deleteSource(ctx context.Context, source Source) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return ErrStorage
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE sources SET state='deleted',updated_at=? WHERE id=? AND state='live'`, s.now().UTC().Format(time.RFC3339Nano), source.ID)
+	if err != nil {
+		return ErrStorage
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return ErrNotFound
+	}
+	if err := tx.Commit(); err != nil {
+		return ErrStorage
+	}
+	if err := os.Remove(filepath.Join(s.root, source.StorageKey+".enc")); err != nil && !os.IsNotExist(err) {
+		return ErrStorage
+	}
+	if err := syncDirectory(s.root); err != nil {
+		return ErrStorage
+	}
+	return nil
+}
+
 // Reconcile removes incomplete/unreferenced Mithra ciphertext and refuses to
 // serve when a live row has no regular ciphertext file.
 func (s *Service) Reconcile(ctx context.Context) error {

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/glnarayanan/mithra/internal/auth"
+	"github.com/glnarayanan/mithra/internal/capture"
 	"github.com/glnarayanan/mithra/internal/database"
 	"github.com/glnarayanan/mithra/internal/finance"
 	"github.com/glnarayanan/mithra/internal/health"
@@ -68,6 +69,10 @@ type App struct {
 	finance          *finance.Service
 	healthRecords    *health.Service
 	planningRecords  *planning.Service
+	captureRecords   *capture.Service
+	captureVoiceSlot chan struct{}
+	captureStop      context.CancelFunc
+	captureDone      chan struct{}
 	origin           *url.URL
 	secure           bool
 	trustedProxy     bool
@@ -105,7 +110,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		return nil, err
 	}
 
-	templates, err := template.ParseFS(web.Files, "templates/shell.html", "templates/auth/*.html", "templates/finance/*.html", "templates/health/*.html", "templates/planning/*.html", "templates/settings/*.html")
+	templates, err := template.ParseFS(web.Files, "templates/shell.html", "templates/auth/*.html", "templates/capture/*.html", "templates/finance/*.html", "templates/health/*.html", "templates/planning/*.html", "templates/settings/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse embedded templates: %w", err)
 	}
@@ -149,18 +154,46 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		_ = db.Close()
 		return nil, errors.New("reconcile source storage")
 	}
-	return &App{db: db, templates: templates, logger: log.Default(), auth: service, mailer: mailer, providerSettings: providerSettings, openAIClient: cfg.OpenAIClient, sources: sources, jobs: jobs.New(db), finance: finance.New(db), healthRecords: health.New(db), planningRecords: planning.New(db), origin: origin, secure: cfg.SecureCookies, trustedProxy: cfg.TrustedProxy}, nil
+	captureRecords := capture.New(db, sources)
+	if err := captureRecords.Cleanup(ctx, time.Now()); err != nil {
+		_ = db.Close()
+		return nil, errors.New("reconcile capture audio")
+	}
+	cleanupContext, cleanupCancel := context.WithCancel(context.Background())
+	application := &App{db: db, templates: templates, logger: log.Default(), auth: service, mailer: mailer, providerSettings: providerSettings, openAIClient: cfg.OpenAIClient, sources: sources, jobs: jobs.New(db), finance: finance.New(db), healthRecords: health.New(db), planningRecords: planning.New(db), captureRecords: captureRecords, captureVoiceSlot: make(chan struct{}, 2), captureStop: cleanupCancel, captureDone: make(chan struct{}), origin: origin, secure: cfg.SecureCookies, trustedProxy: cfg.TrustedProxy}
+	go application.cleanCaptureAudio(cleanupContext)
+	return application, nil
 }
 
 // Close prevents future readiness responses and closes the owned database.
 func (a *App) Close() error {
 	a.closeOnce.Do(func() {
 		a.closed.Store(true)
+		if a.captureStop != nil {
+			a.captureStop()
+			<-a.captureDone
+		}
 		if a.db != nil {
 			a.closeErr = a.db.Close()
 		}
 	})
 	return a.closeErr
+}
+
+func (a *App) cleanCaptureAudio(ctx context.Context) {
+	defer close(a.captureDone)
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			if err := a.captureRecords.Cleanup(ctx, now); err != nil && ctx.Err() == nil {
+				a.logger.Printf("error_code=capture_cleanup_failed")
+			}
+		}
+	}
 }
 
 // Handler provides the complete U1 HTTP surface with safety middleware applied
@@ -179,6 +212,8 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("/auth/password", a.passwordSetup)
 	mux.HandleFunc("/auth/logout", a.logout)
 	mux.HandleFunc("/settings", a.settings)
+	mux.HandleFunc("/capture", a.capture)
+	mux.HandleFunc("/capture/voice", a.captureVoice)
 	mux.HandleFunc("/finance", a.financeLens)
 	mux.HandleFunc("/health", a.healthLens)
 	mux.HandleFunc("/health/correct", a.correctHealthObservation)
@@ -302,6 +337,7 @@ func isShellPath(path string) bool {
 func navigationForPath(path string) []NavigationItem {
 	return []NavigationItem{
 		{Path: "/", Label: "Brief", Current: path == "/"},
+		{Path: "/capture", Label: "Capture", Current: path == "/capture"},
 		{Path: "/finance", Label: "Finance", Current: path == "/finance"},
 		{Path: "/health", Label: "Health", Current: path == "/health"},
 		{Path: "/planning", Label: "Planning", Current: path == "/planning"},
@@ -328,6 +364,7 @@ var assetContentTypes = map[string]string{
 	"finance.js":  "application/javascript; charset=utf-8",
 	"health.js":   "application/javascript; charset=utf-8",
 	"planning.js": "application/javascript; charset=utf-8",
+	"capture.js":  "application/javascript; charset=utf-8",
 	"favicon.svg": "image/svg+xml",
 }
 
@@ -337,11 +374,15 @@ func withHTTPGuards(next http.Handler, logger *log.Logger) http.Handler {
 
 func limitRequestBody(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.ContentLength > maxRequestBodyBytes {
+		limit := int64(maxRequestBodyBytes)
+		if r.URL.Path == "/capture/voice" {
+			limit = 9 << 20
+		}
+		if r.ContentLength > limit {
 			writeError(w, http.StatusRequestEntityTooLarge, "request body is too large")
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+		r.Body = http.MaxBytesReader(w, r.Body, limit)
 		next.ServeHTTP(w, r)
 	})
 }
