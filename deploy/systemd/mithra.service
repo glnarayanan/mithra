@@ -1,0 +1,34 @@
+[Unit]
+Description=Mithra household application
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mithra
+Group=mithra
+EnvironmentFile=/etc/mithra/mithra.env
+LoadCredential=master.key:/etc/mithra/credentials/master.key
+LoadCredential=resend.key:/etc/mithra/credentials/resend.key
+Environment=MITHRA_MASTER_KEY_FILE=%d/master.key
+Environment=MITHRA_RESEND_KEY_FILE=%d/resend.key
+ExecStart=/usr/local/bin/mithra
+RuntimeDirectory=mithra
+RuntimeDirectoryMode=0750
+ReadWritePaths=/var/lib/mithra /var/backups/mithra /run/mithra
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+MemoryDenyWriteExecute=true
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

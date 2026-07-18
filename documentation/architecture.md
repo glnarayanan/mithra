@@ -182,6 +182,14 @@ CI uses Go 1.25.12, the required SQLite tags, `gofmt`, `go mod verify`,
 `go vet`, tests, an application build, native Node syntax/test checks, and a
 pinned `govulncheck`. It does not install a frontend package manager.
 
+Release tags additionally build the application and installer for Linux amd64
+and arm64. A canonical manifest is signed with Ed25519; both the bootstrap
+shell and compiled installer pin and verify the publisher key before owned
+paths are staged. The lifecycle package constrains every mutation to Mithra's
+manifested paths and treats an Arivu installation as read-only host context.
+Backups authenticate a complete SQLite, encrypted-source, and deletion-journal
+generation; restore verifies and sanitizes that generation before atomic swap.
+
 ## Coaching boundary
 
 `internal/coaching` owns actor-scoped evidence contexts, deterministic Family

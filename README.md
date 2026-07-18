@@ -65,5 +65,7 @@ server-derived values.
 ## Documentation
 
 See the [architecture guide](documentation/architecture.md) and
-[security guide](documentation/security.md). The implementation plan lives
-under `documentation/plans/`.
+[security guide](documentation/security.md). Deployment and recovery are in
+[operations](documentation/operations.md) and
+[backup and restore](documentation/backup-restore.md). The implementation plan
+lives under `documentation/plans/`.

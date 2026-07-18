@@ -1,0 +1,395 @@
+package installer
+
+import (
+	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/glnarayanan/mithra/internal/database"
+	"github.com/glnarayanan/mithra/internal/imports"
+	"github.com/glnarayanan/mithra/internal/policy"
+	"github.com/glnarayanan/mithra/internal/storage"
+)
+
+func healthyFacts() HostFacts {
+	return HostFacts{OS: "linux", Arch: "amd64", Systemd: true, SQLite: true, Commands: map[string]string{"caddy": "/usr/bin/caddy", "nginx": "/usr/sbin/nginx", "apache2ctl": "/usr/sbin/apache2ctl"}, Listeners: map[int]string{}, VHosts: map[string]string{}, AppPortAvailable: true, FreeBytes: 1 << 30, MigrationClean: true, SQLiteClean: true, KeyMatches: true, AllowlistValid: true, CaddyImportsOwnedDir: true}
+}
+
+func TestBuildPlanCoversProxyAndOperationPreconditionsWithoutArivuMutation(t *testing.T) {
+	root := t.TempDir()
+	facts := healthyFacts()
+	facts.ArivuPaths = []string{filepath.Join(root, "etc/arivu"), filepath.Join(root, "var/lib/arivu")}
+	for _, mode := range []ProxyMode{AppOnly, Caddy, Nginx, Apache} {
+		plan, err := BuildPlan(Options{Operation: Install, Root: root, Domain: "home.example", Proxy: mode, Port: 18090, AllowedEmails: []string{"owner@example.com"}, ResendFrom: "Mithra <mail@example.com>"}, facts)
+		if err != nil {
+			t.Fatalf("%s plan: %v", mode, err)
+		}
+		if mode == AppOnly && plan.Listener != "127.0.0.1:18090" || mode != AppOnly && !strings.HasSuffix(plan.Listener, "/run/mithra/mithra.sock") {
+			t.Fatalf("%s listener = %q", mode, plan.Listener)
+		}
+		for _, path := range plan.Mutations {
+			if hasArivuSegment(path) {
+				t.Fatalf("Arivu mutation path %q", path)
+			}
+		}
+	}
+	facts.VHosts["home.example"] = "/etc/nginx/sites-enabled/other.conf"
+	if _, err := BuildPlan(Options{Operation: Install, Root: root, Domain: "home.example", Proxy: Nginx, Port: 18090}, facts); err == nil || !strings.Contains(err.Error(), "already owned") {
+		t.Fatalf("domain collision = %v", err)
+	}
+	facts = healthyFacts()
+	facts.AppPortAvailable = false
+	if _, err := BuildPlan(Options{Operation: Install, Root: root, Proxy: AppOnly, Port: 18090}, facts); err == nil || !strings.Contains(err.Error(), "occupied") {
+		t.Fatalf("occupied app port = %v", err)
+	}
+	facts = healthyFacts()
+	if _, err := BuildPlan(Options{Operation: Upgrade, Root: root, Proxy: AppOnly, Port: 18090}, facts); err == nil {
+		t.Fatal("upgrade without recovery evidence succeeded")
+	}
+	facts.MithraInstalled, facts.DBExists, facts.KeyExists, facts.BackupExists = true, true, true, true
+	if _, err := BuildPlan(Options{Operation: Upgrade, Root: root, Proxy: AppOnly, Port: 18090}, facts); err != nil {
+		t.Fatalf("verified upgrade plan: %v", err)
+	}
+	if _, err := BuildPlan(Options{Operation: Purge, Root: root, Proxy: AppOnly}, facts); err == nil || !strings.Contains(err.Error(), "explicit confirmation") {
+		t.Fatalf("unconfirmed purge = %v", err)
+	}
+	if _, err := BuildPlan(Options{Operation: Purge, Root: root, Proxy: AppOnly, ConfirmPurge: true}, facts); err == nil || !strings.Contains(err.Error(), "uninstall") {
+		t.Fatalf("live purge = %v", err)
+	}
+}
+
+func TestReleaseSignaturePreventsArtifactAndChecksumSubstitution(t *testing.T) {
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact := []byte("verified-mithra")
+	digest := sha256.Sum256(artifact)
+	manifest := ReleaseManifest{Version: "v1.0.0", Artifacts: map[string]ReleaseArtifact{"mithra-linux-amd64": {SHA256: hex.EncodeToString(digest[:]), Size: int64(len(artifact))}}}
+	raw, err := CanonicalManifest(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signature := ed25519.Sign(privateKey, raw)
+	if _, err := VerifyRelease(raw, signature, publicKey, "mithra-linux-amd64", artifact); err != nil {
+		t.Fatal(err)
+	}
+	replacement := []byte("substitute")
+	replacementDigest := sha256.Sum256(replacement)
+	changed, _ := CanonicalManifest(ReleaseManifest{Version: "v1.0.0", Artifacts: map[string]ReleaseArtifact{"mithra-linux-amd64": {SHA256: hex.EncodeToString(replacementDigest[:]), Size: int64(len(replacement))}}})
+	if _, err := VerifyRelease(changed, signature, publicKey, "mithra-linux-amd64", replacement); err == nil || !strings.Contains(err.Error(), "signature") {
+		t.Fatalf("substituted release = %v", err)
+	}
+}
+
+func TestAtomicOwnedApplyRollsBackAndLeavesArivuByteStable(t *testing.T) {
+	root := t.TempDir()
+	arivu := filepath.Join(root, "etc", "arivu", "arivu.env")
+	if err := os.MkdirAll(filepath.Dir(arivu), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(arivu, []byte("ARIVU=stable\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(arivu)
+	facts := healthyFacts()
+	plan, err := BuildPlan(Options{Operation: Install, Root: root, Proxy: AppOnly, Port: 18090, AllowedEmails: []string{"owner@example.com"}, ResendFrom: "Mithra <mail@example.com>"}, facts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := OwnedPaths(root, AppOnly)
+	if err := os.MkdirAll(filepath.Dir(paths.Config), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.Config, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err = ApplyOwnedFiles(plan, []OwnedFile{{Path: paths.Config, Mode: 0o600, Content: []byte("new")}}, func() error { return errors.New("health failed") })
+	if err == nil {
+		t.Fatal("failed validation did not roll back")
+	}
+	got, _ := os.ReadFile(paths.Config)
+	if string(got) != "old" {
+		t.Fatalf("rolled back config = %q", got)
+	}
+	after, _ := os.ReadFile(arivu)
+	if string(after) != string(before) {
+		t.Fatalf("Arivu changed: %q", after)
+	}
+}
+
+func TestAtomicOwnedApplyRejectsSymlinkedParent(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, "etc")); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := BuildPlan(Options{Operation: Install, Root: root, Proxy: AppOnly, Port: 18090, AllowedEmails: []string{"owner@example.com"}, ResendFrom: "Mithra <mail@example.com>"}, healthyFacts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := OwnedPaths(root, AppOnly)
+	if err := ApplyOwnedFiles(plan, []OwnedFile{{Path: paths.Config, Mode: 0o600, Content: []byte("unsafe")}}, nil); err == nil || !strings.Contains(err.Error(), "unsafe parent") {
+		t.Fatalf("symlinked parent result = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "mithra", "mithra.env")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("outside target was touched: %v", err)
+	}
+}
+
+func TestArivuBaselineDetectsImmutableArtifactChange(t *testing.T) {
+	root := t.TempDir()
+	path := rooted(root, "/usr/local/bin/arivu")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("stable"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	baseline := CaptureArivuBaseline(context.Background(), root)
+	if len(baseline.Artifacts) != 1 {
+		t.Fatalf("baseline artifacts = %v", baseline.Artifacts)
+	}
+	if err := os.WriteFile(path, []byte("changed"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyArivuBaseline(context.Background(), root, baseline); err == nil || !strings.Contains(err.Error(), "changed") {
+		t.Fatalf("changed Arivu baseline = %v", err)
+	}
+}
+
+func TestCaddyRequiresPreexistingOwnedImport(t *testing.T) {
+	facts := healthyFacts()
+	facts.CaddyImportsOwnedDir = false
+	_, err := BuildPlan(Options{Operation: Install, Root: t.TempDir(), Domain: "home.example", Proxy: Caddy, Port: 18090, AllowedEmails: []string{"owner@example.com"}, ResendFrom: "Mithra <mail@example.com>"}, facts)
+	if err == nil || !strings.Contains(err.Error(), "already import") {
+		t.Fatalf("Caddy import prerequisite = %v", err)
+	}
+}
+
+func TestInstallReconfigureUninstallAndConfirmedPurgePreserveExactBoundaries(t *testing.T) {
+	root := t.TempDir()
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appBinary, installerBinary := []byte("mithra-binary"), []byte("installer-binary")
+	appDigest, installerDigest := sha256.Sum256(appBinary), sha256.Sum256(installerBinary)
+	manifest := ReleaseManifest{Version: "v1.0.0", Artifacts: map[string]ReleaseArtifact{
+		"mithra-linux-amd64":           {SHA256: hex.EncodeToString(appDigest[:]), Size: int64(len(appBinary))},
+		"mithra-installer-linux-amd64": {SHA256: hex.EncodeToString(installerDigest[:]), Size: int64(len(installerBinary))},
+	}}
+	raw, err := CanonicalManifest(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signature := ed25519.Sign(privateKey, raw)
+	facts := healthyFacts()
+	options := Options{Operation: Install, Root: root, Proxy: AppOnly, Port: 18090, AllowedEmails: []string{"owner@example.com"}, ResendFrom: "Mithra <mail@example.com>"}
+	plan, err := BuildPlan(options, facts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release := ReleaseInstall{ArtifactName: "mithra-linux-amd64", InstallerName: "mithra-installer-linux-amd64", Artifact: appBinary, Installer: installerBinary, Manifest: raw, Signature: signature, PublisherKey: publicKey, ResendCredential: "resend-first"}
+	if err := InstallRelease(plan, release); err != nil {
+		t.Fatal(err)
+	}
+	paths := OwnedPaths(root, AppOnly)
+	masterBefore, err := os.ReadFile(paths.MasterKey)
+	if err != nil || strings.TrimSpace(string(masterBefore)) == "" {
+		t.Fatalf("master key = %q err=%v", masterBefore, err)
+	}
+	if got, _ := os.ReadFile(paths.Version); string(got) != "v1.0.0\n" {
+		t.Fatalf("version = %q", got)
+	}
+	if err := os.MkdirAll(paths.Data, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	dataMarker := filepath.Join(paths.Data, "household")
+	if err := os.WriteFile(dataMarker, []byte("preserve"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	facts.MithraInstalled, facts.DBExists, facts.KeyExists, facts.BackupExists = true, true, true, true
+	reconfigure, err := BuildPlan(Options{Operation: Reconfigure, Root: root, Proxy: AppOnly, Port: 18090, AllowedEmails: []string{"owner@example.com"}, ResendFrom: "Mithra <new@example.com>"}, facts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release.ResendCredential = "resend-rotated"
+	if err := InstallRelease(reconfigure, release); err != nil {
+		t.Fatal(err)
+	}
+	masterAfter, _ := os.ReadFile(paths.MasterKey)
+	dataAfter, _ := os.ReadFile(dataMarker)
+	resendAfter, _ := os.ReadFile(paths.ResendKey)
+	if string(masterAfter) != string(masterBefore) || string(dataAfter) != "preserve" || string(resendAfter) != "resend-rotated" {
+		t.Fatalf("reconfigure changed recovery state master=%t data=%q resend=%q", string(masterAfter) != string(masterBefore), dataAfter, resendAfter)
+	}
+	uninstall, err := BuildPlan(Options{Operation: Uninstall, Root: root, Proxy: AppOnly}, facts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveRuntime(uninstall); err != nil {
+		t.Fatal(err)
+	}
+	facts.MithraInstalled = false
+	if exists(paths.Binary) || exists(paths.ResendKey) || !exists(paths.MasterKey) || !exists(dataMarker) {
+		t.Fatalf("uninstall boundary binary=%t resend=%t key=%t data=%t", exists(paths.Binary), exists(paths.ResendKey), exists(paths.MasterKey), exists(dataMarker))
+	}
+	purge, err := BuildPlan(Options{Operation: Purge, Root: root, Proxy: AppOnly, ConfirmPurge: true}, facts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := PurgeRecovery(purge); err != nil {
+		t.Fatal(err)
+	}
+	if exists(paths.MasterKey) || exists(paths.Data) || exists(paths.Backups) {
+		t.Fatal("confirmed recovery targets remain after purge")
+	}
+}
+
+func TestBackupRestoreAuthenticatesGenerationReconcilesDeletionAndClearsAccess(t *testing.T) {
+	ctx := context.Background()
+	key := make([]byte, 32)
+	for index := range key {
+		key[index] = byte(index + 1)
+	}
+	sourceRoot := t.TempDir()
+	paths := OwnedPaths(sourceRoot, AppOnly)
+	if err := os.MkdirAll(paths.Data, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	db, err := database.Open(ctx, paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stamp := "2026-07-18T00:00:00Z"
+	if _, err := db.Exec(`INSERT INTO users(id,email,status,password_hash,created_at,updated_at) VALUES('owner','owner@example.com','active','password-secret',?,?)`, stamp, stamp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO households(id,status,owner_user_id,created_at,updated_at) VALUES('home','active','owner',?,?)`, stamp, stamp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO household_members(household_id,user_id,role,created_at) VALUES('home','owner','owner',?)`, stamp); err != nil {
+		t.Fatal(err)
+	}
+	store, err := storage.New(db, paths.Sources, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := store.Store(ctx, policy.ActorScope{ActorID: "owner", HouseholdID: "home", Role: "owner"}, []byte("must stay deleted"), storage.Metadata{Family: "text", Version: 1, Visibility: policy.Shared, LocatorKind: "source", LocatorValue: "fixture"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal, err := imports.NewDeletionJournal(paths.Journal, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO browser_sessions(token_hash,csrf_hash,user_id,expires_at,created_at) VALUES(?,?,?,?,?)`, strings.Repeat("a", 64), strings.Repeat("b", 64), "owner", "2027-01-01T00:00:00Z", stamp); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	archive, err := CreateBackup(ctx, paths, key, time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.Append(imports.DeletionIntent{ID: "delete-1", HouseholdID: "home", OwnerID: "owner", SourceID: source.ID, Digest: source.PlaintextDigest, CreatedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	archiveRaw, err := os.ReadFile(archive)
+	if err != nil || strings.Contains(string(archiveRaw), "SQLite format 3") {
+		t.Fatalf("backup is not encrypted err=%v", err)
+	}
+	targetRoot := t.TempDir()
+	target := OwnedPaths(targetRoot, AppOnly)
+	if err := os.MkdirAll(target.Data, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyRegular(paths.Journal, target.Journal, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := RestoreBackup(ctx, target, archive, key, []string{"owner@example.com"}, func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := database.Open(ctx, target.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close()
+	var password, status string
+	if err := restored.QueryRow(`SELECT password_hash,status FROM users WHERE email='owner@example.com'`).Scan(&password, &status); err != nil || password != "" || status != "pending" {
+		t.Fatalf("restored access password=%q status=%q err=%v", password, status, err)
+	}
+	var sessions, sources int
+	_ = restored.QueryRow(`SELECT COUNT(*) FROM browser_sessions`).Scan(&sessions)
+	_ = restored.QueryRow(`SELECT COUNT(*) FROM sources WHERE id=?`, source.ID).Scan(&sources)
+	if sessions != 0 || sources != 0 {
+		t.Fatalf("restored sessions=%d deleted sources=%d", sessions, sources)
+	}
+	truncated := filepath.Join(t.TempDir(), "truncated.mbackup")
+	raw, _ := os.ReadFile(archive)
+	if err := os.WriteFile(truncated, raw[:len(raw)/2], 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := RestoreBackup(ctx, OwnedPaths(t.TempDir(), AppOnly), truncated, key, []string{"owner@example.com"}, nil); err == nil {
+		t.Fatal("truncated backup restored")
+	}
+}
+
+func TestRestoreHealthFailureKeepsCurrentGeneration(t *testing.T) {
+	ctx := context.Background()
+	key := make([]byte, 32)
+	for index := range key {
+		key[index] = byte(index + 1)
+	}
+	sourceRoot := t.TempDir()
+	paths := OwnedPaths(sourceRoot, AppOnly)
+	if err := os.MkdirAll(paths.Sources, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	db, err := database.Open(ctx, paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	journal, err := imports.NewDeletionJournal(paths.Journal, key)
+	if err != nil || journal == nil {
+		t.Fatal(err)
+	}
+	archive, err := CreateBackup(ctx, paths, key, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetRoot := t.TempDir()
+	target := OwnedPaths(targetRoot, AppOnly)
+	if err := os.MkdirAll(target.Data, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(target.Data, "current")
+	if err := os.WriteFile(marker, []byte("stable"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	healthCalls := 0
+	err = RestoreBackup(ctx, target, archive, key, []string{"owner@example.com"}, func() error {
+		healthCalls++
+		if healthCalls == 1 {
+			return errors.New("unhealthy")
+		}
+		return nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "previous generation restored") {
+		t.Fatalf("health rollback error = %v", err)
+	}
+	if got, _ := os.ReadFile(marker); string(got) != "stable" {
+		t.Fatalf("current generation = %q", got)
+	}
+}
