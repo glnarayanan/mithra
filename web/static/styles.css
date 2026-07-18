@@ -631,6 +631,245 @@ h2 {
   font: inherit;
 }
 
+.planning-main {
+  padding-bottom: clamp(3rem, 8vw, 6rem);
+}
+
+.planning-heading {
+  padding: clamp(2.5rem, 7vw, 5rem) 0 clamp(2rem, 5vw, 3.5rem);
+  background: linear-gradient(135deg, rgb(224 233 223 / 55%), transparent 62%);
+}
+
+.planning-heading-row,
+.calendar-toolbar,
+.calendar-controls,
+.calendar-view-switcher,
+.event-actions {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.planning-heading h1 {
+  max-width: 14ch;
+  font-size: clamp(2.5rem, 6vw, 4.75rem);
+}
+
+.planning-timezone {
+  max-width: 24rem;
+  margin: 0;
+  color: var(--muted-ink);
+}
+
+.planning-content {
+  display: grid;
+  gap: clamp(2.5rem, 6vw, 4.5rem);
+  padding-top: clamp(2rem, 5vw, 3.5rem);
+}
+
+.calendar-section,
+.plans-section {
+  min-width: 0;
+}
+
+.calendar-toolbar h2,
+.plans-section h2 {
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+}
+
+.calendar-controls a,
+.calendar-view-switcher a,
+.event-actions a {
+  color: var(--moss);
+  font-weight: 700;
+}
+
+.calendar-view-switcher {
+  justify-content: flex-start;
+  margin: 1rem 0;
+}
+
+.calendar-view-switcher a {
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  text-decoration: none;
+}
+
+.calendar-view-switcher a[aria-current="page"] {
+  background: var(--moss-wash);
+  color: var(--ink);
+}
+
+.calendar-weekdays,
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.calendar-weekdays span {
+  padding: 0.5rem;
+  color: var(--muted-ink);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.calendar-day {
+  min-width: 0;
+  min-height: 8.5rem;
+  padding: 0.55rem;
+  border-top: 0.0625rem solid var(--line);
+  border-left: 0.0625rem solid var(--line);
+  background: rgb(255 253 248 / 50%);
+}
+
+.calendar-day:nth-child(7n) {
+  border-right: 0.0625rem solid var(--line);
+}
+
+.calendar-day:nth-last-child(-n + 7) {
+  border-bottom: 0.0625rem solid var(--line);
+}
+
+.calendar-day-muted {
+  color: var(--muted-ink);
+  background: transparent;
+}
+
+.calendar-day-today {
+  box-shadow: inset 0 0 0 0.125rem var(--terracotta);
+}
+
+.calendar-day-number {
+  display: inline-grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.calendar-day-events,
+.calendar-overflow ol {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.calendar-day-events a,
+.calendar-overflow a {
+  display: block;
+  overflow: hidden;
+  padding: 0.25rem 0.35rem;
+  border-radius: 0.35rem;
+  background: var(--moss-wash);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-day-events span,
+.calendar-overflow span {
+  display: block;
+  color: var(--muted-ink);
+  font-size: 0.68rem;
+}
+
+.calendar-overflow summary {
+  margin-top: 0.35rem;
+  color: var(--moss);
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.calendar-agenda {
+  display: grid;
+}
+
+.calendar-mobile-agenda {
+  display: none;
+}
+
+.agenda-event {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.45fr) minmax(12rem, 1fr) minmax(12rem, 0.7fr);
+  gap: 1rem;
+  padding: 1rem 0;
+  border-bottom: 0.0625rem solid var(--line);
+}
+
+.agenda-event time,
+.agenda-event p {
+  margin: 0;
+  color: var(--muted-ink);
+}
+
+.agenda-event h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.event-actions {
+  align-items: flex-start;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+.calendar-conflict,
+.plan-constraint {
+  color: var(--terracotta) !important;
+  font-weight: 700;
+}
+
+.calendar-sync-note {
+  color: var(--muted-ink);
+  font-size: 0.875rem;
+}
+
+.plan-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.plan-card {
+  min-width: 0;
+  padding: clamp(1rem, 3vw, 1.5rem);
+  border: 0.0625rem solid var(--line);
+  border-radius: 1rem;
+  background: var(--paper);
+}
+
+.plan-card > p,
+.plan-card h3 {
+  margin: 0;
+}
+
+.plan-card > p {
+  color: var(--muted-ink);
+}
+
+.plan-card ol {
+  display: grid;
+  gap: 0.75rem;
+  margin: 1rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.plan-card li span,
+.plan-card li time,
+.plan-card li small {
+  display: block;
+  color: var(--muted-ink);
+}
+
 .health-correction-form button {
   grid-column: 1 / -1;
   background: var(--moss);
@@ -879,6 +1118,28 @@ h2 {
 
   .health-conflict-list > li,
   .health-correction-form {
+    grid-template-columns: 1fr;
+  }
+
+  .planning-heading-row,
+  .calendar-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .calendar-wide-view {
+    display: none;
+  }
+
+  .calendar-mobile-agenda {
+    display: grid;
+  }
+
+  .agenda-event {
+    grid-template-columns: 1fr;
+  }
+
+  .plan-grid {
     grid-template-columns: 1fr;
   }
 }

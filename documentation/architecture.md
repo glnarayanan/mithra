@@ -107,6 +107,22 @@ The health lens reports only stored observations and dates, links every item to
 an authorized source, and maintains a visible boundary against diagnosis,
 clinical interpretation, or treatment recommendations.
 
+## Planning domain
+
+`internal/planning` stores goals, plans, milestones, calendar events, owners,
+dependencies, constraints, and completion state in separate typed tables. One
+authorized eligible-event query feeds month, week, and agenda presentations;
+personal records remain owner-only, while shared records remain visible to both
+active adults. Deterministic overlap checks flag only events assigned to a
+common owner and never turn the calendar into a generic reminder queue.
+
+The household owner confirms one IANA timezone in Settings; browser detection
+is only a prefilled suggestion and is never saved without that form submission.
+Calendar exports implement the required RFC 5545 event subset with CRLF line
+endings, escaping, UTF-8-safe folding, and correct exclusive all-day end dates.
+Google Calendar links open prefilled drafts for review. Mithra stores no OAuth
+token, calendar credential, subscription, or background synchronization state.
+
 ## Browser shell
 
 `web/templates/shell.html`, `web/static/styles.css`, and `web/static/app.js`
@@ -118,8 +134,9 @@ updates with `textContent`, never HTML, so untrusted future import/model text
 remains text.
 
 Authentication, encrypted source infrastructure, durable jobs, the OpenAI
-boundary, typed finance, and typed health now build on this runtime. Planning,
-capture, import, and coaching services remain in their dedicated units.
+boundary, typed finance, typed health, and typed planning now build on this
+runtime. Capture, import, and coaching services remain in their dedicated
+units.
 
 ## Verification
 

@@ -26,6 +26,7 @@ import (
 	"github.com/glnarayanan/mithra/internal/finance"
 	"github.com/glnarayanan/mithra/internal/health"
 	"github.com/glnarayanan/mithra/internal/jobs"
+	"github.com/glnarayanan/mithra/internal/planning"
 	"github.com/glnarayanan/mithra/internal/providers"
 	"github.com/glnarayanan/mithra/internal/secrets"
 	"github.com/glnarayanan/mithra/internal/storage"
@@ -66,6 +67,7 @@ type App struct {
 	jobs             *jobs.Service
 	finance          *finance.Service
 	healthRecords    *health.Service
+	planningRecords  *planning.Service
 	origin           *url.URL
 	secure           bool
 	trustedProxy     bool
@@ -103,7 +105,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		return nil, err
 	}
 
-	templates, err := template.ParseFS(web.Files, "templates/shell.html", "templates/auth/*.html", "templates/finance/*.html", "templates/health/*.html", "templates/settings/*.html")
+	templates, err := template.ParseFS(web.Files, "templates/shell.html", "templates/auth/*.html", "templates/finance/*.html", "templates/health/*.html", "templates/planning/*.html", "templates/settings/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse embedded templates: %w", err)
 	}
@@ -147,7 +149,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		_ = db.Close()
 		return nil, errors.New("reconcile source storage")
 	}
-	return &App{db: db, templates: templates, logger: log.Default(), auth: service, mailer: mailer, providerSettings: providerSettings, openAIClient: cfg.OpenAIClient, sources: sources, jobs: jobs.New(db), finance: finance.New(db), healthRecords: health.New(db), origin: origin, secure: cfg.SecureCookies, trustedProxy: cfg.TrustedProxy}, nil
+	return &App{db: db, templates: templates, logger: log.Default(), auth: service, mailer: mailer, providerSettings: providerSettings, openAIClient: cfg.OpenAIClient, sources: sources, jobs: jobs.New(db), finance: finance.New(db), healthRecords: health.New(db), planningRecords: planning.New(db), origin: origin, secure: cfg.SecureCookies, trustedProxy: cfg.TrustedProxy}, nil
 }
 
 // Close prevents future readiness responses and closes the owned database.
@@ -180,6 +182,8 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("/finance", a.financeLens)
 	mux.HandleFunc("/health", a.healthLens)
 	mux.HandleFunc("/health/correct", a.correctHealthObservation)
+	mux.HandleFunc("/planning", a.planningLens)
+	mux.HandleFunc("/planning/events/", a.planningICS)
 	mux.HandleFunc("/sources/", a.sourceFile)
 	mux.HandleFunc("/", a.shell)
 	return withHTTPGuards(mux, a.logger)
@@ -323,6 +327,7 @@ var assetContentTypes = map[string]string{
 	"app.js":      "application/javascript; charset=utf-8",
 	"finance.js":  "application/javascript; charset=utf-8",
 	"health.js":   "application/javascript; charset=utf-8",
+	"planning.js": "application/javascript; charset=utf-8",
 	"favicon.svg": "image/svg+xml",
 }
 

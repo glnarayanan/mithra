@@ -8,6 +8,7 @@
     <meta name="referrer" content="same-origin">
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/assets/styles.css">
+    <script src="/assets/planning.js" defer></script>
     <title>Settings · Mithra</title>
   </head>
   <body>
@@ -29,6 +30,20 @@
           <button type="submit">Send invitation</button>
         </form>
         {{else}}<p class="introduction-copy">Only the household owner can send an invitation.</p>{{end}}
+        <div class="settings-divider" aria-hidden="true"></div>
+        <div id="timezone">
+          <p class="eyebrow">Household calendar</p>
+          <h2>Timezone</h2>
+          <p class="introduction-copy">Confirm the timezone Mithra should use for timed household events. Detection happens only in this browser and is not saved until you choose.</p>
+          {{if .Owner}}<form method="post" action="/settings" class="auth-form">
+            <input type="hidden" name="csrf" value="{{.CSRF}}">
+            <input type="hidden" name="action" value="save_timezone">
+            <label for="household-timezone">IANA timezone</label>
+            <input id="household-timezone" name="timezone" value="{{.Timezone}}" maxlength="64" autocomplete="off" data-timezone-input required aria-describedby="timezone-help">
+            <p id="timezone-help" class="field-help">Use a timezone such as Asia/Kolkata or Europe/London. <span data-timezone-detected hidden>The browser-detected value is ready for your confirmation.</span></p>
+            <button type="submit">Confirm timezone</button>
+          </form>{{else}}<p class="introduction-copy">{{if .Timezone}}Household dates use {{.Timezone}}.{{else}}The household owner has not confirmed a timezone yet.{{end}}</p>{{end}}
+        </div>
         <div class="settings-divider" aria-hidden="true"></div>
         <p class="eyebrow">AI coaching</p>
         <h2>OpenAI connection</h2>

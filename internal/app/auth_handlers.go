@@ -40,6 +40,7 @@ type SettingsView struct {
 	Members          []household.Member
 	Owner            bool
 	OpenAIConfigured bool
+	Timezone         string
 	CSRF             string
 	Status           string
 	Error            string
@@ -271,6 +272,8 @@ func (a *App) settings(w http.ResponseWriter, r *http.Request) {
 			a.saveOpenAISetting(w, r, scope, csrf)
 		case "remove_openai":
 			a.removeOpenAISetting(w, r, scope, csrf)
+		case "save_timezone":
+			a.saveHouseholdTimezone(w, r, scope, csrf)
 		default:
 			a.renderSettings(r.Context(), w, scope, csrf, "", "Choose one available settings action.")
 		}
@@ -483,7 +486,13 @@ func (a *App) renderSettings(ctx context.Context, w http.ResponseWriter, scope p
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
-	a.renderTemplate(ctx, w, "settings.html", SettingsView{Members: members, Owner: scope.Role == "owner", OpenAIConfigured: configured, CSRF: csrf, Status: status, Error: problem})
+	timezone, err := a.planningRecords.GetTimezone(ctx, scope)
+	if err != nil {
+		logRequestError(a.logger, ctx, "settings_timezone_state_failed")
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	a.renderTemplate(ctx, w, "settings.html", SettingsView{Members: members, Owner: scope.Role == "owner", OpenAIConfigured: configured, Timezone: timezone, CSRF: csrf, Status: status, Error: problem})
 }
 
 func (a *App) renderTemplate(ctx context.Context, w http.ResponseWriter, name string, view any) {

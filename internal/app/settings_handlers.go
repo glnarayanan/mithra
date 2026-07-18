@@ -52,3 +52,16 @@ func (a *App) removeOpenAISetting(w http.ResponseWriter, r *http.Request, scope 
 	}
 	a.renderSettings(r.Context(), w, scope, csrf, "OpenAI was disconnected. Deterministic household records remain available.", "")
 }
+
+func (a *App) saveHouseholdTimezone(w http.ResponseWriter, r *http.Request, scope policy.ActorScope, csrf string) {
+	zone := strings.TrimSpace(r.PostForm.Get("timezone"))
+	if zone == "" || len(zone) > 64 {
+		a.renderSettings(r.Context(), w, scope, csrf, "", "Enter a valid IANA timezone such as Asia/Kolkata.")
+		return
+	}
+	if err := a.planningRecords.SetTimezone(r.Context(), scope, zone); err != nil {
+		a.renderSettings(r.Context(), w, scope, csrf, "", "Only the household owner can confirm a valid timezone.")
+		return
+	}
+	a.renderSettings(r.Context(), w, scope, csrf, "Household calendar timezone confirmed as "+zone+".", "")
+}
