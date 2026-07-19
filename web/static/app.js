@@ -12,10 +12,15 @@
     if (!root || typeof root.querySelectorAll !== "function") {
       return [];
     }
+    var seen = Object.create(null);
     return Array.prototype.map.call(root.querySelectorAll("[data-quick-destination]"), function (link) {
       return { label: String(link.textContent || "").trim(), path: String(link.getAttribute("href") || "") };
     }).filter(function (destination) {
-      return destination.label && destination.path.charAt(0) === "/";
+      if (!destination.label || destination.path.charAt(0) !== "/" || seen[destination.path]) {
+        return false;
+      }
+      seen[destination.path] = true;
+      return true;
     });
   }
 

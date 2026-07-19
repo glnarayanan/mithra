@@ -20,6 +20,7 @@ test("quick navigation reads the server navigation and filters labels", () => {
   const links = [
     { textContent: "Family Brief", getAttribute: () => "/" },
     { textContent: "Week in Review", getAttribute: () => "/review" },
+    { textContent: "Family Brief", getAttribute: () => "/" },
   ];
   const destinations = app.navigationDestinations({ querySelectorAll: () => links });
 

@@ -376,7 +376,7 @@ func markConflicts(ctx context.Context, tx *sql.Tx, householdID string, facts []
 			rows.Close()
 			return err
 		}
-		mark("health", first, second, "reported units differ; compare the source context")
+		mark("health", first, second, "reported units differ")
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
@@ -432,7 +432,7 @@ func deterministic(facts []Fact, asOf time.Time) Narrative {
 		}
 		if f.Issue != "" {
 			issue := item
-			issue.Copy = "The source needs a correction: " + f.Issue + "."
+			issue.Copy = "Check this update: " + f.Issue + "."
 			out.Inconsistencies = append(out.Inconsistencies, issue)
 		}
 		if d, err := time.Parse("2006-01-02", f.Date); err == nil && !d.Before(day(asOf)) && d.Before(day(asOf).AddDate(0, 0, 31)) {

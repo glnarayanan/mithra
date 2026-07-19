@@ -662,6 +662,10 @@ kbd {
     justify-content: stretch;
   }
 
+  .app-toolbar .account-menu {
+    display: none;
+  }
+
   .app-toolbar [data-quick-navigation-mount] {
     flex: 1;
   }
