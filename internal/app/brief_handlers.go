@@ -219,7 +219,7 @@ func itemView(item coaching.Item, evidence map[string]coaching.Fact) CoachingIte
 	if len(item.EvidenceIDs) > 0 {
 		if fact, ok := evidence[item.EvidenceIDs[0]]; ok {
 			view.EvidenceURL = sourceURL(fact.SourceID)
-			view.EvidenceLabel = "View source"
+			view.EvidenceLabel = "View original"
 		}
 	}
 	return view

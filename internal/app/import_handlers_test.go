@@ -73,7 +73,7 @@ func TestCSVImportSendsExtractedTextThenCommitsAtomically(t *testing.T) {
 	}
 
 	duplicate := serve(application, importUploadRequest(t, session, "renamed.csv", "text/csv", csv, "shared"))
-	if duplicate.Code != http.StatusOK || !strings.Contains(duplicate.Body.String(), "Nothing was duplicated or sent") || providerCalls != 1 {
+	if duplicate.Code != http.StatusOK || !strings.Contains(duplicate.Body.String(), "Nothing was copied or sent") || providerCalls != 1 {
 		t.Fatalf("duplicate = %d calls=%d %q", duplicate.Code, providerCalls, duplicate.Body.String())
 	}
 	preparedDelete := serve(application, importForm(session, url.Values{"action": {"prepare_delete"}, "import_id": {importID}}))

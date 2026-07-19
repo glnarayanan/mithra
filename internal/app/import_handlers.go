@@ -163,12 +163,12 @@ func (a *App) uploadImport(r *http.Request, w http.ResponseWriter, scope policy.
 		message := "That file is corrupt, unsupported, password-protected, or exceeds Mithra's safe parsing limits. Nothing was saved or sent."
 		if errors.Is(err, imports.ErrScannedPDF) {
 			if a.imports.ExactExists(r.Context(), scope, visibility, documentDigest(content)) {
-				a.renderImports(r, w, scope, csrf, "", "This exact file is already present in the same visibility scope. Nothing was duplicated or sent.")
+				a.renderImports(r, w, scope, csrf, "", "This file has already been imported with the same privacy setting. Nothing was copied or sent.")
 				return
 			}
 			source, storeErr := a.sources.Store(r.Context(), scope, content, storage.Metadata{Family: "pdf", Version: 1, Visibility: visibility, LocatorKind: "source", LocatorValue: "document"})
 			if storeErr != nil {
-				a.renderImports(r, w, scope, csrf, "", "The encrypted PDF could not be staged. Nothing was sent.")
+				a.renderImports(r, w, scope, csrf, "", "Mithra could not prepare the encrypted PDF. Nothing was sent. Try uploading it again.")
 				return
 			}
 			consent, consentErr := a.imports.StageVisualConsent(r.Context(), scope, source, filepath.Base(files[0].Filename))
@@ -184,32 +184,32 @@ func (a *App) uploadImport(r *http.Request, w http.ResponseWriter, scope policy.
 		return
 	}
 	if a.imports.ExactExists(r.Context(), scope, visibility, document.Digest) {
-		a.renderImports(r, w, scope, csrf, "", "This exact file is already present in the same visibility scope. Nothing was duplicated or sent.")
+		a.renderImports(r, w, scope, csrf, "", "This file has already been imported with the same privacy setting. Nothing was copied or sent.")
 		return
 	}
 	source, err := a.sources.Store(r.Context(), scope, content, storage.Metadata{Family: string(document.Kind), Version: 1, Visibility: visibility, LocatorKind: "source", LocatorValue: "document"})
 	if err != nil {
-		a.renderImports(r, w, scope, csrf, "", "The encrypted source could not be staged. Nothing was sent.")
+		a.renderImports(r, w, scope, csrf, "", "Mithra could not prepare the encrypted file. Nothing was sent. Try uploading it again.")
 		return
 	}
 	proposals, err := a.analyzeImport(r.Context(), scope, document)
 	if err != nil {
 		_ = a.sources.Delete(r.Context(), scope, source.ID)
 		logRequestError(a.logger, r.Context(), "import_analysis_failed")
-		a.renderImports(r, w, scope, csrf, "", "Mithra could not map that file. The staged source was deleted; try again when the AI connection is available.")
+		a.renderImports(r, w, scope, csrf, "", "Mithra could not organise that file, so the uploaded copy was deleted. Check the OpenAI connection in Settings and try again.")
 		return
 	}
 	review, err := a.imports.Stage(r.Context(), scope, source, filepath.Base(files[0].Filename), proposals, boundedField(r, "replaces_import_id", 64))
 	if err != nil {
 		_ = a.sources.Delete(r.Context(), scope, source.ID)
 		if errors.Is(err, imports.ErrDuplicate) {
-			a.renderImports(r, w, scope, csrf, "", "This exact file is already present in the same visibility scope. Nothing was duplicated.")
+			a.renderImports(r, w, scope, csrf, "", "This file has already been imported with the same privacy setting. Nothing was copied.")
 			return
 		}
-		a.renderImports(r, w, scope, csrf, "", "The review could not be staged safely. Nothing was imported.")
+		a.renderImports(r, w, scope, csrf, "", "Mithra could not prepare this review. Nothing was imported. Try uploading the file again.")
 		return
 	}
-	a.renderImportReview(r, w, scope, csrf, review.ID, "Mithra prepared a review. Check every highlighted value before importing.", "")
+	a.renderImportReview(r, w, scope, csrf, review.ID, "Your review is ready. Check every highlighted value before importing.", "")
 }
 
 func (a *App) confirmVisualImport(r *http.Request, w http.ResponseWriter, scope policy.ActorScope, csrf string) {
@@ -242,10 +242,10 @@ func (a *App) confirmVisualImport(r *http.Request, w http.ResponseWriter, scope 
 	review, err := a.imports.FinishVisual(r.Context(), scope, id, version+1, proposals)
 	if err != nil {
 		_ = a.imports.AbortVisual(r.Context(), scope, id, version+1)
-		a.renderImports(r, w, scope, csrf, "", "The visual PDF review could not be staged safely. Nothing was imported.")
+		a.renderImports(r, w, scope, csrf, "", "Mithra could not prepare this PDF review. Nothing was imported. Upload the file again to retry.")
 		return
 	}
-	a.renderImportReview(r, w, scope, csrf, review.ID, "Mithra prepared a review from the explicitly confirmed PDF. Check every highlighted value.", "")
+	a.renderImportReview(r, w, scope, csrf, review.ID, "Your PDF review is ready. Check every highlighted value before importing.", "")
 }
 
 func (a *App) correctImport(r *http.Request, w http.ResponseWriter, scope policy.ActorScope, csrf string) {
@@ -317,7 +317,7 @@ func (a *App) renderImportDeletion(r *http.Request, w http.ResponseWriter, scope
 }
 
 func importReviewView(review imports.Review) ImportReviewView {
-	out := ImportReviewView{ID: review.ID, FileName: review.FileName, Version: review.Version, Summary: fmt.Sprintf("%d proposed records · %s", len(review.Proposals.Records), map[policy.Visibility]string{policy.Personal: "Only you", policy.Shared: "Shared"}[review.Visibility])}
+	out := ImportReviewView{ID: review.ID, FileName: review.FileName, Version: review.Version, Summary: fmt.Sprintf("%d entries to review · %s", len(review.Proposals.Records), map[policy.Visibility]string{policy.Personal: "Only you", policy.Shared: "Shared"}[review.Visibility])}
 	for i, p := range review.Proposals.Records {
 		out.Records = append(out.Records, importRecordView(i, p))
 	}

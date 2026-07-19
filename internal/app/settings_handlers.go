@@ -39,7 +39,7 @@ func (a *App) saveOpenAISetting(w http.ResponseWriter, r *http.Request, scope po
 		return client.Validate(ctx)
 	})
 	if err != nil {
-		a.renderSettings(r.Context(), w, scope, csrf, "", "That OpenAI key could not be validated. The current connection was not changed.")
+		a.renderSettings(r.Context(), w, scope, csrf, "", "OpenAI did not accept that key. Your existing connection is unchanged. Check the key and try again.")
 		return
 	}
 	a.renderSettings(r.Context(), w, scope, csrf, "OpenAI is connected. Mithra never displays the saved key.", "")
@@ -47,7 +47,7 @@ func (a *App) saveOpenAISetting(w http.ResponseWriter, r *http.Request, scope po
 
 func (a *App) removeOpenAISetting(w http.ResponseWriter, r *http.Request, scope policy.ActorScope, csrf string) {
 	if err := a.providerSettings.RemoveOpenAI(r.Context(), scope); err != nil {
-		a.renderSettings(r.Context(), w, scope, csrf, "", "Only the active household owner can remove the OpenAI connection.")
+		a.renderSettings(r.Context(), w, scope, csrf, "", "Only the household owner can disconnect OpenAI.")
 		return
 	}
 	a.renderSettings(r.Context(), w, scope, csrf, "OpenAI was disconnected. Your saved household records remain available.", "")
