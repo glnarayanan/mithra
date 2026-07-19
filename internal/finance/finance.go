@@ -589,6 +589,7 @@ func summarize(records []Record, asOf time.Time) (Summary, error) {
 		if record.IncompleteReason != "" {
 			summary.Incomplete++
 			summary.Issues = append(summary.Issues, Issue{RecordID: record.ID, Kind: record.Kind, Label: record.Label, Reason: record.IncompleteReason, SourceID: record.SourceID, LocatorKind: record.LocatorKind, LocatorValue: record.LocatorValue})
+			continue
 		} else {
 			summary.Complete++
 		}

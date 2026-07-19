@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -48,8 +49,8 @@ func TestFinanceLensRendersEmptyPartialAndExactScopedStates(t *testing.T) {
 			t.Fatalf("owner finance missing %q: %s", text, body)
 		}
 	}
-	if strings.Contains(body, "twelve") || strings.Contains(body, "$125") {
-		t.Fatalf("finance rendered source text or a currency symbol: %s", body)
+	if !strings.Contains(body, `name="amount" value="twelve"`) || strings.Contains(body, "$125") {
+		t.Fatalf("finance correction omitted the current value or rendered a currency symbol: %s", body)
 	}
 
 	invite := serve(application, settingsPost(ownerSession, "partner@example.com"))
@@ -79,6 +80,33 @@ func TestFinanceLensKeepsErrorsGenericAndEscaped(t *testing.T) {
 	application.renderFinance(context.Background(), response, FinanceView{Scope: "all", Error: `<script>alert("private")</script>`})
 	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), `<script>alert`) || !strings.Contains(response.Body.String(), "&lt;script&gt;") {
 		t.Fatalf("error finance = %d %q", response.Code, response.Body.String())
+	}
+}
+
+func TestFinanceIssueCanBeCorrectedFromTheLens(t *testing.T) {
+	application, mailer := newAuthTestApp(t, "owner@example.com")
+	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
+	owner := ownerScope(t, application, session)
+	source, err := application.sources.Store(context.Background(), owner, []byte("receipt"), storage.Metadata{Family: "text", Version: 1, Visibility: policy.Personal, LocatorKind: "source", LocatorValue: "capture"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := application.finance.Create(context.Background(), owner, finance.Draft{Kind: finance.Spending, Visibility: policy.Personal, Label: "Household purchase", Category: "Household", Date: "20 July", AmountText: "125", Provenance: finance.Provenance{SourceID: source.ID, SourceFamily: source.Family, SourceVersion: source.Version, LocatorKind: "source", LocatorValue: source.LocatorValue}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := serve(application, authenticatedFinanceRequest(session, "/finance"))
+	if !strings.Contains(page.Body.String(), `action="/finance/correct"`) || !strings.Contains(page.Body.String(), `type="date"`) {
+		t.Fatalf("correction form missing: %q", page.Body.String())
+	}
+	values := url.Values{"csrf": {session.csrf.Value}, "record_id": {record.ID}, "version": {"1"}, "kind": {"spending"}, "date": {"2026-07-20"}, "amount": {"125"}}
+	corrected := serve(application, authForm(http.MethodPost, "/finance/correct", values, []*http.Cookie{session.session, session.csrf}))
+	if corrected.Code != http.StatusSeeOther || corrected.Header().Get("Location") != "/finance?corrected=1" {
+		t.Fatalf("correction response = %d %q", corrected.Code, corrected.Body.String())
+	}
+	var date, reason, sourceID string
+	if err := application.db.QueryRow(`SELECT spent_on,incomplete_reason,source_id FROM finance_spending WHERE active=1 AND supersedes_id=?`, record.ID).Scan(&date, &reason, &sourceID); err != nil || date != "2026-07-20" || reason != "" || sourceID != source.ID {
+		t.Fatalf("corrected record date=%q reason=%q source=%q err=%v", date, reason, sourceID, err)
 	}
 }
 

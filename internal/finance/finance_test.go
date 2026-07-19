@@ -219,7 +219,7 @@ func TestCurrencyContextAndDatabaseScopeBoundaries(t *testing.T) {
 	}
 }
 
-func TestMissingDateExcludesTrendButNotAnExactAmountTotal(t *testing.T) {
+func TestMissingDateExcludesRecordFromTotalsAndTrends(t *testing.T) {
 	fixture := newFinanceFixture(t)
 	source := fixture.source(t, fixture.owner, policy.Shared, []byte("undated spending"))
 	if _, err := fixture.service.Create(context.Background(), fixture.owner, Draft{Kind: Spending, Visibility: policy.Shared, Label: "Undated repair", Category: "Home", AmountText: "42.25", Provenance: Provenance{SourceID: source.ID, SourceFamily: "csv", SourceVersion: 1, LocatorKind: "row", LocatorValue: "2"}}); err != nil {
@@ -229,8 +229,8 @@ func TestMissingDateExcludesTrendButNotAnExactAmountTotal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := summary.Totals[Spending].PlainString(); got != "42.25" {
-		t.Fatalf("undated amount total = %s, want 42.25", got)
+	if got := summary.Totals[Spending].PlainString(); got != "0" {
+		t.Fatalf("undated amount total = %s, want 0", got)
 	}
 	if summary.Incomplete != 1 || len(summary.Issues) != 1 || summary.Issues[0].Reason != "date is missing" || len(summary.Trends) != 0 {
 		t.Fatalf("undated summary = %#v", summary)

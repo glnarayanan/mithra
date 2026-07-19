@@ -238,6 +238,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("/review/refresh", a.refreshWeek)
 	mux.HandleFunc("/notifications/nudge", a.updateNudge)
 	mux.HandleFunc("/finance", a.financeLens)
+	mux.HandleFunc("/finance/correct", a.correctFinanceRecord)
 	mux.HandleFunc("/health", a.healthLens)
 	mux.HandleFunc("/health/correct", a.correctHealthObservation)
 	mux.HandleFunc("/planning", a.planningLens)

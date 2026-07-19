@@ -26,6 +26,7 @@ type FinanceView struct {
 	Obligations     []FinanceObligationView
 	Issues          []FinanceIssueView
 	Records         []FinanceRecordView
+	Status          string
 	Error           string
 }
 
@@ -53,9 +54,8 @@ type FinanceObligationView struct {
 }
 
 type FinanceIssueView struct {
-	Label       string
-	Reason      string
-	EvidenceURL string
+	ID, Label, Kind, Reason, Date, Amount, EvidenceURL string
+	Version                                            int64
 }
 
 type FinanceRecordView struct {
@@ -92,7 +92,58 @@ func (a *App) financeLens(w http.ResponseWriter, r *http.Request) {
 		a.renderFinance(r.Context(), w, FinanceView{Navigation: navigationForPath("/finance"), CSRF: csrf, Scope: string(filter), Error: "Your information could not be loaded. Try again."})
 		return
 	}
-	a.renderFinance(r.Context(), w, financeView(summary, filter, csrf))
+	view := financeView(summary, filter, csrf)
+	if r.URL.Query().Get("corrected") == "1" {
+		view.Status = "The corrected date and number are now active. The original source remains linked."
+	} else if r.URL.Query().Get("correction") == "failed" {
+		view.Error = "That correction could not be saved. Reload the page and try again."
+	}
+	a.renderFinance(r.Context(), w, view)
+}
+
+func (a *App) correctFinanceRecord(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowedFor(w, "POST")
+		return
+	}
+	scope, _, ok := a.authenticated(r)
+	if !ok {
+		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+		return
+	}
+	if !a.validSessionMutation(r, a.sessionCookie(r)) {
+		http.Redirect(w, r, "/finance?correction=failed", http.StatusSeeOther)
+		return
+	}
+	id := boundedField(r, "record_id", 128)
+	kind := finance.Kind(boundedField(r, "kind", 32))
+	version, err := strconv.ParseInt(r.PostForm.Get("version"), 10, 64)
+	if err != nil || version < 1 || id == "" {
+		http.Redirect(w, r, "/finance?correction=failed", http.StatusSeeOther)
+		return
+	}
+	records, err := a.finance.List(r.Context(), scope, finance.AllRecords)
+	if err != nil {
+		http.Redirect(w, r, "/finance?correction=failed", http.StatusSeeOther)
+		return
+	}
+	var current *finance.Record
+	for index := range records {
+		if records[index].ID == id && records[index].Kind == kind && records[index].Version == version {
+			current = &records[index]
+			break
+		}
+	}
+	if current == nil {
+		http.Redirect(w, r, "/finance?correction=failed", http.StatusSeeOther)
+		return
+	}
+	_, err = a.finance.Correct(r.Context(), scope, kind, id, version, finance.Draft{Visibility: current.Visibility, Label: current.Label, Category: current.Category, Date: boundedField(r, "date", 10), EndDate: current.EndDate, Status: current.Status, AmountText: boundedField(r, "amount", 128), CurrencyContext: "", Provenance: finance.Provenance{SourceID: current.SourceID, SourceFamily: current.SourceFamily, SourceVersion: current.SourceVersion, LocatorKind: current.LocatorKind, LocatorValue: current.LocatorValue, GeneratedBy: "user", Model: current.Model, PromptVersion: current.PromptVersion, SchemaVersion: current.SchemaVersion}})
+	if err != nil {
+		http.Redirect(w, r, "/finance?correction=failed", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/finance?corrected=1", http.StatusSeeOther)
 }
 
 func (a *App) renderFinance(ctx context.Context, w http.ResponseWriter, view FinanceView) {
@@ -140,8 +191,13 @@ func financeView(summary finance.Summary, filter finance.ScopeFilter, csrf strin
 		date, _ := time.Parse("2006-01-02", record.Date)
 		view.Obligations = append(view.Obligations, FinanceObligationView{Name: record.Label, Amount: record.Amount.PlainString(), DateISO: record.Date, DateLabel: date.Format("2 Jan 2006"), EvidenceURL: sourceURL(record.SourceID)})
 	}
+	recordsByID := make(map[string]finance.Record, len(summary.Records))
+	for _, record := range summary.Records {
+		recordsByID[record.ID] = record
+	}
 	for _, issue := range summary.Issues {
-		view.Issues = append(view.Issues, FinanceIssueView{Label: issue.Label, Reason: issue.Reason, EvidenceURL: sourceURL(issue.SourceID)})
+		record := recordsByID[issue.RecordID]
+		view.Issues = append(view.Issues, FinanceIssueView{ID: record.ID, Label: issue.Label, Kind: string(issue.Kind), Reason: issue.Reason, Date: record.Date, Amount: record.OriginalAmount, Version: record.Version, EvidenceURL: sourceURL(issue.SourceID)})
 	}
 	for _, record := range summary.Records {
 		amount := "Excluded"
