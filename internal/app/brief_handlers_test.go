@@ -109,6 +109,37 @@ func TestFamilyBriefLoadsWithoutAIThenRefreshesEvidenceAndKeepsPartnerPrivateOut
 	}
 }
 
+func TestBriefOnboardingUsesProviderStateAndHouseholdRole(t *testing.T) {
+	application, mailer := newAuthTestApp(t, "owner@example.com", "partner@example.com")
+	ownerSession := activate(t, application, mailer, "owner@example.com", "owner secure password", nil)
+	owner := ownerScope(t, application, ownerSession)
+
+	ownerBrief := serve(application, coachingGET("/", ownerSession))
+	if ownerBrief.Code != http.StatusOK || !strings.Contains(ownerBrief.Body.String(), "Connect OpenAI to begin") || !strings.Contains(ownerBrief.Body.String(), `href="/settings#openai-title"`) {
+		t.Fatalf("owner onboarding = %d %q", ownerBrief.Code, ownerBrief.Body.String())
+	}
+
+	invite, err := application.auth.CreateInvitation(context.Background(), owner, "partner@example.com", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	partnerSession := activateInvitation(t, application, "partner secure password", bootstrapInvitation(t, application, invite.Token))
+	partnerBrief := serve(application, coachingGET("/", partnerSession))
+	if partnerBrief.Code != http.StatusOK || !strings.Contains(partnerBrief.Body.String(), "Ask your household owner to connect OpenAI") || strings.Contains(partnerBrief.Body.String(), `href="/settings#openai-title"`) {
+		t.Fatalf("partner onboarding = %d %q", partnerBrief.Code, partnerBrief.Body.String())
+	}
+
+	if err := application.providerSettings.ReplaceOpenAI(context.Background(), owner, "sk-onboarding-test-secret", func(context.Context, string) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	configured := serve(application, coachingGET("/", partnerSession))
+	for _, required := range []string{"Add your first update", `href="/capture"`, `href="/imports"`} {
+		if configured.Code != http.StatusOK || !strings.Contains(configured.Body.String(), required) {
+			t.Fatalf("configured onboarding missing %q: %d %q", required, configured.Code, configured.Body.String())
+		}
+	}
+}
+
 func TestCoachingRefreshRejectsUnsupportedEvidence(t *testing.T) {
 	application, mailer := newAuthTestApp(t, "owner@example.com")
 	session := activate(t, application, mailer, "owner@example.com", "owner secure password", nil)

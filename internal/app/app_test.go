@@ -184,7 +184,7 @@ func TestBriefRendersAccessibleNavigationEmptyStateAndEscapesStatus(t *testing.T
 	response := httptest.NewRecorder()
 	malicious := `</script><script>window.pwned = true</script>`
 
-	application.renderTemplate(context.Background(), response, "brief.html", BriefView{Navigation: navigationForPath("/"), Status: malicious, Freshness: "Up to date"})
+	application.renderTemplate(context.Background(), response, "brief.html", BriefView{Navigation: navigationForPath("/"), Status: malicious, Freshness: "Up to date", Owner: true})
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("shell status = %d, want %d", response.Code, http.StatusOK)
@@ -198,7 +198,8 @@ func TestBriefRendersAccessibleNavigationEmptyStateAndEscapesStatus(t *testing.T
 		`href="/planning"`,
 		`href="/assets/favicon.svg"`,
 		`aria-live="polite"`,
-		`Add your first update`,
+		`Connect OpenAI to begin`,
+		`href="/settings#openai-title"`,
 	} {
 		if !strings.Contains(body, required) {
 			t.Fatalf("shell is missing %q", required)
@@ -209,6 +210,21 @@ func TestBriefRendersAccessibleNavigationEmptyStateAndEscapesStatus(t *testing.T
 	}
 	if !strings.Contains(body, `&lt;/script&gt;&lt;script&gt;window.pwned = true&lt;/script&gt;`) {
 		t.Fatalf("shell did not render escaped status: %q", body)
+	}
+}
+
+func TestBriefOnboardingLeadsConfiguredHouseholdsToFirstValue(t *testing.T) {
+	t.Parallel()
+
+	application := newTestApp(t)
+	response := httptest.NewRecorder()
+	application.renderTemplate(context.Background(), response, "brief.html", BriefView{Navigation: navigationForPath("/"), AIConfigured: true})
+
+	body := response.Body.String()
+	for _, required := range []string{"Add your first update", "build your first Family Brief", `href="/capture"`, `href="/imports"`} {
+		if !strings.Contains(body, required) {
+			t.Fatalf("configured onboarding is missing %q", required)
+		}
 	}
 }
 
@@ -258,6 +274,30 @@ func TestEmbeddedFaviconIsServedWithoutBrowserConsoleFallback(t *testing.T) {
 	application.Handler().ServeHTTP(fallback, httptest.NewRequest(http.MethodGet, "/favicon.ico", nil))
 	if fallback.Code != http.StatusOK || fallback.Header().Get("Content-Type") != "image/svg+xml" {
 		t.Fatalf("favicon fallback = %d %q", fallback.Code, fallback.Header().Get("Content-Type"))
+	}
+}
+
+func TestEmbeddedAssetsRevalidateWithoutResendingTheirBody(t *testing.T) {
+	t.Parallel()
+
+	application := newTestApp(t)
+	first := httptest.NewRecorder()
+	application.Handler().ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/assets/styles.css", nil))
+
+	if first.Code != http.StatusOK || first.Body.Len() == 0 {
+		t.Fatalf("first asset response = %d, body bytes = %d", first.Code, first.Body.Len())
+	}
+	etag := first.Header().Get("ETag")
+	if etag == "" || first.Header().Get("Cache-Control") != "public, max-age=0, must-revalidate" {
+		t.Fatalf("asset cache headers = ETag %q, Cache-Control %q", etag, first.Header().Get("Cache-Control"))
+	}
+
+	revalidatedRequest := httptest.NewRequest(http.MethodGet, "/assets/styles.css", nil)
+	revalidatedRequest.Header.Set("If-None-Match", etag)
+	revalidated := httptest.NewRecorder()
+	application.Handler().ServeHTTP(revalidated, revalidatedRequest)
+	if revalidated.Code != http.StatusNotModified || revalidated.Body.Len() != 0 {
+		t.Fatalf("revalidated asset = %d, body bytes = %d", revalidated.Code, revalidated.Body.Len())
 	}
 }
 

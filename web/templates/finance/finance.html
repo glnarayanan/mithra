@@ -69,14 +69,14 @@
         {{if .Obligations}}
         <section class="finance-section" aria-labelledby="finance-obligations-title">
           <div class="section-heading"><div><p class="eyebrow">Coming up</p><h2 id="finance-obligations-title">Upcoming payments</h2></div><p>From dated records.</p></div>
-          <ol class="obligation-list">{{range .Obligations}}<li><time datetime="{{.DateISO}}">{{.DateLabel}}</time><div><strong>{{.Name}}</strong><span>{{.Amount}}</span></div><a href="{{.EvidenceURL}}">View source</a></li>{{end}}</ol>
+          <ol class="obligation-list">{{range .Obligations}}<li><time datetime="{{.DateISO}}">{{.DateLabel}}</time><div><strong>{{.Name}}</strong><span>{{.Amount}}</span></div><a href="{{.EvidenceURL}}">View original</a></li>{{end}}</ol>
         </section>
         {{end}}
 
         {{if .Issues}}
         <section class="finance-section incomplete-panel" aria-labelledby="finance-issues-title">
           <div class="section-heading"><div><p class="eyebrow">Worth checking</p><h2 id="finance-issues-title">Records that need a value</h2></div><p>These stay visible but are not included in totals or trends.</p></div>
-          <ul class="issue-list">{{range .Issues}}<li><div><strong>{{.Label}}</strong><p>{{.Reason}}</p></div><a href="{{.EvidenceURL}}">View source</a></li>{{end}}</ul>
+          <ul class="issue-list">{{range .Issues}}<li><div><strong>{{.Label}}</strong><p>{{.Reason}}</p></div><a href="{{.EvidenceURL}}">View original</a></li>{{end}}</ul>
         </section>
         {{end}}
 

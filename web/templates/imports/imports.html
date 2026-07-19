@@ -30,7 +30,7 @@
         {{else if .Review}}
         <section class="import-review" aria-labelledby="import-review-title">
           <div class="section-heading"><div><p class="eyebrow">Review before import</p><h2 id="import-review-title">{{.Review.FileName}}</h2></div><p>{{.Review.Summary}}</p></div>
-          {{if .Review.Blockers}}<div class="import-blockers" role="alert" tabindex="-1" data-first-blocker><h3>Needs your correction</h3><p>Every required value, date, unit, and source location must be clear before anything is added.</p><ol>{{range .Review.Blockers}}<li><a href="#field-{{.FieldID}}">{{.Message}}</a><span>{{.Locator}}</span></li>{{end}}</ol></div>{{end}}
+          {{if .Review.Blockers}}<div class="import-blockers" role="alert" tabindex="-1" data-first-blocker><h3>Needs your correction</h3><p>Check the highlighted values before adding anything to Mithra.</p><ol>{{range .Review.Blockers}}<li><a href="#field-{{.FieldID}}">{{.Message}}</a><span>Found at {{.Locator}}</span></li>{{end}}</ol></div>{{end}}
           {{if .Review.Warnings}}<details class="import-warnings"><summary>{{len .Review.Warnings}} inconsistencies to check</summary><ul>{{range .Review.Warnings}}<li><strong>{{.Message}}</strong><span>{{.Locator}}</span></li>{{end}}</ul></details>{{end}}
           <form method="post" action="/imports" class="import-review-form" data-import-review>
             <input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="import_id" value="{{.Review.ID}}"><input type="hidden" name="version" value="{{.Review.Version}}">
@@ -43,7 +43,7 @@
           <div><p class="eyebrow">Step 1 of 2</p><h2 id="import-composer-title">Choose a file</h2><p>Upload one CSV, Excel, or PDF file up to 10 MB. You will review every proposed record before it is added.</p></div>
           <form method="post" action="/imports" enctype="multipart/form-data" class="import-upload-form" data-import-upload>
             <input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="upload">
-            {{if .Replacement}}<input type="hidden" name="replaces_import_id" value="{{.Replacement.ID}}"><p class="status-message">New version of <strong>{{.Replacement.FileName}}</strong>. The prior {{.Replacement.Visibility}} records will be replaced only when this review commits.</p>{{end}}
+            {{if .Replacement}}<input type="hidden" name="replaces_import_id" value="{{.Replacement.ID}}"><p class="status-message">You’re replacing <strong>{{.Replacement.FileName}}</strong>. The previous {{.Replacement.Visibility}} entries stay unchanged until you approve the new import.</p>{{end}}
             <label for="import-file">CSV, Excel, or PDF file<input id="import-file" type="file" name="file" accept=".csv,.xlsx,.pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/pdf" required data-import-file></label>
             <label for="import-visibility">Who can see these records?<select id="import-visibility" name="visibility"><option value="personal">Only you</option><option value="shared">Shared with your partner</option></select></label>
             <p data-import-status role="status" aria-live="polite">Choose one file to continue.</p>
@@ -52,7 +52,7 @@
           </form>
         </section>
         {{end}}
-        {{if .Recent}}<section class="imports-recent" aria-labelledby="imports-recent-title"><div class="section-heading"><div><p class="eyebrow">Recent imports</p><h2 id="imports-recent-title">Files you reviewed</h2></div><p>Each import remains linked to its encrypted source.</p></div><ol>{{range .Recent}}<li><div><strong>{{.FileName}}</strong><p>{{.Summary}}</p></div><div><span>{{.Visibility}}</span><a href="{{.SourceURL}}">View source</a>{{if .CanReplace}}<a href="/imports?replace={{.ID}}">Import new version</a>{{end}}<form method="post" action="/imports"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="import_id" value="{{.ID}}"><button type="submit" name="action" value="prepare_delete" class="button-quiet">Delete</button></form></div></li>{{end}}</ol></section>{{end}}
+        {{if .Recent}}<section class="imports-recent" aria-labelledby="imports-recent-title"><div class="section-heading"><div><p class="eyebrow">Recent imports</p><h2 id="imports-recent-title">Files you reviewed</h2></div><p>You can always return to the original encrypted file.</p></div><ol>{{range .Recent}}<li><div><strong>{{.FileName}}</strong><p>{{.Summary}}</p></div><div><span>{{.Visibility}}</span><a href="{{.SourceURL}}">View original</a>{{if .CanReplace}}<a href="/imports?replace={{.ID}}">Import new version</a>{{end}}<form method="post" action="/imports"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="import_id" value="{{.ID}}"><button type="submit" name="action" value="prepare_delete" class="button-quiet">Delete import</button></form></div></li>{{end}}</ol></section>{{end}}
       </div>
     </main>
   </body>

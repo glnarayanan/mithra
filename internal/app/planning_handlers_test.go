@@ -56,7 +56,7 @@ func TestPlanningLensCalendarViewsConflictsAndExports(t *testing.T) {
 	if month.Code != http.StatusOK {
 		t.Fatalf("month status=%d body=%s", month.Code, month.Body.String())
 	}
-	for _, required := range []string{"Calendar &amp; plans", "July 2026", "Family trip", "School conversation", "Home contractor", "Assigned owners have overlapping events", "Download .ics", "Open Google Calendar draft", "Changes in Mithra will not update", "Help with calendar exports", "calendar-mobile-agenda", "Beyond the calendar", "School transition", "Make the school transition calm", "Meet the teacher", "availability: after the family trip", "After Family trip", "View goal source", "View plan source", "View milestone source"} {
+	for _, required := range []string{"Calendar &amp; plans", "July 2026", "Family trip", "School conversation", "Home contractor", "Assigned owners have overlapping events", "Download .ics", "Open Google Calendar draft", "Changes in Mithra will not update", "Help with calendar exports", "calendar-mobile-agenda", "Beyond the calendar", "School transition", "Make the school transition calm", "Meet the teacher", "Depends on availability: after the family trip", "After Family trip", "View original goal", "View original plan", "View original milestone"} {
 		if !strings.Contains(month.Body.String(), required) {
 			t.Fatalf("month missing %q: %s", required, month.Body.String())
 		}

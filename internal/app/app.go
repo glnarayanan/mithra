@@ -302,8 +302,15 @@ func (a *App) serveEmbeddedFile(w http.ResponseWriter, r *http.Request, name, co
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
+	digest := sha256.Sum256(data)
+	etag := `"` + hex.EncodeToString(digest[:]) + `"`
+	w.Header().Set("Cache-Control", "public, max-age=0, must-revalidate")
+	w.Header().Set("ETag", etag)
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
 	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Cache-Control", "no-store")
 	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(data))
 }
 

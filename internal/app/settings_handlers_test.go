@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -52,12 +53,20 @@ func TestOwnerOpenAISettingsValidateEncryptPreserveAndRemove(t *testing.T) {
 	application.openAIClient = openAIValidationClient(http.StatusUnauthorized)
 	replacement := "sk-mithra-invalid-replacement"
 	failed := serve(application, authenticatedSettingsRequest(owner, http.MethodPost, url.Values{"action": {"save_openai"}, "api_key": {replacement}}))
-	if failed.Code != http.StatusOK || !strings.Contains(failed.Body.String(), "current connection was not changed") || strings.Contains(failed.Body.String(), replacement) {
+	if failed.Code != http.StatusOK || !strings.Contains(failed.Body.String(), "existing connection is unchanged") || strings.Contains(failed.Body.String(), replacement) {
 		t.Fatalf("failed replacement = %d %q", failed.Code, failed.Body.String())
 	}
 	key, err = application.providerSettings.OpenAIKey(context.Background(), ownerScope(t, application, owner))
 	if err != nil || key != firstKey {
 		t.Fatalf("working key was replaced = %q, %v", key, err)
+	}
+
+	application.openAIClient = &http.Client{Transport: appRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("provider unavailable")
+	})}
+	unavailable := serve(application, authenticatedSettingsRequest(owner, http.MethodPost, url.Values{"action": {"save_openai"}, "api_key": {replacement}}))
+	if unavailable.Code != http.StatusOK || !strings.Contains(unavailable.Body.String(), "could not verify that key right now") || !strings.Contains(unavailable.Body.String(), "existing connection is unchanged") {
+		t.Fatalf("unavailable provider = %d %q", unavailable.Code, unavailable.Body.String())
 	}
 
 	invite := serve(application, settingsPost(owner, "partner@example.com"))
@@ -67,7 +76,7 @@ func TestOwnerOpenAISettingsValidateEncryptPreserveAndRemove(t *testing.T) {
 	partnerToken := tokenFromMessage(t, mailer.last(t), "token")
 	partner := activateInvitation(t, application, "a partner secure password", bootstrapInvitation(t, application, partnerToken))
 	denied := serve(application, authenticatedSettingsRequest(partner, http.MethodPost, url.Values{"action": {"remove_openai"}}))
-	if denied.Code != http.StatusOK || !strings.Contains(denied.Body.String(), "Only the active household owner") {
+	if denied.Code != http.StatusOK || !strings.Contains(denied.Body.String(), "Only the household owner can disconnect OpenAI") {
 		t.Fatalf("partner removal = %d %q", denied.Code, denied.Body.String())
 	}
 
