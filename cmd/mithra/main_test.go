@@ -264,18 +264,15 @@ func TestPDFParserRejectsArguments(t *testing.T) {
 	}
 }
 
-func TestPDFParserUsesLocalExtractionWithoutConfiguredSocket(t *testing.T) {
+func TestPDFParserUsesLocalExtractionOnlyWhenExplicitlyConfigured(t *testing.T) {
 	if _, ok := configuredPDFParser("local").(imports.LocalPDFParser); !ok {
 		t.Fatal("local parser mode did not select in-process extraction")
 	}
 	if _, ok := configuredPDFParser("/run/mithra/pdf-parser.sock").(imports.SocketPDFParser); !ok {
 		t.Fatal("configured parser socket did not select isolated extraction")
 	}
-	if got := defaultPDFParser(".local/mithra.sqlite3"); got != "local" {
-		t.Fatalf("relative database parser = %q, want local", got)
-	}
-	if got := defaultPDFParser("/var/lib/mithra/mithra.sqlite3"); got != "/run/mithra/pdf-parser.sock" {
-		t.Fatalf("production database parser = %q, want isolated socket", got)
+	if got := environmentDefault("MITHRA_PDF_PARSER_SOCKET", defaultPDFParserSocket); got != defaultPDFParserSocket {
+		t.Fatalf("default parser socket = %q", got)
 	}
 }
 
