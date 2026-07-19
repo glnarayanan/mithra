@@ -108,7 +108,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		return nil, err
 	}
 
-	templates, err := template.ParseFS(web.Files, "templates/auth/*.html", "templates/brief/*.html", "templates/capture/*.html", "templates/finance/*.html", "templates/health/*.html", "templates/imports/*.html", "templates/planning/*.html", "templates/review/*.html", "templates/settings/*.html")
+	templates, err := template.ParseFS(web.Files, "templates/auth/*.html", "templates/brief/*.html", "templates/capture/*.html", "templates/finance/*.html", "templates/health/*.html", "templates/help/*.html", "templates/imports/*.html", "templates/planning/*.html", "templates/review/*.html", "templates/settings/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse embedded templates: %w", err)
 	}
@@ -227,6 +227,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("/auth/invitation", a.bootstrapInvitation)
 	mux.HandleFunc("/auth/password", a.passwordSetup)
 	mux.HandleFunc("/auth/logout", a.logout)
+	mux.HandleFunc("/help", a.help)
 	mux.HandleFunc("/settings", a.settings)
 	mux.HandleFunc("/capture", a.capture)
 	mux.HandleFunc("/capture/voice", a.captureVoice)
@@ -307,7 +308,7 @@ func (a *App) serveEmbeddedFile(w http.ResponseWriter, r *http.Request, name, co
 
 func navigationForPath(path string) []NavigationItem {
 	return []NavigationItem{
-		{Path: "/", Label: "Brief", Current: path == "/"},
+		{Path: "/", Label: "Family Brief", Current: path == "/"},
 		{Path: "/review", Label: "Week in Review", Current: path == "/review"},
 		{Path: "/capture", Label: "Capture", Current: path == "/capture"},
 		{Path: "/imports", Label: "Import", Current: path == "/imports"},
@@ -315,6 +316,7 @@ func navigationForPath(path string) []NavigationItem {
 		{Path: "/health", Label: "Health", Current: path == "/health"},
 		{Path: "/planning", Label: "Planning", Current: path == "/planning"},
 		{Path: "/settings", Label: "Settings", Current: path == "/settings"},
+		{Path: "/help", Label: "Help", Current: path == "/help"},
 	}
 }
 

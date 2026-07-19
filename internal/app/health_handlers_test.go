@@ -48,7 +48,7 @@ func TestHealthLensRendersFactualSeriesConflictDatesAndCorrection(t *testing.T) 
 	}
 	page := serve(application, authenticatedHealthRequest(session, http.MethodGet, "/health", nil))
 	body := page.Body.String()
-	for _, required := range []string{"Observed over time.", "does not diagnose", "Glucose", "105", "mg/dL", "Values kept separate", "Correct value", "Annual check-up", "Recorded routine", "View latest source"} {
+	for _, required := range []string{"Observed over time.", "does not diagnose", "Glucose", "105", "mg/dL", "Values kept separate", "Correct value", "Help with corrections", "Annual check-up", "Recorded routine", "View latest source"} {
 		if !strings.Contains(body, required) {
 			t.Fatalf("health lens missing %q: %s", required, body)
 		}

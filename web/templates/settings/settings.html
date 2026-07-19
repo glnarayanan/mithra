@@ -13,7 +13,7 @@
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to main content</a>
-    <header class="site-header"><div class="page-shell header-content"><a class="brand" href="/" aria-label="Mithra homepage"><span class="brand-mark" aria-hidden="true">M</span><span>Mithra</span></a><form method="post" action="/auth/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="quiet-button" type="submit">Sign out</button></form></div></header>
+    <header class="site-header"><div class="page-shell header-content"><a class="brand" href="/" aria-label="Mithra homepage"><span class="brand-mark" aria-hidden="true">M</span><span>Mithra</span></a><a href="/help">Help</a><form method="post" action="/auth/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="quiet-button" type="submit">Sign out</button></form></div></header>
     <main id="main-content" tabindex="-1" class="auth-main">
       <section class="auth-card" aria-labelledby="page-title">
         <p class="eyebrow">Household settings</p>
@@ -47,6 +47,7 @@
         <div class="settings-divider" aria-hidden="true"></div>
         <p class="eyebrow">AI coaching</p>
         <h2>OpenAI connection</h2>
+        <p class="field-help"><a href="/help#openai">How Mithra uses OpenAI</a></p>
         {{if .OpenAIConfigured}}
         <p class="provider-state provider-connected"><span aria-hidden="true">●</span> Connected</p>
         <p class="introduction-copy">AI capture and coaching can run when requested. The saved key is encrypted and never shown back.</p>

@@ -94,7 +94,7 @@ func TestFamilyBriefLoadsWithoutAIThenRefreshesEvidenceAndKeepsPartnerPrivateOut
 		t.Fatalf("follow-up code=%d calls=%d mail=%#v", followUp.Code, providerCalls, mailer.last(t))
 	}
 	week := serve(application, coachingGET("/review", ownerSession))
-	if week.Code != http.StatusOK || !strings.Contains(week.Body.String(), "Week in Review") || !strings.Contains(week.Body.String(), "Only you") {
+	if week.Code != http.StatusOK || !strings.Contains(week.Body.String(), "Week in Review") || !strings.Contains(week.Body.String(), "Only you") || !strings.Contains(week.Body.String(), "How Shared and Only you work") {
 		t.Fatalf("week=%d %q", week.Code, week.Body.String())
 	}
 }

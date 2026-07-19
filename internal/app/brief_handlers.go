@@ -132,7 +132,7 @@ func (a *App) refreshCoaching(w http.ResponseWriter, r *http.Request, mode strin
 	if updated == 0 && failed > 0 {
 		status = "Mithra could not refresh right now. The prior labelled view and live application facts remain available."
 	} else if failed > 0 {
-		status = "The shared and private sections refresh separately. One section kept its prior labelled view because it could not be refreshed."
+		status = "The Shared and Only you sections refresh separately. One section kept its prior labelled view because it could not be refreshed."
 	}
 	a.renderCoachingMode(r, w, scope, csrf, mode, status)
 }
@@ -201,7 +201,7 @@ func (a *App) renderWeek(r *http.Request, w http.ResponseWriter, scope policy.Ac
 	configured, _ := a.providerSettings.Configured(r.Context(), scope)
 	evidence := evidenceMap(overview.SharedContext, overview.PersonalContext)
 	from := now.AddDate(0, 0, -6)
-	view := WeekReviewView{Navigation: navigationForPath("/review"), CSRF: csrf, Status: status, Period: from.Format("2 Jan") + " – " + now.Format("2 Jan 2006"), PrivateFreshness: freshness(overview.PersonalCache, "Live private view"), Stale: overview.SharedCache.Stale, PrivateStale: overview.PersonalCache.Stale, CanRefresh: configured && overview.HasRecords && csrf != "", Changes: itemViews(overview.Shared.Changes, evidence), Dates: itemViews(overview.Shared.Dates, evidence), Inconsistencies: itemViews(overview.Shared.Inconsistencies, evidence), Priorities: itemViews(overview.Shared.Priorities, evidence), OnlyYou: itemViews(privateItems(overview.Personal), evidence)}
+	view := WeekReviewView{Navigation: navigationForPath("/review"), CSRF: csrf, Status: status, Period: from.Format("2 Jan") + " – " + now.Format("2 Jan 2006"), PrivateFreshness: freshness(overview.PersonalCache, "Live Only you view"), Stale: overview.SharedCache.Stale, PrivateStale: overview.PersonalCache.Stale, CanRefresh: configured && overview.HasRecords && csrf != "", Changes: itemViews(overview.Shared.Changes, evidence), Dates: itemViews(overview.Shared.Dates, evidence), Inconsistencies: itemViews(overview.Shared.Inconsistencies, evidence), Priorities: itemViews(overview.Shared.Priorities, evidence), OnlyYou: itemViews(privateItems(overview.Personal), evidence)}
 	if view.Status == "" {
 		if view.Stale {
 			view.Status = "Shared facts changed after this wording was prepared. Live dates and evidence remain current."

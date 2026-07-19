@@ -251,7 +251,7 @@ func TestScannedPDFRequiresBoundOneTimeConsentBeforeInlineTransfer(t *testing.T)
 	})
 	pdf := []byte("%PDF-1.7\nscanned fixture")
 	prepared := serve(application, importUploadRequest(t, session, "scan.pdf", "application/pdf", pdf, "personal"))
-	if prepared.Code != http.StatusOK || !strings.Contains(prepared.Body.String(), "This PDF needs visual reading") || providerCalls != 0 {
+	if prepared.Code != http.StatusOK || !strings.Contains(prepared.Body.String(), "This PDF needs visual reading") || !strings.Contains(prepared.Body.String(), "Help with visual PDF transfer") || providerCalls != 0 {
 		t.Fatalf("visual consent = %d calls=%d %q", prepared.Code, providerCalls, prepared.Body.String())
 	}
 	var id string

@@ -47,7 +47,7 @@
         </section>
         {{end}}
         {{if .Conflicts}}
-        <section class="finance-section incomplete-panel" aria-labelledby="health-conflicts-title"><div class="section-heading"><div><p class="eyebrow">Needs your correction</p><h2 id="health-conflicts-title">Values kept separate</h2></div><p>Mithra did not guess a conversion.</p></div>
+        <section class="finance-section incomplete-panel" aria-labelledby="health-conflicts-title"><div class="section-heading"><div><p class="eyebrow">Needs your correction</p><h2 id="health-conflicts-title">Values kept separate</h2></div><p>Mithra did not guess a conversion. <a href="/help#health-corrections">Help with corrections</a></p></div>
           <ul class="health-conflict-list">{{range .Conflicts}}<li><div><strong>{{.Analyte}}</strong><p>{{.Reason}}</p><a href="{{.EvidenceURL}}">View source</a></div><form method="post" action="/health/correct" class="health-correction-form"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="record_id" value="{{.RecordID}}"><input type="hidden" name="version" value="{{.Version}}"><label>Correct value<input name="value" inputmode="decimal" maxlength="128" required></label><label>Correct unit<input name="unit" maxlength="64" required></label><button type="submit">Use corrected value</button></form></li>{{end}}</ul>
         </section>
         {{end}}

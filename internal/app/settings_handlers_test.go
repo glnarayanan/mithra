@@ -26,7 +26,7 @@ func TestOwnerOpenAISettingsValidateEncryptPreserveAndRemove(t *testing.T) {
 
 	settings := authenticatedSettingsRequest(owner, http.MethodGet, nil)
 	response := serve(application, settings)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Not connected") || !strings.Contains(response.Body.String(), "queue no work") {
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Not connected") || !strings.Contains(response.Body.String(), "queue no work") || !strings.Contains(response.Body.String(), `href="/help#openai"`) {
 		t.Fatalf("unconfigured settings = %d %q", response.Code, response.Body.String())
 	}
 	var queued int
