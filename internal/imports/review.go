@@ -443,14 +443,20 @@ func (s *Service) Replacement(ctx context.Context, actor policy.ActorScope, id s
 
 func (s *Service) Discard(ctx context.Context, actor policy.ActorScope, id string) error {
 	var sourceID, householdID, ownerID string
-	err := s.db.QueryRowContext(ctx, `SELECT source_id,household_id,owner_user_id FROM document_imports WHERE id=? AND household_id=? AND owner_user_id=? AND state IN ('review','awaiting_visual_consent')`, id, actor.HouseholdID, actor.ActorID).Scan(&sourceID, &householdID, &ownerID)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	err = tx.QueryRowContext(ctx, `SELECT source_id,household_id,owner_user_id FROM document_imports WHERE id=? AND household_id=? AND owner_user_id=? AND state IN ('review','awaiting_visual_consent')`, id, actor.HouseholdID, actor.ActorID).Scan(&sourceID, &householdID, &ownerID)
 	if err != nil {
 		return policy.ErrUnauthorized
 	}
-	if err := s.sources.DeleteOwnedImport(ctx, householdID, ownerID, sourceID); err != nil && !errors.Is(err, storage.ErrNotFound) {
+	source, err := s.sources.TombstoneInTx(ctx, tx, householdID, ownerID, sourceID)
+	if err != nil && !errors.Is(err, storage.ErrNotFound) {
 		return err
 	}
-	result, err := s.db.ExecContext(ctx, `UPDATE document_imports SET state='discarded',version=version+1,proposal_json='',consent_token_hash=NULL,consent_expires_at=NULL,updated_at=? WHERE id=? AND household_id=? AND owner_user_id=? AND state IN ('review','awaiting_visual_consent')`, s.now().UTC().Format(time.RFC3339Nano), id, actor.HouseholdID, actor.ActorID)
+	result, err := tx.ExecContext(ctx, `UPDATE document_imports SET state='discarded',version=version+1,proposal_json='',consent_token_hash=NULL,consent_expires_at=NULL,updated_at=? WHERE id=? AND household_id=? AND owner_user_id=? AND state IN ('review','awaiting_visual_consent')`, s.now().UTC().Format(time.RFC3339Nano), id, actor.HouseholdID, actor.ActorID)
 	if err != nil {
 		return err
 	}
@@ -458,7 +464,13 @@ func (s *Service) Discard(ctx context.Context, actor policy.ActorScope, id strin
 	if changed != 1 {
 		return ErrStale
 	}
-	return nil
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if source.ID == "" {
+		return nil
+	}
+	return s.sources.RemoveCiphertext(source)
 }
 
 // AbortVisual removes a visual PDF only after its one-time consent has been
@@ -467,14 +479,20 @@ func (s *Service) Discard(ctx context.Context, actor policy.ActorScope, id strin
 // the final authorization check and the outbound transfer.
 func (s *Service) AbortVisual(ctx context.Context, actor policy.ActorScope, id string, expected int64) error {
 	var sourceID, householdID, ownerID string
-	err := s.db.QueryRowContext(ctx, `SELECT source_id,household_id,owner_user_id FROM document_imports WHERE id=? AND household_id=? AND owner_user_id=? AND state='visual_processing' AND version=?`, id, actor.HouseholdID, actor.ActorID, expected).Scan(&sourceID, &householdID, &ownerID)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	err = tx.QueryRowContext(ctx, `SELECT source_id,household_id,owner_user_id FROM document_imports WHERE id=? AND household_id=? AND owner_user_id=? AND state='visual_processing' AND version=?`, id, actor.HouseholdID, actor.ActorID, expected).Scan(&sourceID, &householdID, &ownerID)
 	if err != nil {
 		return ErrStale
 	}
-	if err := s.sources.DeleteOwnedImport(ctx, householdID, ownerID, sourceID); err != nil && !errors.Is(err, storage.ErrNotFound) {
+	source, err := s.sources.TombstoneInTx(ctx, tx, householdID, ownerID, sourceID)
+	if err != nil && !errors.Is(err, storage.ErrNotFound) {
 		return err
 	}
-	result, err := s.db.ExecContext(ctx, `UPDATE document_imports SET state='discarded',version=version+1,proposal_json='',consent_token_hash=NULL,consent_expires_at=NULL,updated_at=? WHERE id=? AND household_id=? AND owner_user_id=? AND state='visual_processing' AND version=?`, s.now().UTC().Format(time.RFC3339Nano), id, actor.HouseholdID, actor.ActorID, expected)
+	result, err := tx.ExecContext(ctx, `UPDATE document_imports SET state='discarded',version=version+1,proposal_json='',consent_token_hash=NULL,consent_expires_at=NULL,updated_at=? WHERE id=? AND household_id=? AND owner_user_id=? AND state='visual_processing' AND version=?`, s.now().UTC().Format(time.RFC3339Nano), id, actor.HouseholdID, actor.ActorID, expected)
 	if err != nil {
 		return err
 	}
@@ -482,24 +500,29 @@ func (s *Service) AbortVisual(ctx context.Context, actor policy.ActorScope, id s
 	if changed != 1 {
 		return ErrStale
 	}
-	return nil
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if source.ID == "" {
+		return nil
+	}
+	return s.sources.RemoveCiphertext(source)
 }
 
 func (s *Service) CleanupAbandonedVisual(ctx context.Context) error {
 	cutoff := s.now().UTC()
-	rows, err := s.db.QueryContext(ctx, `SELECT id,household_id,owner_user_id,source_id FROM document_imports WHERE (state='awaiting_visual_consent' AND consent_expires_at<=?) OR (state='visual_processing' AND updated_at<=?)`, cutoff.Format(time.RFC3339Nano), cutoff.Add(-3*time.Minute).Format(time.RFC3339Nano))
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM document_imports WHERE (state='awaiting_visual_consent' AND consent_expires_at<=?) OR (state='visual_processing' AND updated_at<=?)`, cutoff.Format(time.RFC3339Nano), cutoff.Add(-3*time.Minute).Format(time.RFC3339Nano))
 	if err != nil {
 		return err
 	}
-	type item struct{ id, household, owner, source string }
-	var items []item
+	var ids []string
 	for rows.Next() {
-		var entry item
-		if err := rows.Scan(&entry.id, &entry.household, &entry.owner, &entry.source); err != nil {
+		var id string
+		if err := rows.Scan(&id); err != nil {
 			_ = rows.Close()
 			return err
 		}
-		items = append(items, entry)
+		ids = append(ids, id)
 	}
 	if err := rows.Err(); err != nil {
 		_ = rows.Close()
@@ -508,15 +531,47 @@ func (s *Service) CleanupAbandonedVisual(ctx context.Context) error {
 	if err := rows.Close(); err != nil {
 		return err
 	}
-	for _, entry := range items {
-		if err := s.sources.DeleteOwnedImport(ctx, entry.household, entry.owner, entry.source); err != nil && !errors.Is(err, storage.ErrNotFound) {
-			return err
-		}
-		if _, err := s.db.ExecContext(ctx, `UPDATE document_imports SET state='discarded',proposal_json='',consent_token_hash=NULL,consent_expires_at=NULL,version=version+1,updated_at=? WHERE id=? AND state IN ('awaiting_visual_consent','visual_processing')`, cutoff.Format(time.RFC3339Nano), entry.id); err != nil {
+	for _, id := range ids {
+		if err := s.cleanupAbandonedVisual(ctx, id, cutoff); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (s *Service) cleanupAbandonedVisual(ctx context.Context, id string, cutoff time.Time) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var sourceID, householdID, ownerID string
+	err = tx.QueryRowContext(ctx, `SELECT source_id,household_id,owner_user_id FROM document_imports WHERE id=? AND ((state='awaiting_visual_consent' AND consent_expires_at<=?) OR (state='visual_processing' AND updated_at<=?))`, id, cutoff.Format(time.RFC3339Nano), cutoff.Add(-3*time.Minute).Format(time.RFC3339Nano)).Scan(&sourceID, &householdID, &ownerID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	source, err := s.sources.TombstoneInTx(ctx, tx, householdID, ownerID, sourceID)
+	if err != nil && !errors.Is(err, storage.ErrNotFound) {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE document_imports SET state='discarded',proposal_json='',consent_token_hash=NULL,consent_expires_at=NULL,version=version+1,updated_at=? WHERE id=? AND ((state='awaiting_visual_consent' AND consent_expires_at<=?) OR (state='visual_processing' AND updated_at<=?))`, cutoff.Format(time.RFC3339Nano), id, cutoff.Format(time.RFC3339Nano), cutoff.Add(-3*time.Minute).Format(time.RFC3339Nano))
+	if err != nil {
+		return err
+	}
+	changed, _ := result.RowsAffected()
+	if changed != 1 {
+		return ErrStale
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if source.ID == "" {
+		return nil
+	}
+	return s.sources.RemoveCiphertext(source)
 }
 
 func (s *Service) ListRecent(ctx context.Context, actor policy.ActorScope, limit int) ([]Recent, error) {

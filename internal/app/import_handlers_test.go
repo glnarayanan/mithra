@@ -16,6 +16,7 @@ import (
 
 	importcore "github.com/glnarayanan/mithra/internal/imports"
 	"github.com/glnarayanan/mithra/internal/policy"
+	"github.com/glnarayanan/mithra/internal/storage"
 )
 
 func TestCSVImportSendsExtractedTextThenCommitsAtomically(t *testing.T) {
@@ -125,6 +126,101 @@ func TestImportBlockerRequiresUserCorrectionAndRevisionFence(t *testing.T) {
 	var unit, generated string
 	if err := application.db.QueryRow(`SELECT unit,generated_by FROM health_observations WHERE active=1`).Scan(&unit, &generated); err != nil || unit != "%" || generated != "user" {
 		t.Fatalf("corrected record = %q %q, %v", unit, generated, err)
+	}
+}
+
+func TestDiscardCannotDeleteSourceAfterConcurrentPublish(t *testing.T) {
+	application, mailer := newAuthTestApp(t, "owner@example.com")
+	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
+	scope := ownerScope(t, application, session)
+	connectImportProvider(t, application, scope, func(*http.Request) string {
+		return captureProviderBody(`{"records":[{"family":"finance","locator":{"kind":"row","value":"row:2"},"finance":{"kind":"income","label":"Salary","category":"Income","date":"2026-07-01","end_date":"","status":"","amount":"5000"},"health":null,"planning":null}]}`)
+	})
+	if response := serve(application, importUploadRequest(t, session, "family.csv", "text/csv", []byte("label,amount,date\nSalary,5000,2026-07-01\n"), "personal")); response.Code != http.StatusOK {
+		t.Fatal(response.Body.String())
+	}
+	var importID, sourceID string
+	if err := application.db.QueryRow(`SELECT id,source_id FROM document_imports WHERE state='review'`).Scan(&importID, &sourceID); err != nil {
+		t.Fatal(err)
+	}
+	// This trigger models a competing publication after an obsolete cleanup
+	// has selected the review. The discard must claim both records atomically.
+	if _, err := application.db.Exec(`CREATE TRIGGER publish_during_source_delete BEFORE UPDATE OF state ON sources WHEN NEW.id=` + quoteSQL(sourceID) + ` AND NEW.state='deleted' BEGIN UPDATE document_imports SET state='committed' WHERE id=` + quoteSQL(importID) + `; END`); err != nil {
+		t.Fatal(err)
+	}
+	if err := application.imports.Discard(context.Background(), scope, importID); err == nil {
+		t.Fatal("discard unexpectedly won a concurrent publication")
+	}
+	var sourceState, importState string
+	if err := application.db.QueryRow(`SELECT state FROM sources WHERE id=?`, sourceID).Scan(&sourceState); err != nil {
+		t.Fatal(err)
+	}
+	if err := application.db.QueryRow(`SELECT state FROM document_imports WHERE id=?`, importID).Scan(&importState); err != nil {
+		t.Fatal(err)
+	}
+	if sourceState != "live" || importState != "review" {
+		t.Fatalf("concurrent discard left source=%q import=%q, want live review", sourceState, importState)
+	}
+}
+
+func quoteSQL(value string) string { return "'" + strings.ReplaceAll(value, "'", "''") + "'" }
+
+func TestVisualCleanupCannotDeleteSourceAfterConcurrentPublish(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		state string
+		run   func(context.Context, *App, policy.ActorScope, importcore.VisualConsent) error
+	}{
+		{
+			name:  "abort",
+			state: "visual_processing",
+			run: func(ctx context.Context, application *App, scope policy.ActorScope, consent importcore.VisualConsent) error {
+				if err := application.imports.ConsumeVisualConsent(ctx, scope, consent.ID, consent.Token, consent.Version); err != nil {
+					return err
+				}
+				return application.imports.AbortVisual(ctx, scope, consent.ID, consent.Version+1)
+			},
+		},
+		{
+			name:  "abandoned",
+			state: "awaiting_visual_consent",
+			run: func(ctx context.Context, application *App, _ policy.ActorScope, consent importcore.VisualConsent) error {
+				if _, err := application.db.Exec(`UPDATE document_imports SET consent_expires_at='2000-01-01T00:00:00Z' WHERE id=?`, consent.ID); err != nil {
+					return err
+				}
+				return application.imports.CleanupAbandonedVisual(ctx)
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			application, mailer := newAuthTestApp(t, "owner@example.com")
+			session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
+			scope := ownerScope(t, application, session)
+			source, err := application.sources.Store(context.Background(), scope, []byte("%PDF-1.7\nfixture"), storage.Metadata{Family: "pdf", Version: 1, Visibility: policy.Personal, LocatorKind: "source", LocatorValue: "fixture"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			consent, err := application.imports.StageVisualConsent(context.Background(), scope, source, "fixture.pdf")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := application.db.Exec(`CREATE TRIGGER publish_during_visual_delete BEFORE UPDATE OF state ON sources WHEN NEW.id=` + quoteSQL(source.ID) + ` AND NEW.state='deleted' BEGIN UPDATE document_imports SET state='committed' WHERE id=` + quoteSQL(consent.ID) + `; END`); err != nil {
+				t.Fatal(err)
+			}
+			if err := test.run(context.Background(), application, scope, consent); err == nil {
+				t.Fatal("cleanup unexpectedly won a concurrent publication")
+			}
+			var sourceState, importState string
+			if err := application.db.QueryRow(`SELECT state FROM sources WHERE id=?`, source.ID).Scan(&sourceState); err != nil {
+				t.Fatal(err)
+			}
+			if err := application.db.QueryRow(`SELECT state FROM document_imports WHERE id=?`, consent.ID).Scan(&importState); err != nil {
+				t.Fatal(err)
+			}
+			if sourceState != "live" || importState != test.state {
+				t.Fatalf("concurrent cleanup left source=%q import=%q, want live %q", sourceState, importState, test.state)
+			}
+		})
 	}
 }
 

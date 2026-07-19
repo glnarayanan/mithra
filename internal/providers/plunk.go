@@ -48,7 +48,9 @@ func NewPlunk(cfg PlunkConfig) (*Plunk, error) {
 	if cfg.Client == nil {
 		cfg.Client = &http.Client{Timeout: 10 * time.Second}
 	}
-	return &Plunk{apiKey: strings.TrimSpace(cfg.APIKey), from: *from, client: cfg.Client}, nil
+	client := *cfg.Client
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return &Plunk{apiKey: strings.TrimSpace(cfg.APIKey), from: *from, client: &client}, nil
 }
 
 func (p *Plunk) Send(ctx context.Context, message Message) error {

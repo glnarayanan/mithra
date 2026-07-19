@@ -73,6 +73,28 @@ func TestPlunkRequiresSuccessEnvelope(t *testing.T) {
 	}
 }
 
+func TestPlunkRejectsRedirectWithoutSendingCredentialsOrBodyElsewhere(t *testing.T) {
+	t.Parallel()
+	requests := 0
+	client := &http.Client{Transport: roundTripper(func(request *http.Request) (*http.Response, error) {
+		requests++
+		if request.URL.String() != plunkEndpoint {
+			t.Fatalf("redirect target received a Plunk request: %s", request.URL)
+		}
+		return &http.Response{StatusCode: http.StatusFound, Header: http.Header{"Location": {"https://redirect.example/send"}}, Body: io.NopCloser(bytes.NewBufferString("redirect body"))}, nil
+	})}
+	mailer, err := NewPlunk(PlunkConfig{APIKey: "sk_secret", From: "mail@example.com", Client: client})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mailer.Send(context.Background(), Message{To: "person@example.com", Subject: "Mithra", Text: "safe text"}); !errors.Is(err, ErrDelivery) {
+		t.Fatalf("redirect send = %v, want delivery failure", err)
+	}
+	if requests != 1 {
+		t.Fatalf("requests = %d, want only the fixed endpoint", requests)
+	}
+}
+
 type roundTripper func(*http.Request) (*http.Response, error)
 
 func (f roundTripper) RoundTrip(request *http.Request) (*http.Response, error) { return f(request) }
