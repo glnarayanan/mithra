@@ -32,10 +32,11 @@ it. Records remain source-linked, and edits are saved as accountable revisions.
 
 ## Capture and Import
 
-Use **Capture** for an update in your own words. Mithra asks for one missing
-material detail rather than inventing a date, amount, unit, owner, or status.
-Review the proposed record and choose **Keep this record**; you can discard it
-instead. Recent clear captures may offer a short Undo window.
+Use **Capture** for an update in your own words. A complete text update is
+added after processing and can be undone for ten minutes. If a material date,
+amount, unit, owner, or status is missing, Mithra asks one question rather than
+inventing it. Voice captures wait for you to review the transcript and proposed
+record before anything is added.
 
 Use **Import** for one CSV, Excel, or PDF file at a time. Mithra reads it
 locally first and proposes source-linked finance, health, or planning records.

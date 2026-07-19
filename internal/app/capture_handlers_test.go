@@ -21,7 +21,7 @@ func TestTextCaptureUsesQuotedProviderInputAndTypedCommit(t *testing.T) {
 	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
 	scope := ownerScope(t, application, session)
 	page := serve(application, coachingGET("/capture", session))
-	for _, copy := range []string{"<h1>Capture</h1>", "Write or speak naturally.", "Who can see this?", "Review update"} {
+	for _, copy := range []string{"<h1>Capture</h1>", "Write or speak naturally.", "Who can see this?", "Add update"} {
 		if !strings.Contains(page.Body.String(), copy) {
 			t.Fatalf("capture page missing %q", copy)
 		}

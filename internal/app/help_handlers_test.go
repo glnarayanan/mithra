@@ -23,7 +23,7 @@ func TestHelpRequiresAuthenticationAndExplainsCoreBoundaries(t *testing.T) {
 		t.Fatalf("authenticated help = %d %q", response.Code, response.Body.String())
 	}
 	for _, required := range []string{
-		"Start here", "Keyboard shortcuts", "Only you", "Shared", "Capture", "Import", "Finance", "Health", "Planning", "Family Brief", "Week in Review", "How Mithra uses OpenAI", "PDFs without readable text", "Deleting a source and recovery",
+		"Start here", "Keyboard shortcuts", "Only you", "Shared", "Capture", "Import", "Finance", "Health", "Planning", "Family Brief", "Week in Review", "How Mithra uses OpenAI", "PDFs without readable text", "Deleting a source and recovery", "Complete text updates are added after processing and can be undone for ten minutes.", "Voice captures and imports wait for your review.",
 	} {
 		if !strings.Contains(response.Body.String(), required) {
 			t.Fatalf("help missing %q: %s", required, response.Body.String())
