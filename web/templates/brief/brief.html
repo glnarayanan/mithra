@@ -4,7 +4,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#f5efe2">
+    <meta name="theme-color" content="#062d52">
     <meta name="referrer" content="same-origin">
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/assets/styles.css">
@@ -17,22 +17,24 @@
     {{template "app-shell" .}}
     <main id="main-content" tabindex="-1" class="coaching-main">
       <section class="brief-introduction"><div class="page-shell coaching-heading">
-        <div><p class="eyebrow">Family Brief</p><h1>The household, calmly in view.</h1><p class="introduction-copy">Facts, dates, and changes from the records you can see. Mithra does not judge, diagnose, or decide for you.</p></div>
-        <div class="coaching-freshness"><span>{{.Freshness}}</span>{{if .Stale}}<strong>Update available</strong>{{else}}<strong>Current</strong>{{end}}</div>
+        <div><p class="eyebrow">Overview</p><h1>Family Brief</h1><p class="introduction-copy">Here’s what changed and what’s coming up.</p></div>
       </div></section>
       <div class="page-shell coaching-layout">
-        <p class="status-message" role="status" aria-live="polite" data-coaching-status>{{.Status}}</p>
+        {{if .Status}}<p class="status-message" role="status" aria-live="polite" data-coaching-status>{{.Status}}</p>{{else}}<p class="visually-hidden" role="status" aria-live="polite" data-coaching-status></p>{{end}}
         {{if .HasRecords}}
-        {{if .HasShared}}
-        <section class="coaching-lead" aria-labelledby="brief-lead-title"><p class="eyebrow">What changed</p><h2 id="brief-lead-title">{{.Lead.Title}}</h2><p>{{.Lead.Copy}}</p>{{if .Lead.EvidenceURL}}<a href="{{.Lead.EvidenceURL}}">{{.Lead.EvidenceLabel}}</a>{{end}}</section>
-        {{else}}<section class="empty-state" aria-labelledby="brief-shared-empty"><p class="eyebrow">Shared view</p><h2 id="brief-shared-empty">No shared fact needs interpretation</h2><p>Your Only you records remain in the separate section below.</p></section>{{end}}
-        <div class="coaching-columns">
-          <section aria-labelledby="brief-dates-title"><div class="section-heading"><div><p class="eyebrow">Dates</p><h2 id="brief-dates-title">Coming into view</h2></div></div>{{if .Dates}}<ol class="coaching-list">{{range .Dates}}<li><div><strong>{{.Title}}</strong><p>{{.Copy}}</p></div><span>{{.When}}</span>{{if .EvidenceURL}}<a href="{{.EvidenceURL}}">{{.EvidenceLabel}}</a>{{end}}</li>{{end}}</ol>{{else}}<p class="quiet-copy">No dated item needs attention right now.</p>{{end}}</section>
-          <section aria-labelledby="brief-priorities-title"><div class="section-heading"><div><p class="eyebrow">Up to three</p><h2 id="brief-priorities-title">Priorities</h2></div></div>{{if .Priorities}}<ol class="priority-list">{{range .Priorities}}<li><strong>{{.Title}}</strong><p>{{.Copy}}</p>{{if .EvidenceURL}}<a href="{{.EvidenceURL}}">{{.EvidenceLabel}}</a>{{end}}</li>{{end}}</ol>{{else}}<p class="quiet-copy">Mithra has no evidence-backed priority to add.</p>{{end}}</section>
+        <div class="brief-dashboard">
+          <section class="brief-glance" aria-labelledby="brief-glance-title"><div><p class="eyebrow">Today</p><h2 id="brief-glance-title">At a glance</h2></div><dl><div><dt>Coming up</dt><dd>{{len .Dates}}</dd></div><div><dt>Worth checking</dt><dd>{{len .Priorities}}</dd></div><div><dt>Only you</dt><dd>{{len .OnlyYou}}</dd></div></dl><p class="brief-updated"><span>{{.Freshness}}</span>{{if .Stale}}<strong>Update available</strong>{{else}}<strong>Up to date</strong>{{end}}</p></section>
+          {{if .HasShared}}
+          <section class="coaching-lead brief-main-update" aria-labelledby="brief-lead-title"><p class="eyebrow">Latest update</p><h2 id="brief-lead-title">{{.Lead.Title}}</h2><p>{{.Lead.Copy}}</p>{{if .Lead.EvidenceURL}}<a href="{{.Lead.EvidenceURL}}">{{.Lead.EvidenceLabel}}</a>{{end}}</section>
+          {{else}}<section class="empty-state brief-main-update" aria-labelledby="brief-shared-empty"><p class="eyebrow">Shared</p><h2 id="brief-shared-empty">Nothing new in your shared view</h2><p>Your private updates remain in Only you below.</p></section>{{end}}
         </div>
-        {{if .OnlyYou}}<aside class="only-you" aria-labelledby="brief-private-title"><div class="section-heading"><div><p class="eyebrow">Only you</p><h2 id="brief-private-title">Your private view</h2></div>{{if .PersonalStale}}<strong>Only you update available</strong>{{end}}</div><p class="quiet-copy">These items never shape your partner's Family Brief. <a href="/help#shared-only-you">How Shared and Only you work</a></p><ol class="coaching-list">{{range .OnlyYou}}<li><div><strong>{{.Title}}</strong><p>{{.Copy}}</p></div>{{if .EvidenceURL}}<a href="{{.EvidenceURL}}">{{.EvidenceLabel}}</a>{{end}}</li>{{end}}</ol></aside>{{end}}
+        <div class="coaching-columns">
+          <section aria-labelledby="brief-dates-title"><div class="section-heading"><div><p class="eyebrow">Calendar</p><h2 id="brief-dates-title">Coming up</h2></div></div>{{if .Dates}}<ol class="coaching-list">{{range .Dates}}<li><div><strong>{{.Title}}</strong><p>{{.Copy}}</p></div><span>{{.When}}</span>{{if .EvidenceURL}}<a href="{{.EvidenceURL}}">{{.EvidenceLabel}}</a>{{end}}</li>{{end}}</ol>{{else}}<p class="quiet-copy">Nothing dated needs your attention right now.</p>{{end}}</section>
+          <section aria-labelledby="brief-priorities-title"><div class="section-heading"><div><p class="eyebrow">A closer look</p><h2 id="brief-priorities-title">Worth checking</h2></div></div>{{if .Priorities}}<ol class="priority-list">{{range .Priorities}}<li><strong>{{.Title}}</strong><p>{{.Copy}}</p>{{if .EvidenceURL}}<a href="{{.EvidenceURL}}">{{.EvidenceLabel}}</a>{{end}}</li>{{end}}</ol>{{else}}<p class="quiet-copy">Nothing needs a closer look right now.</p>{{end}}</section>
+        </div>
+        {{if .OnlyYou}}<aside class="only-you" aria-labelledby="brief-private-title"><div class="section-heading"><div><p class="eyebrow">Private</p><h2 id="brief-private-title">Only you</h2></div>{{if .PersonalStale}}<strong>Update available</strong>{{end}}</div><p class="quiet-copy">Your partner cannot see these items. <a href="/help#shared-only-you">Learn about privacy</a></p><ol class="coaching-list">{{range .OnlyYou}}<li><div><strong>{{.Title}}</strong><p>{{.Copy}}</p></div>{{if .EvidenceURL}}<a href="{{.EvidenceURL}}">{{.EvidenceLabel}}</a>{{end}}</li>{{end}}</ol></aside>{{end}}
         {{else}}
-        <section class="empty-state coaching-empty" aria-labelledby="brief-empty-title"><p class="eyebrow">Nothing to interpret yet</p><h2 id="brief-empty-title">Bring in the first household fact</h2><p>Capture an update or import an existing file. Mithra will keep its source visible and build this brief without guessing.</p><div class="empty-actions"><a href="/capture">Capture an update</a><a href="/imports">Import a file</a></div></section>
+        <section class="empty-state coaching-empty" aria-labelledby="brief-empty-title"><p class="eyebrow">Get started</p><h2 id="brief-empty-title">Add your first update</h2><p>Tell Mithra what’s happening or bring in an existing file. You can review everything before it becomes part of your records.</p><div class="empty-actions"><a href="/capture">Capture an update</a><a href="/imports">Import a file</a></div></section>
         {{end}}
         {{if .Nudges}}<section class="nudge-strip" aria-labelledby="brief-nudges-title"><div><p class="eyebrow">A quiet follow-up</p><h2 id="brief-nudges-title">Waiting for an update</h2></div>{{range .Nudges}}<article><div><strong>{{.Title}}</strong><p>{{.Copy}}</p><a href="{{.LensURL}}">Update in {{.LensLabel}}</a></div><form method="post" action="/notifications/nudge"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="nudge_id" value="{{.ID}}"><button type="submit" name="nudge_action" value="acknowledge">I've reviewed this</button><button type="submit" name="nudge_action" value="{{if .FollowUpEnabled}}disable-follow-up{{else}}enable-follow-up{{end}}" class="button-quiet">{{if .FollowUpEnabled}}Turn follow-up off{{else}}Email one follow-up{{end}}</button></form></article>{{end}}</section>{{end}}
         <footer class="coaching-actions"><a href="/review">Open Week in Review</a>{{if .CanRefresh}}<form method="post" action="/brief/refresh" data-coaching-refresh><input type="hidden" name="csrf" value="{{.CSRF}}"><button type="submit">Refresh with Mithra</button></form>{{end}}</footer>

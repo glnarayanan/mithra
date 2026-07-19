@@ -65,6 +65,16 @@ func TestFamilyBriefLoadsWithoutAIThenRefreshesEvidenceAndKeepsPartnerPrivateOut
 	})}
 
 	initial := serve(application, coachingGET("/", ownerSession))
+	for _, required := range []string{"Family Brief", "Here’s what changed and what’s coming up.", "At a glance", "Worth checking"} {
+		if !strings.Contains(initial.Body.String(), required) {
+			t.Fatalf("initial brief missing %q: %s", required, initial.Body.String())
+		}
+	}
+	for _, retired := range []string{"The household, calmly in view.", "Bring in the first household fact", "Mithra is showing only facts and evidence visible to you.", "Live application view"} {
+		if strings.Contains(initial.Body.String(), retired) {
+			t.Fatalf("initial brief retained internal copy %q", retired)
+		}
+	}
 	if initial.Code != http.StatusOK || providerCalls != 0 || !strings.Contains(initial.Body.String(), "Salary") || strings.Contains(initial.Body.String(), "Partner private purchase") {
 		t.Fatalf("initial brief code=%d calls=%d body=%q", initial.Code, providerCalls, initial.Body.String())
 	}
@@ -94,7 +104,7 @@ func TestFamilyBriefLoadsWithoutAIThenRefreshesEvidenceAndKeepsPartnerPrivateOut
 		t.Fatalf("follow-up code=%d calls=%d mail=%#v", followUp.Code, providerCalls, mailer.last(t))
 	}
 	week := serve(application, coachingGET("/review", ownerSession))
-	if week.Code != http.StatusOK || !strings.Contains(week.Body.String(), "Week in Review") || !strings.Contains(week.Body.String(), "Only you") || !strings.Contains(week.Body.String(), "How Shared and Only you work") {
+	if week.Code != http.StatusOK || !strings.Contains(week.Body.String(), "Week in Review") || !strings.Contains(week.Body.String(), "What changed") || !strings.Contains(week.Body.String(), "Needs a look") || !strings.Contains(week.Body.String(), "Only you") || !strings.Contains(week.Body.String(), "Learn about privacy") {
 		t.Fatalf("week=%d %q", week.Code, week.Body.String())
 	}
 }

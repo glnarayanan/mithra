@@ -1707,3 +1707,163 @@ h2 {
     scroll-behavior: auto;
   }
 }
+
+/* Editorial coaching views: one strong summary surface, then readable lists. */
+.brief-introduction {
+  padding: clamp(2.5rem, 6vw, 4.75rem) 0 0;
+}
+
+.coaching-heading {
+  align-items: end;
+}
+
+.coaching-heading h1 {
+  max-width: none;
+  font-size: clamp(2.5rem, 6vw, 4.75rem);
+  letter-spacing: -0.055em;
+}
+
+.coaching-layout {
+  gap: clamp(2.5rem, 6vw, 4.5rem);
+  padding-top: clamp(1.75rem, 4vw, 3rem);
+}
+
+.brief-dashboard {
+  display: grid;
+  grid-template-columns: minmax(15rem, 0.75fr) minmax(0, 1.45fr);
+  gap: 1rem;
+}
+
+.brief-glance {
+  display: grid;
+  align-content: space-between;
+  gap: 2rem;
+  min-height: 23rem;
+  padding: clamp(1.5rem, 4vw, 2.25rem);
+  border-radius: 0.85rem;
+  background: var(--navy);
+  color: white;
+}
+
+.brief-glance .eyebrow,
+.brief-glance dt,
+.brief-glance span {
+  color: rgb(255 255 255 / 68%);
+}
+
+.brief-glance h2 {
+  color: white;
+  font-size: clamp(1.75rem, 4vw, 2.75rem);
+}
+
+.brief-glance dl {
+  margin: 0;
+}
+
+.brief-glance dl > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.8rem 0;
+  border-top: 0.0625rem solid rgb(255 255 255 / 18%);
+}
+
+.brief-glance dt {
+  font-size: 0.875rem;
+}
+
+.brief-glance dd {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 760;
+}
+
+.brief-updated {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.brief-updated strong {
+  color: white;
+}
+
+.coaching-lead.brief-main-update,
+.brief-main-update {
+  display: grid;
+  align-content: end;
+  min-height: 23rem;
+  padding: clamp(1.5rem, 4vw, 2.5rem);
+  border: 0.0625rem solid var(--line);
+  border-radius: 0.85rem;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.coaching-lead.brief-main-update::after {
+  content: none;
+}
+
+.coaching-lead.brief-main-update h2 {
+  max-width: 22ch;
+  color: var(--ink);
+}
+
+.coaching-lead.brief-main-update p:not(.eyebrow) {
+  color: var(--muted-ink);
+}
+
+.coaching-lead.brief-main-update a {
+  color: var(--moss);
+}
+
+.review-period {
+  margin: 0 0 0.4rem;
+  color: var(--muted-ink);
+  font-weight: 720;
+}
+
+.priority-list,
+.priority-list.priority-row {
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+
+.priority-list li {
+  padding: 1rem 0;
+  border: 0;
+  border-top: 0.0625rem solid var(--line);
+  border-radius: 0;
+  background: transparent;
+}
+
+.priority-list li::before {
+  display: none;
+}
+
+.only-you {
+  padding: clamp(1.25rem, 3vw, 2rem);
+  border: 0.0625rem solid #b9e8d7;
+  border-radius: 0.85rem;
+  background: var(--moss-wash);
+}
+
+@media (max-width: 45rem) {
+  .brief-dashboard {
+    grid-template-columns: 1fr;
+  }
+
+  .brief-glance,
+  .coaching-lead.brief-main-update,
+  .brief-main-update {
+    min-height: 0;
+  }
+
+  .review-period {
+    margin: 0;
+  }
+}
