@@ -96,7 +96,7 @@ func TestFinanceIssueCanBeCorrectedFromTheLens(t *testing.T) {
 		t.Fatal(err)
 	}
 	page := serve(application, authenticatedFinanceRequest(session, "/finance"))
-	if !strings.Contains(page.Body.String(), `action="/finance/correct"`) || !strings.Contains(page.Body.String(), `type="date"`) {
+	if !strings.Contains(page.Body.String(), `action="/finance/correct"`) || !strings.Contains(page.Body.String(), `type="date"`) || strings.Contains(page.Body.String(), `value="20 July"`) {
 		t.Fatalf("correction form missing: %q", page.Body.String())
 	}
 	values := url.Values{"csrf": {session.csrf.Value}, "record_id": {record.ID}, "version": {"1"}, "kind": {"spending"}, "date": {"2026-07-20"}, "amount": {"125"}}

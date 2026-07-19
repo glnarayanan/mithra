@@ -197,7 +197,11 @@ func financeView(summary finance.Summary, filter finance.ScopeFilter, csrf strin
 	}
 	for _, issue := range summary.Issues {
 		record := recordsByID[issue.RecordID]
-		view.Issues = append(view.Issues, FinanceIssueView{ID: record.ID, Label: issue.Label, Kind: string(issue.Kind), Reason: issue.Reason, Date: record.Date, Amount: record.OriginalAmount, Version: record.Version, EvidenceURL: sourceURL(issue.SourceID)})
+		date := record.Date
+		if _, err := time.Parse("2006-01-02", date); err != nil {
+			date = ""
+		}
+		view.Issues = append(view.Issues, FinanceIssueView{ID: record.ID, Label: issue.Label, Kind: string(issue.Kind), Reason: issue.Reason, Date: date, Amount: record.OriginalAmount, Version: record.Version, EvidenceURL: sourceURL(issue.SourceID)})
 	}
 	for _, record := range summary.Records {
 		amount := "Excluded"
