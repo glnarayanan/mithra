@@ -95,7 +95,7 @@ func TestClarificationCanBeDiscardedWithoutAnswering(t *testing.T) {
 		return captureProviderBody(`{"summary":"Milk purchase","variant":"finance","finance":{"kind":"spending","label":"Milk","category":"Groceries","date":"","end_date":"","status":"","amount":"85","incomplete_note":"","currency_context":""},"health":null,"planning":null}`)
 	})
 	response := serve(application, captureForm(session, url.Values{"action": {"text"}, "visibility": {"personal"}, "update": {"Bought milk for 85"}}))
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `value="cancel" class="button-quiet" formnovalidate`) {
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `name="action" value="answer"`) || !strings.Contains(response.Body.String(), `value="cancel" class="button-quiet" formnovalidate`) {
 		t.Fatalf("discard control = %d %q", response.Code, response.Body.String())
 	}
 	var captureID string
