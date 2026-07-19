@@ -106,7 +106,7 @@ func (a *App) captureText(r *http.Request, w http.ResponseWriter, scope policy.A
 	receipt, err := a.captureRecords.SubmitText(r.Context(), scope, capture.TextRequest{Text: text, Summary: summary, Visibility: visibility, Proposal: proposal})
 	if err != nil {
 		logRequestError(a.logger, r.Context(), "capture_commit_failed")
-		a.renderCapture(r, w, scope, csrf, "", "That update did not pass Mithra's record checks. Nothing was added.")
+		a.renderCapture(r, w, scope, csrf, "", "Mithra could not organise that update safely. Nothing was added.")
 		return
 	}
 	if receipt.State == "clarification" {
@@ -195,7 +195,7 @@ func (a *App) captureVoice(w http.ResponseWriter, r *http.Request) {
 	}
 	receipt, err := a.captureRecords.StageAudio(r.Context(), scope, capture.AudioRequest{Bytes: audio, Visibility: visibility})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "voice capture could not be staged")
+		writeError(w, http.StatusInternalServerError, "voice recording could not be started")
 		return
 	}
 	client, err := a.openAIFor(r.Context(), scope)
