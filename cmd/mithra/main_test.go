@@ -257,6 +257,12 @@ func TestRuntimeIdentityConfiguration(t *testing.T) {
 	}
 }
 
+func TestPDFParserRejectsArguments(t *testing.T) {
+	if err := run([]string{"pdf-parser", "unexpected"}); err == nil || !strings.Contains(err.Error(), "does not accept arguments") {
+		t.Fatalf("pdf parser arguments = %v", err)
+	}
+}
+
 func TestDecodeMasterKeyRequiresThirtyTwoRandomBytes(t *testing.T) {
 	encoded := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32))
 	key, err := decodeMasterKey(encoded)

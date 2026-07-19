@@ -50,9 +50,16 @@ type OwnedFile struct {
 }
 
 type StatusReport struct {
-	Installed, Database, DataPreserved, BackupTimer, BackupTimerActive, ServiceHealthy, MasterKey, PlunkCredential bool
-	Version, Listener, LastBackup, SocketMode                                                                      string
-	SocketUID, SocketGID                                                                                           uint32
+	Installed, Database, DataPreserved, BackupTimer, BackupTimerActive, ServiceHealthy, PDFParserSocket, PDFParserActive, MasterKey, PlunkCredential bool
+	Version, Listener, LastBackup, SocketMode                                                                                                        string
+	SocketUID, SocketGID                                                                                                                             uint32
+}
+
+// RestoreOwnership is resolved by the command before it stops Mithra. Tests
+// can supply the current uid/gid; a zero value deliberately makes no chown.
+type RestoreOwnership struct {
+	UID, GID int
+	Set      bool
 }
 
 func DatabasePreflight(ctx context.Context, path string) error {
@@ -141,14 +148,18 @@ func InstallRelease(plan Plan, release ReleaseInstall) error {
 			OwnedFile{Path: paths.Binary, Mode: 0o755, Content: release.Artifact}, OwnedFile{Path: paths.Installer, Mode: 0o755, Content: release.Installer},
 			OwnedFile{Path: paths.Version, Mode: 0o644, Content: []byte(releaseManifest.Version + "\n")},
 			OwnedFile{Path: paths.Config, Mode: 0o640, Content: []byte(RuntimeConfig(plan))}, OwnedFile{Path: paths.PlunkKey, Mode: 0o600, Content: []byte(strings.TrimSpace(release.PlunkCredential))},
-			OwnedFile{Path: paths.Service, Mode: 0o644, Content: []byte(ServiceUnit())}, OwnedFile{Path: paths.BackupService, Mode: 0o644, Content: []byte(BackupServiceUnit())}, OwnedFile{Path: paths.BackupTimer, Mode: 0o644, Content: []byte(BackupTimerUnit())})
+			OwnedFile{Path: paths.Service, Mode: 0o644, Content: []byte(ServiceUnit())}, OwnedFile{Path: paths.BackupService, Mode: 0o644, Content: []byte(BackupServiceUnit())}, OwnedFile{Path: paths.BackupTimer, Mode: 0o644, Content: []byte(BackupTimerUnit())}, OwnedFile{Path: paths.PDFParserService, Mode: 0o644, Content: []byte(PDFParserServiceUnit())}, OwnedFile{Path: paths.PDFParserSocket, Mode: 0o644, Content: []byte(PDFParserSocketUnit())})
 	case Upgrade:
-		files = append(files, OwnedFile{Path: paths.Binary, Mode: 0o755, Content: release.Artifact}, OwnedFile{Path: paths.Installer, Mode: 0o755, Content: release.Installer}, OwnedFile{Path: paths.Version, Mode: 0o644, Content: []byte(releaseManifest.Version + "\n")}, OwnedFile{Path: paths.Service, Mode: 0o644, Content: []byte(ServiceUnit())})
+		files = append(files, OwnedFile{Path: paths.Binary, Mode: 0o755, Content: release.Artifact}, OwnedFile{Path: paths.Installer, Mode: 0o755, Content: release.Installer}, OwnedFile{Path: paths.Version, Mode: 0o644, Content: []byte(releaseManifest.Version + "\n")}, OwnedFile{Path: paths.Service, Mode: 0o644, Content: []byte(ServiceUnit())}, OwnedFile{Path: paths.PDFParserService, Mode: 0o644, Content: []byte(PDFParserServiceUnit())}, OwnedFile{Path: paths.PDFParserSocket, Mode: 0o644, Content: []byte(PDFParserSocketUnit())})
 	case Reconfigure:
 		files = append(files, OwnedFile{Path: paths.Config, Mode: 0o640, Content: []byte(RuntimeConfig(plan))}, OwnedFile{Path: paths.PlunkKey, Mode: 0o600, Content: []byte(strings.TrimSpace(release.PlunkCredential))}, OwnedFile{Path: paths.Service, Mode: 0o644, Content: []byte(ServiceUnit())})
 	}
 	if paths.Proxy != "" && (plan.Options.Operation == Install || plan.Options.Operation == Reconfigure) {
-		files = append(files, OwnedFile{Path: paths.Proxy, Mode: 0o644, Content: []byte(ProxyConfig(plan))})
+		proxyConfig := ProxyConfig(plan)
+		if proxyConfig == "" {
+			return errors.New("proxy configuration domain is invalid")
+		}
+		files = append(files, OwnedFile{Path: paths.Proxy, Mode: 0o644, Content: []byte(proxyConfig)})
 	}
 	if plan.Options.Operation == Install {
 		key := make([]byte, 32)
@@ -305,9 +316,59 @@ func RehearseMigrations(ctx context.Context, databasePath string) error {
 	return mithradb.CheckReady(ctx, db)
 }
 
-func RestoreBackup(ctx context.Context, paths Paths, archive string, masterKey []byte, allowedEmails []string, health func() error) error {
+// PreflightRestore authenticates and opens every recovery input before the
+// caller quiesces the running service. It only creates a temporary directory.
+func PreflightRestore(ctx context.Context, paths Paths, archive string, masterKey []byte, allowedEmails []string, owner RestoreOwnership) error {
 	if len(masterKey) != 32 || len(allowedEmails) == 0 {
 		return errors.New("restore requires the retained key and current non-empty allowlist")
+	}
+	if err := validateRestoreOwnership(paths, owner); err != nil {
+		return err
+	}
+	parent := filepath.Dir(paths.Data)
+	stage, err := os.MkdirTemp(parent, ".mithra-restore-preflight-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(stage)
+	if err := extractArchive(archive, stage, masterKey); err != nil {
+		return err
+	}
+	if err := verifyExtracted(stage, masterKey); err != nil {
+		return err
+	}
+	if err := DatabasePreflight(ctx, filepath.Join(stage, "mithra.sqlite3")); err != nil {
+		return fmt.Errorf("restored database preflight: %w", err)
+	}
+	archivedJournal, err := imports.NewDeletionJournal(filepath.Join(stage, "deletion.journal"), masterKey)
+	if err != nil {
+		return fmt.Errorf("open archived deletion journal: %w", err)
+	}
+	if _, err := archivedJournal.ReadAll(); err != nil {
+		return fmt.Errorf("verify archived deletion journal: %w", err)
+	}
+	if exists(paths.Journal) {
+		journal, err := imports.NewDeletionJournal(paths.Journal, masterKey)
+		if err != nil {
+			return fmt.Errorf("open current deletion journal: %w", err)
+		}
+		if _, err := journal.ReadAll(); err != nil {
+			return fmt.Errorf("verify current deletion journal: %w", err)
+		}
+	}
+	return nil
+}
+
+func RestoreBackup(ctx context.Context, paths Paths, archive string, masterKey []byte, allowedEmails []string, health func() error) error {
+	return RestoreBackupWithOwnership(ctx, paths, archive, masterKey, allowedEmails, RestoreOwnership{}, health)
+}
+
+func RestoreBackupWithOwnership(ctx context.Context, paths Paths, archive string, masterKey []byte, allowedEmails []string, owner RestoreOwnership, health func() error) error {
+	if len(masterKey) != 32 || len(allowedEmails) == 0 {
+		return errors.New("restore requires the retained key and current non-empty allowlist")
+	}
+	if err := validateRestoreOwnership(paths, owner); err != nil {
+		return err
 	}
 	parent := filepath.Dir(paths.Data)
 	if err := os.MkdirAll(parent, 0o750); err != nil {
@@ -324,6 +385,9 @@ func RestoreBackup(ctx context.Context, paths Paths, archive string, masterKey [
 	if err := verifyExtracted(stage, masterKey); err != nil {
 		return err
 	}
+	if err := DatabasePreflight(ctx, filepath.Join(stage, "mithra.sqlite3")); err != nil {
+		return fmt.Errorf("restored database preflight: %w", err)
+	}
 	intents, err := mergeDeletionJournals(filepath.Join(stage, "deletion.journal"), paths.Journal, masterKey)
 	if err != nil {
 		return err
@@ -332,6 +396,9 @@ func RestoreBackup(ctx context.Context, paths Paths, archive string, masterKey [
 		return err
 	}
 	if err := os.Remove(filepath.Join(stage, "manifest.json")); err != nil {
+		return err
+	}
+	if err := applyRestoreOwnership(stage, owner); err != nil {
 		return err
 	}
 	previous := paths.Data + ".previous-" + time.Now().UTC().Format("20060102150405.000000000")
@@ -383,8 +450,15 @@ func RestoreBackup(ctx context.Context, paths Paths, archive string, masterKey [
 // pre-mutation generation without the access-clearing semantics of a user
 // requested recovery restore.
 func RestoreGeneration(paths Paths, archive string, masterKey []byte, health func() error) error {
+	return RestoreGenerationWithOwnership(paths, archive, masterKey, RestoreOwnership{}, health)
+}
+
+func RestoreGenerationWithOwnership(paths Paths, archive string, masterKey []byte, owner RestoreOwnership, health func() error) error {
 	if len(masterKey) != 32 {
 		return errors.New("rollback requires the retained key")
+	}
+	if err := validateRestoreOwnership(paths, owner); err != nil {
+		return err
 	}
 	parent := filepath.Dir(paths.Data)
 	stage, err := os.MkdirTemp(parent, ".mithra-rollback-")
@@ -399,6 +473,9 @@ func RestoreGeneration(paths Paths, archive string, masterKey []byte, health fun
 		return err
 	}
 	if err := os.Remove(filepath.Join(stage, "manifest.json")); err != nil {
+		return err
+	}
+	if err := applyRestoreOwnership(stage, owner); err != nil {
 		return err
 	}
 	failed := paths.Data + ".failed-generation"
@@ -446,6 +523,50 @@ func RestoreGeneration(paths Paths, archive string, masterKey []byte, health fun
 	return syncDir(parent)
 }
 
+func validateRestoreOwnership(paths Paths, owner RestoreOwnership) error {
+	if !owner.Set {
+		return nil
+	}
+	if owner.UID < 0 || owner.GID < 0 {
+		return errors.New("service ownership is invalid")
+	}
+	parent := filepath.Dir(paths.Data)
+	if filepath.Base(paths.Data) != "mithra" || filepath.Clean(paths.Data) != filepath.Join(parent, "mithra") {
+		return errors.New("restore data path is not Mithra-owned")
+	}
+	if info, err := os.Lstat(parent); err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("restore data parent is unavailable or unsafe")
+	}
+	return nil
+}
+
+func applyRestoreOwnership(stage string, owner RestoreOwnership) error {
+	if !owner.Set {
+		return nil
+	}
+	base := filepath.Base(stage)
+	if !strings.HasPrefix(base, ".mithra-restore-") && !strings.HasPrefix(base, ".mithra-rollback-") {
+		return errors.New("refusing ownership change outside Mithra restore staging")
+	}
+	return filepath.WalkDir(stage, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		info, err := os.Lstat(path)
+		if err != nil || info.Mode()&os.ModeSymlink != 0 {
+			return errors.New("restore staging contains an unsafe path")
+		}
+		mode := fs.FileMode(0o600)
+		if info.IsDir() {
+			mode = 0o750
+		}
+		if err := os.Chown(path, owner.UID, owner.GID); err != nil {
+			return fmt.Errorf("own restored generation: %w", err)
+		}
+		return os.Chmod(path, mode)
+	})
+}
+
 func RemoveRuntime(plan Plan) error {
 	if plan.Options.Operation != Uninstall {
 		return errors.New("runtime removal requires an uninstall plan")
@@ -484,7 +605,7 @@ func PurgeRecovery(plan Plan) error {
 }
 
 func InspectStatus(paths Paths, listener, version string) StatusReport {
-	report := StatusReport{Installed: exists(paths.Binary), Database: exists(paths.Database), DataPreserved: exists(paths.Data), BackupTimer: exists(paths.BackupTimer), MasterKey: exists(paths.MasterKey), PlunkCredential: exists(paths.PlunkKey), Listener: listener, Version: version}
+	report := StatusReport{Installed: exists(paths.Binary), Database: exists(paths.Database), DataPreserved: exists(paths.Data), BackupTimer: exists(paths.BackupTimer), PDFParserSocket: exists(paths.PDFParserSocket), MasterKey: exists(paths.MasterKey), PlunkCredential: exists(paths.PlunkKey), Listener: listener, Version: version}
 	if info, err := os.Lstat(paths.Socket); err == nil && info.Mode()&os.ModeSocket != 0 {
 		report.SocketMode = info.Mode().Perm().String()
 		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
@@ -652,9 +773,11 @@ func sanitizeRestore(ctx context.Context, stage string, intents []imports.Deleti
 	for _, statement := range []string{
 		`UPDATE users SET password_hash='',status='pending'`,
 		`DELETE FROM household_openai_settings`, `DELETE FROM browser_sessions`, `DELETE FROM password_reset_tokens`, `DELETE FROM invitations`, `DELETE FROM auth_throttles`,
-		`DELETE FROM jobs`, `DELETE FROM coaching_cache`, `DELETE FROM coaching_nudges`, `DELETE FROM document_imports`,
+		`DELETE FROM jobs`, `DELETE FROM coaching_cache`, `DELETE FROM coaching_nudges`,
+		`UPDATE document_imports SET state='discarded',proposal_json='',consent_token_hash=NULL,consent_expires_at=NULL,deletion_token_hash=NULL,deletion_expires_at=NULL,version=version+1,updated_at=? WHERE state IN ('review','awaiting_visual_consent','visual_processing')`,
+		`UPDATE document_imports SET deletion_token_hash=NULL,deletion_expires_at=NULL,updated_at=? WHERE state IN ('committed','superseded','deleted')`,
 	} {
-		if _, err := tx.ExecContext(ctx, statement); err != nil {
+		if _, err := tx.ExecContext(ctx, statement, restoreStatementArgs(statement)...); err != nil {
 			tx.Rollback()
 			return err
 		}
@@ -667,6 +790,13 @@ func sanitizeRestore(ctx context.Context, stage string, intents []imports.Deleti
 	}
 	_, err = db.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)")
 	return err
+}
+
+func restoreStatementArgs(statement string) []any {
+	if strings.HasPrefix(statement, "UPDATE document_imports") {
+		return []any{time.Now().UTC().Format(time.RFC3339Nano)}
+	}
+	return nil
 }
 
 func snapshotSQLite(ctx context.Context, source, target string) error {

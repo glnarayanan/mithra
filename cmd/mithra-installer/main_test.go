@@ -65,3 +65,21 @@ func TestInstalledAllowlistFencesDemoAccounts(t *testing.T) {
 		t.Fatalf("installed allowlist = %#v", allowed)
 	}
 }
+
+func TestInstalledRuntimeUsesPersistedProxyModeAndAppOrigin(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "mithra.env")
+	if err := os.WriteFile(path, []byte("MITHRA_PROXY_MODE=app-only\nMITHRA_ADDR=127.0.0.1:18091\nMITHRA_CANONICAL_ORIGIN=http://127.0.0.1:18091\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	proxy, domain, port := installedRuntime(path)
+	if proxy != "app-only" || domain != "127.0.0.1:18091" || port != 18091 {
+		t.Fatalf("persisted runtime proxy=%q domain=%q port=%d", proxy, domain, port)
+	}
+}
+
+func TestSystemUserExistsTreatsMissingParserIdentityAsAbsent(t *testing.T) {
+	exists, err := systemUserExists(context.Background(), "mithra-pdf-test-identity-that-does-not-exist")
+	if err != nil || exists {
+		t.Fatalf("missing parser identity exists=%t err=%v", exists, err)
+	}
+}

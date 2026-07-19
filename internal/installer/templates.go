@@ -14,10 +14,11 @@ func RuntimeConfig(plan Plan) string {
 		"ALLOWED_EMAILS=" + strings.Join(emails, ","),
 		"MITHRA_DB=/var/lib/mithra/mithra.sqlite3",
 		"MITHRA_SOURCE_DIR=/var/lib/mithra/sources",
+		"MITHRA_PROXY_MODE=" + string(plan.Proxy),
 		"MITHRA_PLUNK_FROM=" + strconv.Quote(plan.Options.PlunkFrom),
 	}
 	if plan.Proxy == AppOnly {
-		lines = append(lines, "MITHRA_ADDR="+plan.Listener)
+		lines = append(lines, "MITHRA_ADDR="+plan.Listener, "MITHRA_CANONICAL_ORIGIN=http://"+plan.Listener)
 	} else {
 		lines = append(lines, "MITHRA_SOCKET=/run/mithra/mithra.sock", "MITHRA_CANONICAL_ORIGIN=https://"+plan.Options.Domain)
 	}
@@ -90,7 +91,72 @@ WantedBy=timers.target
 `
 }
 
+func PDFParserServiceUnit() string {
+	return `[Unit]
+Description=Mithra isolated PDF parser
+Requires=mithra-pdf-parser.socket
+After=mithra-pdf-parser.socket
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/mithra pdf-parser
+User=mithra-pdf
+Group=mithra
+UMask=0077
+NoNewPrivileges=true
+PrivateNetwork=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+InaccessiblePaths=/var/lib/mithra/mithra.sqlite3 /var/lib/mithra/sources /etc/mithra/credentials
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectProc=invisible
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+LimitNOFILE=64
+MemoryMax=192M
+CPUQuota=50%
+TimeoutStartSec=15s
+TimeoutStopSec=5s
+RuntimeMaxSec=5min
+Restart=on-failure
+RestartSec=1s
+
+[Install]
+WantedBy=multi-user.target
+`
+}
+
+func PDFParserSocketUnit() string {
+	return `[Unit]
+Description=Mithra isolated PDF parser socket
+
+[Socket]
+ListenStream=/run/mithra/pdf-parser.sock
+SocketMode=0660
+SocketUser=mithra
+SocketGroup=mithra
+RemoveOnStop=true
+
+[Install]
+WantedBy=sockets.target
+`
+}
+
 func ProxyConfig(plan Plan) string {
+	if _, err := canonicalHostname(plan.Options.Domain); err != nil {
+		return ""
+	}
 	switch plan.Proxy {
 	case Caddy:
 		return fmt.Sprintf("%s {\n\treverse_proxy unix//run/mithra/mithra.sock\n}\n", plan.Options.Domain)

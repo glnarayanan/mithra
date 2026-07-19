@@ -40,7 +40,10 @@ func DetectHost(ctx context.Context, root, domain string, port int) HostFacts {
 		facts.SQLite = facts.Commands["sqlite3"] != "" || facts.SQLite
 		facts.Listeners = detectListeners(ctx, facts.Commands["ss"])
 	}
-	facts.VHosts, facts.DetectedProxy = detectVHosts(root)
+	facts.VHosts, _ = detectVHosts(root)
+	// A prior Mithra install did not persist this value. Only our exact owned
+	// proxy artifact is evidence enough to infer it; other vhosts are not.
+	facts.DetectedProxy = InferOwnedProxyMode(root)
 	facts.CaddyImportsOwnedDir = caddyImportsOwnedDirectory(root)
 	if domain != "" {
 		domain = strings.ToLower(strings.TrimSpace(domain))

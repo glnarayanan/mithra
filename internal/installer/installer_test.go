@@ -66,6 +66,77 @@ func TestBuildPlanCoversProxyAndOperationPreconditionsWithoutArivuMutation(t *te
 	}
 }
 
+func TestProxyHostnameAndRuntimeConfigurationAreStrictAndStable(t *testing.T) {
+	facts := healthyFacts()
+	for _, domain := range []string{"home.example:443", "home.example/path", "home.example\nreverse_proxy evil", "{home.example}", "home..example", "-home.example"} {
+		if _, err := BuildPlan(Options{Operation: Install, Root: t.TempDir(), Domain: domain, Proxy: Caddy, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}, facts); err == nil {
+			t.Fatalf("unsafe hostname accepted: %q", domain)
+		}
+	}
+	plan, err := BuildPlan(Options{Operation: Install, Root: t.TempDir(), Proxy: AppOnly, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}, facts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := RuntimeConfig(plan)
+	for _, want := range []string{"MITHRA_PROXY_MODE=app-only", "MITHRA_ADDR=127.0.0.1:18090", "MITHRA_CANONICAL_ORIGIN=http://127.0.0.1:18090"} {
+		if !strings.Contains(runtime, want) {
+			t.Fatalf("runtime config missing %q:\n%s", want, runtime)
+		}
+	}
+}
+
+func TestOwnedProxyInferenceDoesNotInspectOtherProxyFiles(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "etc", "nginx"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "etc", "nginx", "other.conf"), []byte("server {}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := InferOwnedProxyMode(root); got != "" {
+		t.Fatalf("inferred proxy from foreign file: %q", got)
+	}
+	path := OwnedPaths(root, Caddy).Proxy
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("home.example {}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := InferOwnedProxyMode(root); got != Caddy {
+		t.Fatalf("owned proxy = %q", got)
+	}
+}
+
+func TestParserUnitsAreOwnedAndConstrained(t *testing.T) {
+	root := t.TempDir()
+	plan, err := BuildPlan(Options{Operation: Install, Root: root, Proxy: AppOnly, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}, healthyFacts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := OwnedPaths(root, AppOnly)
+	for _, path := range []string{paths.PDFParserService, paths.PDFParserSocket} {
+		if !containsPath(plan.Mutations, path) {
+			t.Fatalf("parser unit not owned: %s", path)
+		}
+	}
+	unit := PDFParserServiceUnit()
+	for _, want := range []string{"User=mithra-pdf", "PrivateNetwork=true", "RestrictAddressFamilies=AF_UNIX", "ProtectSystem=strict", "InaccessiblePaths=/var/lib/mithra/mithra.sqlite3 /var/lib/mithra/sources /etc/mithra/credentials"} {
+		if !strings.Contains(unit, want) {
+			t.Fatalf("parser service missing %q", want)
+		}
+	}
+}
+
+func containsPath(paths []string, target string) bool {
+	for _, path := range paths {
+		if path == target {
+			return true
+		}
+	}
+	return false
+}
+
 func TestReleaseSignaturePreventsArtifactAndChecksumSubstitution(t *testing.T) {
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -215,6 +286,9 @@ func TestInstallReconfigureUninstallAndConfirmedPurgePreserveExactBoundaries(t *
 	if got, _ := os.ReadFile(paths.Version); string(got) != "v1.0.0\n" {
 		t.Fatalf("version = %q", got)
 	}
+	if !exists(paths.PDFParserService) || !exists(paths.PDFParserSocket) || !InspectStatus(paths, "127.0.0.1:18090", "v1.0.0").PDFParserSocket {
+		t.Fatal("parser units were not installed and reported")
+	}
 	if err := os.MkdirAll(paths.Data, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -245,8 +319,8 @@ func TestInstallReconfigureUninstallAndConfirmedPurgePreserveExactBoundaries(t *
 		t.Fatal(err)
 	}
 	facts.MithraInstalled = false
-	if exists(paths.Binary) || exists(paths.PlunkKey) || !exists(paths.MasterKey) || !exists(dataMarker) {
-		t.Fatalf("uninstall boundary binary=%t plunk=%t key=%t data=%t", exists(paths.Binary), exists(paths.PlunkKey), exists(paths.MasterKey), exists(dataMarker))
+	if exists(paths.Binary) || exists(paths.PlunkKey) || exists(paths.PDFParserService) || exists(paths.PDFParserSocket) || !exists(paths.MasterKey) || !exists(dataMarker) {
+		t.Fatalf("uninstall boundary binary=%t plunk=%t parser-service=%t parser-socket=%t key=%t data=%t", exists(paths.Binary), exists(paths.PlunkKey), exists(paths.PDFParserService), exists(paths.PDFParserSocket), exists(paths.MasterKey), exists(dataMarker))
 	}
 	purge, err := BuildPlan(Options{Operation: Purge, Root: root, Proxy: AppOnly, ConfirmPurge: true}, facts)
 	if err != nil {
@@ -293,6 +367,22 @@ func TestBackupRestoreAuthenticatesGenerationReconcilesDeletionAndClearsAccess(t
 	if err != nil {
 		t.Fatal(err)
 	}
+	preserved, err := store.Store(ctx, policy.ActorScope{ActorID: "owner", HouseholdID: "home", Role: "owner"}, []byte("keep this import"), storage.Metadata{Family: "csv", Version: 1, Visibility: policy.Shared, LocatorKind: "source", LocatorValue: "preserved"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := store.Store(ctx, policy.ActorScope{ActorID: "owner", HouseholdID: "home", Role: "owner"}, []byte("discard this review"), storage.Metadata{Family: "csv", Version: 1, Visibility: policy.Shared, LocatorKind: "source", LocatorValue: "pending"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []struct {
+		id, state string
+		source    storage.Source
+	}{{strings.Repeat("c", 32), "committed", preserved}, {strings.Repeat("d", 32), "review", pending}} {
+		if _, err := db.Exec(`INSERT INTO document_imports(id,household_id,owner_user_id,visibility,source_id,file_name,document_kind,source_digest,state,proposal_json,expected_shared_revision,expected_personal_revision,committed_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, item.id, "home", "owner", "shared", item.source.ID, item.state+".csv", "csv", item.source.PlaintextDigest, item.state, "", 0, 0, stamp, stamp, stamp); err != nil {
+			t.Fatal(err)
+		}
+	}
 	journal, err := imports.NewDeletionJournal(paths.Journal, key)
 	if err != nil {
 		t.Fatal(err)
@@ -322,7 +412,11 @@ func TestBackupRestoreAuthenticatesGenerationReconcilesDeletionAndClearsAccess(t
 	if err := copyRegular(paths.Journal, target.Journal, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := RestoreBackup(ctx, target, archive, key, []string{"owner@example.com"}, func() error { return nil }); err != nil {
+	owner := RestoreOwnership{UID: os.Getuid(), GID: os.Getgid(), Set: true}
+	if err := PreflightRestore(ctx, target, archive, key, []string{"owner@example.com"}, owner); err != nil {
+		t.Fatal(err)
+	}
+	if err := RestoreBackupWithOwnership(ctx, target, archive, key, []string{"owner@example.com"}, owner, func() error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	restored, err := database.Open(ctx, target.Database)
@@ -340,10 +434,34 @@ func TestBackupRestoreAuthenticatesGenerationReconcilesDeletionAndClearsAccess(t
 	if sessions != 0 || sources != 0 {
 		t.Fatalf("restored sessions=%d deleted sources=%d", sessions, sources)
 	}
+	var committed, pendingState string
+	if err := restored.QueryRow(`SELECT state FROM document_imports WHERE id=?`, strings.Repeat("c", 32)).Scan(&committed); err != nil || committed != "committed" {
+		t.Fatalf("committed import state=%q err=%v", committed, err)
+	}
+	if err := restored.QueryRow(`SELECT state FROM document_imports WHERE id=?`, strings.Repeat("d", 32)).Scan(&pendingState); err != nil || pendingState != "discarded" {
+		t.Fatalf("pending import state=%q err=%v", pendingState, err)
+	}
+	if info, err := os.Stat(target.Database); err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("restored database mode=%v err=%v", info.Mode(), err)
+	}
+	if info, err := os.Stat(target.Data); err != nil || info.Mode().Perm() != 0o750 {
+		t.Fatalf("restored data mode=%v err=%v", info.Mode(), err)
+	}
 	truncated := filepath.Join(t.TempDir(), "truncated.mbackup")
 	raw, _ := os.ReadFile(archive)
 	if err := os.WriteFile(truncated, raw[:len(raw)/2], 0o600); err != nil {
 		t.Fatal(err)
+	}
+	before, err := os.ReadFile(target.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := PreflightRestore(ctx, target, truncated, key, []string{"owner@example.com"}, owner); err == nil {
+		t.Fatal("truncated backup passed restore preflight")
+	}
+	after, err := os.ReadFile(target.Database)
+	if err != nil || string(after) != string(before) {
+		t.Fatalf("restore preflight changed active database err=%v", err)
 	}
 	if err := RestoreBackup(ctx, OwnedPaths(t.TempDir(), AppOnly), truncated, key, []string{"owner@example.com"}, nil); err == nil {
 		t.Fatal("truncated backup restored")
@@ -397,4 +515,25 @@ func TestRestoreHealthFailureKeepsCurrentGeneration(t *testing.T) {
 	if got, _ := os.ReadFile(marker); string(got) != "stable" {
 		t.Fatalf("current generation = %q", got)
 	}
+	if info, err := os.Stat(target.Data); err != nil || info.Mode().Perm() != 0o700 {
+		t.Fatalf("previous generation mode=%v err=%v", info.Mode(), err)
+	}
+}
+
+func FuzzProxyHostnameNeverRendersUnvalidatedInput(f *testing.F) {
+	for _, seed := range []string{"home.example", "home.example:443", "evil\nreverse_proxy", "{bad}"} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, domain string) {
+		plan, err := BuildPlan(Options{Operation: Install, Root: t.TempDir(), Domain: domain, Proxy: Caddy, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}, healthyFacts())
+		if err != nil {
+			if got := ProxyConfig(Plan{Proxy: Caddy, Options: Options{Domain: domain}}); got != "" {
+				t.Fatalf("invalid domain rendered: %q", got)
+			}
+			return
+		}
+		if got := ProxyConfig(plan); strings.ContainsAny(got, "\r\n") && strings.Contains(domain, "\n") {
+			t.Fatalf("control hostname rendered: %q", got)
+		}
+	})
 }

@@ -85,10 +85,10 @@ type Plan struct {
 }
 
 type Paths struct {
-	Root, Binary, Installer, Version, Config, Credentials, MasterKey, PlunkKey string
-	Data, Database, Sources, Journal, Backups                                  string
-	Service, BackupService, BackupTimer, Socket, Proxy                         string
-	OwnedManifest                                                              string
+	Root, Binary, Installer, Version, Config, Credentials, MasterKey, PlunkKey            string
+	Data, Database, Sources, Journal, Backups                                             string
+	Service, BackupService, BackupTimer, Socket, PDFParserService, PDFParserSocket, Proxy string
+	OwnedManifest                                                                         string
 }
 
 func OwnedPaths(root string, proxy ProxyMode) Paths {
@@ -114,7 +114,7 @@ func OwnedPaths(root string, proxy ProxyMode) Paths {
 		Root: root, Binary: join("/usr/local/bin/mithra"), Installer: join("/usr/local/bin/mithra-installer"), Version: join("/etc/mithra/version"),
 		Config: join("/etc/mithra/mithra.env"), Credentials: join("/etc/mithra/credentials"), MasterKey: join("/etc/mithra/credentials/master.key"), PlunkKey: join("/etc/mithra/credentials/plunk.key"),
 		Data: join("/var/lib/mithra"), Database: join("/var/lib/mithra/mithra.sqlite3"), Sources: join("/var/lib/mithra/sources"), Journal: join("/var/lib/mithra/deletion.journal"), Backups: join("/var/backups/mithra"),
-		Service: join("/etc/systemd/system/mithra.service"), BackupService: join("/etc/systemd/system/mithra-backup.service"), BackupTimer: join("/etc/systemd/system/mithra-backup.timer"), Socket: join("/run/mithra/mithra.sock"), Proxy: proxyPath, OwnedManifest: join("/etc/mithra/owned-files.json"),
+		Service: join("/etc/systemd/system/mithra.service"), BackupService: join("/etc/systemd/system/mithra-backup.service"), BackupTimer: join("/etc/systemd/system/mithra-backup.timer"), Socket: join("/run/mithra/mithra.sock"), PDFParserService: join("/etc/systemd/system/mithra-pdf-parser.service"), PDFParserSocket: join("/etc/systemd/system/mithra-pdf-parser.socket"), Proxy: proxyPath, OwnedManifest: join("/etc/mithra/owned-files.json"),
 	}
 }
 
@@ -148,8 +148,8 @@ func BuildPlan(opts Options, facts HostFacts) (Plan, error) {
 		return Plan{}, fmt.Errorf("unsupported proxy mode %q", proxy)
 	}
 	if proxy != AppOnly {
-		domain := strings.ToLower(strings.TrimSpace(opts.Domain))
-		if domain == "" || strings.ContainsAny(domain, " /\\") {
+		domain, err := canonicalHostname(opts.Domain)
+		if err != nil {
 			return Plan{}, errors.New("a valid domain is required for proxied mode")
 		}
 		opts.Domain = domain
@@ -214,7 +214,7 @@ func BuildPlan(opts Options, facts HostFacts) (Plan, error) {
 		plan.Mutations = append(ownedRuntime(paths), paths.MasterKey)
 	case Upgrade:
 		plan.Actions = []string{"verify signed release", "create pre-mutation backup", "rehearse migrations", "drain service", "capture final generation", "activate atomically", "verify health or roll back"}
-		plan.Mutations = []string{paths.Binary, paths.Installer, paths.Version, paths.Service, paths.OwnedManifest}
+		plan.Mutations = []string{paths.Binary, paths.Installer, paths.Version, paths.Service, paths.PDFParserService, paths.PDFParserSocket, paths.OwnedManifest}
 	case Reconfigure:
 		plan.Actions = []string{"verify current recovery evidence", "create pre-mutation backup", "stage configuration and Plunk credential", "validate proxy", "activate atomically or roll back"}
 		plan.Mutations = []string{paths.Config, paths.PlunkKey, paths.Service, paths.Proxy, paths.OwnedManifest}
@@ -262,7 +262,7 @@ func validOperation(op Operation) bool {
 }
 
 func ownedRuntime(p Paths) []string {
-	return []string{p.Binary, p.Installer, p.Version, p.Config, p.PlunkKey, p.Service, p.BackupService, p.BackupTimer, p.Proxy, p.OwnedManifest}
+	return []string{p.Binary, p.Installer, p.Version, p.Config, p.PlunkKey, p.Service, p.BackupService, p.BackupTimer, p.PDFParserService, p.PDFParserSocket, p.Proxy, p.OwnedManifest}
 }
 
 func isOwnedPath(path string, p Paths) bool {
@@ -284,6 +284,42 @@ func hasArivuSegment(path string) bool {
 		}
 	}
 	return false
+}
+
+// canonicalHostname accepts only a DNS hostname which is safe to render into
+// every supported proxy configuration. It deliberately does not accept ports,
+// URLs, IP literals, whitespace, or proxy-language punctuation.
+func canonicalHostname(raw string) (string, error) {
+	host := strings.ToLower(strings.TrimSpace(raw))
+	if host == "" || len(host) > 253 || strings.ContainsAny(host, " \t\r\n/:\\{}[]'\"") {
+		return "", errors.New("invalid DNS hostname")
+	}
+	for _, label := range strings.Split(host, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return "", errors.New("invalid DNS hostname")
+		}
+		for _, rune := range label {
+			if !(rune >= 'a' && rune <= 'z' || rune >= '0' && rune <= '9' || rune == '-') {
+				return "", errors.New("invalid DNS hostname")
+			}
+		}
+	}
+	return host, nil
+}
+
+// InferOwnedProxyMode is only a compatibility bridge for installations made
+// before proxy mode was persisted. It never guesses from another app's config.
+func InferOwnedProxyMode(root string) ProxyMode {
+	var found []ProxyMode
+	for _, mode := range []ProxyMode{Caddy, Nginx, Apache} {
+		if exists(OwnedPaths(root, mode).Proxy) {
+			found = append(found, mode)
+		}
+	}
+	if len(found) == 1 {
+		return found[0]
+	}
+	return ""
 }
 
 func RuntimeFacts(root string, port int) HostFacts {

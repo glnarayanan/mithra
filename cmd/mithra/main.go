@@ -63,6 +63,9 @@ func logStartupFailure(output io.Writer, err error) {
 
 func run(args []string) error {
 	if len(args) > 0 && args[0] == "pdf-parser" {
+		if len(args) != 1 {
+			return errors.New("pdf-parser does not accept arguments")
+		}
 		listener, err := imports.SystemdListener()
 		if err != nil {
 			return errors.New("open PDF parser socket")

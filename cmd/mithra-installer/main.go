@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -134,8 +135,20 @@ func run(ctx context.Context, args []string) error {
 		fmt.Println(archive)
 		return nil
 	case installer.Restore:
+		if len(allowed) == 0 {
+			allowed = installedAllowlist(paths.Config)
+		}
 		key, err := readMasterKey(paths.MasterKey)
 		if err != nil {
+			return err
+		}
+		owner, err := serviceOwnership(*root)
+		if err != nil {
+			clear(key)
+			return err
+		}
+		if err := installer.PreflightRestore(ctx, paths, *archive, key, allowed, owner); err != nil {
+			clear(key)
 			return err
 		}
 		restart, err := quiesce(ctx, *root)
@@ -182,7 +195,7 @@ func run(ctx context.Context, args []string) error {
 			}
 			return installer.VerifyArivuBaseline(ctx, *root, facts.ArivuBaseline)
 		}
-		err = installer.RestoreBackup(ctx, paths, *archive, key, allowed, health)
+		err = installer.RestoreBackupWithOwnership(ctx, paths, *archive, key, allowed, owner, health)
 		clear(key)
 		if err != nil {
 			return errors.Join(err, restart())
@@ -201,6 +214,7 @@ func run(ctx context.Context, args []string) error {
 		if *root == "/" {
 			report.ServiceHealthy = exec.CommandContext(ctx, "systemctl", "is-active", "--quiet", "mithra.service").Run() == nil
 			report.BackupTimerActive = exec.CommandContext(ctx, "systemctl", "is-active", "--quiet", "mithra-backup.timer").Run() == nil
+			report.PDFParserActive = exec.CommandContext(ctx, "systemctl", "is-active", "--quiet", "mithra-pdf-parser.socket").Run() == nil
 		}
 		return json.NewEncoder(os.Stdout).Encode(report)
 	}
@@ -216,7 +230,7 @@ func run(ctx context.Context, args []string) error {
 		return installRelease(ctx, plan, *artifactPath, *manifestPath, *signaturePath, *plunkPath)
 	case installer.Uninstall:
 		if *root == "/" {
-			if output, stopErr := exec.CommandContext(ctx, "systemctl", "disable", "--now", "mithra.service", "mithra-backup.timer").CombinedOutput(); stopErr != nil {
+			if output, stopErr := exec.CommandContext(ctx, "systemctl", "disable", "--now", "mithra.service", "mithra-backup.timer", "mithra-pdf-parser.service", "mithra-pdf-parser.socket").CombinedOutput(); stopErr != nil {
 				return fmt.Errorf("stop Mithra before uninstall: %s: %w", strings.TrimSpace(string(output)), stopErr)
 			}
 		}
@@ -224,6 +238,9 @@ func run(ctx context.Context, args []string) error {
 			return err
 		}
 		if *root == "/" {
+			if err := removeParserIdentity(ctx); err != nil {
+				return err
+			}
 			if err := exec.CommandContext(ctx, "systemctl", "daemon-reload").Run(); err != nil {
 				return err
 			}
@@ -282,12 +299,19 @@ func installRelease(ctx context.Context, plan installer.Plan, artifactPath, mani
 	var masterKey []byte
 	var rollbackArchive string
 	var recoveryRestart func() error
+	var rollbackOwner installer.RestoreOwnership
 	if plan.Options.Operation == installer.Upgrade || plan.Options.Operation == installer.Reconfigure {
 		masterKey, err = readMasterKey(paths.MasterKey)
 		if err != nil {
 			return err
 		}
 		defer clear(masterKey)
+		if plan.Options.Operation == installer.Upgrade {
+			rollbackOwner, err = serviceOwnership(plan.Options.Root)
+			if err != nil {
+				return err
+			}
+		}
 		recoveryRestart, err = quiesce(ctx, plan.Options.Root)
 		if err != nil {
 			return err
@@ -309,7 +333,7 @@ func installRelease(ctx context.Context, plan installer.Plan, artifactPath, mani
 	if err := installer.InstallRelease(plan, installer.ReleaseInstall{ArtifactName: filepath.Base(artifactPath), InstallerName: filepath.Base(self), Artifact: artifact, Installer: installerBinary, Manifest: manifest, Signature: signature, PublisherKey: key, PlunkCredential: string(plunk), Validate: validate}); err != nil {
 		if rollbackArchive != "" {
 			_ = exec.CommandContext(ctx, "systemctl", "stop", "mithra.service").Run()
-			rollbackErr := installer.RestoreGeneration(paths, rollbackArchive, masterKey, func() error {
+			rollbackErr := installer.RestoreGenerationWithOwnership(paths, rollbackArchive, masterKey, rollbackOwner, func() error {
 				if plan.Options.Root != "/" {
 					return nil
 				}
@@ -378,7 +402,7 @@ func activate(ctx context.Context, plan installer.Plan) error {
 	fail := func(activationErr error) error {
 		return errors.Join(activationErr, rollbackIdentity(ctx, identity))
 	}
-	for _, command := range [][]string{{"systemctl", "daemon-reload"}, {"systemctl", "enable", "--now", "mithra.service"}} {
+	for _, command := range [][]string{{"systemctl", "daemon-reload"}, {"systemctl", "enable", "--now", "mithra.service"}, {"systemctl", "enable", "--now", "mithra-pdf-parser.socket"}} {
 		if output, err := exec.CommandContext(ctx, command[0], command[1:]...).CombinedOutput(); err != nil {
 			return fail(fmt.Errorf("%s: %w", strings.TrimSpace(string(output)), err))
 		}
@@ -471,9 +495,9 @@ func webHealth(ctx context.Context, target string) error {
 }
 
 type identityState struct {
-	userCreated, membershipAdded bool
-	proxyUser                    string
-	directories                  []directoryState
+	userCreated, parserUserCreated, membershipAdded bool
+	proxyUser                                       string
+	directories                                     []directoryState
 }
 
 type directoryState struct {
@@ -490,6 +514,24 @@ func ensureIdentity(ctx context.Context, proxy installer.ProxyMode) (identitySta
 			return state, fmt.Errorf("create Mithra service identity: %s: %w", strings.TrimSpace(string(output)), err)
 		}
 		state.userCreated = true
+	}
+	parserExists, err := systemUserExists(ctx, "mithra-pdf")
+	if err != nil {
+		return state, err
+	}
+	if !parserExists {
+		if output, err := exec.CommandContext(ctx, "useradd", "--system", "--no-create-home", "--shell", "/usr/sbin/nologin", "--gid", "mithra", "mithra-pdf").CombinedOutput(); err != nil {
+			return state, fmt.Errorf("create PDF parser identity: %s: %w", strings.TrimSpace(string(output)), err)
+		}
+		state.parserUserCreated = true
+	} else {
+		groups, err := exec.CommandContext(ctx, "id", "-nG", "mithra-pdf").Output()
+		if err != nil {
+			return state, fmt.Errorf("inspect PDF parser identity: %w", err)
+		}
+		if !containsField(string(groups), "mithra") {
+			return state, errors.New("PDF parser identity must be in the mithra group")
+		}
 	}
 	for _, directory := range []string{"/var/lib/mithra", "/var/lib/mithra/sources", "/var/backups/mithra", "/etc/mithra/credentials"} {
 		directoryBefore := directoryState{path: directory}
@@ -546,7 +588,7 @@ func ensureIdentity(ctx context.Context, proxy installer.ProxyMode) (identitySta
 }
 
 func rollbackIdentity(ctx context.Context, state identityState) error {
-	_ = exec.CommandContext(ctx, "systemctl", "disable", "--now", "mithra.service", "mithra-backup.timer").Run()
+	_ = exec.CommandContext(ctx, "systemctl", "disable", "--now", "mithra.service", "mithra-backup.timer", "mithra-pdf-parser.service", "mithra-pdf-parser.socket").Run()
 	var failures []error
 	if state.membershipAdded && state.proxyUser != "" {
 		if output, err := exec.CommandContext(ctx, "gpasswd", "-d", state.proxyUser, "mithra").CombinedOutput(); err != nil {
@@ -568,6 +610,11 @@ func rollbackIdentity(ctx context.Context, state identityState) error {
 			failures = append(failures, err)
 		}
 	}
+	if state.parserUserCreated {
+		if output, err := exec.CommandContext(ctx, "userdel", "mithra-pdf").CombinedOutput(); err != nil {
+			failures = append(failures, fmt.Errorf("remove PDF parser identity: %s: %w", strings.TrimSpace(string(output)), err))
+		}
+	}
 	if state.userCreated {
 		if output, err := exec.CommandContext(ctx, "userdel", "mithra").CombinedOutput(); err != nil {
 			failures = append(failures, fmt.Errorf("remove Mithra identity: %s: %w", strings.TrimSpace(string(output)), err))
@@ -583,6 +630,29 @@ func containsField(value, field string) bool {
 		}
 	}
 	return false
+}
+
+func systemUserExists(ctx context.Context, name string) (bool, error) {
+	output, err := exec.CommandContext(ctx, "id", "-u", name).CombinedOutput()
+	if err == nil {
+		return true, nil
+	}
+	var exitError *exec.ExitError
+	if errors.As(err, &exitError) && exitError.ExitCode() == 1 {
+		return false, nil
+	}
+	return false, fmt.Errorf("inspect %s identity: %s: %w", name, strings.TrimSpace(string(output)), err)
+}
+
+func removeParserIdentity(ctx context.Context) error {
+	exists, err := systemUserExists(ctx, "mithra-pdf")
+	if err != nil || !exists {
+		return err
+	}
+	if output, err := exec.CommandContext(ctx, "userdel", "mithra-pdf").CombinedOutput(); err != nil {
+		return fmt.Errorf("remove PDF parser identity: %s: %w", strings.TrimSpace(string(output)), err)
+	}
+	return nil
 }
 
 func validateAndReloadProxy(ctx context.Context, proxy installer.ProxyMode, restart bool) error {
@@ -673,6 +743,13 @@ func installedRuntime(path string) (installer.ProxyMode, string, int) {
 			values[key] = strings.Trim(strings.TrimSpace(value), `"`)
 		}
 	}
+	proxy := installer.ProxyMode(values["MITHRA_PROXY_MODE"])
+	if proxy == installer.AppOnly || proxy == installer.Caddy || proxy == installer.Nginx || proxy == installer.Apache {
+		_, portText, _ := net.SplitHostPort(values["MITHRA_ADDR"])
+		port, _ := strconv.Atoi(portText)
+		origin := strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(values["MITHRA_CANONICAL_ORIGIN"], "https://"), "http://"), "/")
+		return proxy, origin, port
+	}
 	if values["MITHRA_SOCKET"] != "" {
 		origin := strings.TrimPrefix(strings.TrimPrefix(values["MITHRA_CANONICAL_ORIGIN"], "https://"), "http://")
 		return "", strings.TrimSuffix(origin, "/"), 0
@@ -683,6 +760,22 @@ func installedRuntime(path string) (installer.ProxyMode, string, int) {
 	}
 	port, _ := strconv.Atoi(portText)
 	return installer.AppOnly, "", port
+}
+
+func serviceOwnership(root string) (installer.RestoreOwnership, error) {
+	if root != "/" {
+		return installer.RestoreOwnership{}, nil
+	}
+	account, err := user.Lookup("mithra")
+	if err != nil {
+		return installer.RestoreOwnership{}, fmt.Errorf("lookup Mithra service identity: %w", err)
+	}
+	uid, uidErr := strconv.Atoi(account.Uid)
+	gid, gidErr := strconv.Atoi(account.Gid)
+	if uidErr != nil || gidErr != nil {
+		return installer.RestoreOwnership{}, errors.New("Mithra service identity has invalid uid or gid")
+	}
+	return installer.RestoreOwnership{UID: uid, GID: gid, Set: true}, nil
 }
 
 func installedAllowlist(path string) []string {
