@@ -50,6 +50,10 @@ func TestCSVImportSendsExtractedTextThenCommitsAtomically(t *testing.T) {
 	if upload.Code != http.StatusOK || !strings.Contains(upload.Body.String(), "Review before import") {
 		t.Fatalf("upload = %d %q", upload.Code, upload.Body.String())
 	}
+	pendingDuplicate := serve(application, importUploadRequest(t, session, "pending.csv", "text/csv", csv, "shared"))
+	if pendingDuplicate.Code != http.StatusOK || !strings.Contains(pendingDuplicate.Body.String(), "Mithra already has this file") || strings.Contains(pendingDuplicate.Body.String(), "already been imported") || providerCalls != 1 {
+		t.Fatalf("pending duplicate = %d calls=%d %q", pendingDuplicate.Code, providerCalls, pendingDuplicate.Body.String())
+	}
 	resumed := serve(application, authForm(http.MethodGet, "/imports", url.Values{}, []*http.Cookie{session.session, session.csrf}))
 	if resumed.Code != http.StatusOK || !strings.Contains(resumed.Body.String(), "Review before import") || !strings.Contains(resumed.Body.String(), "family.csv") || strings.Contains(resumed.Body.String(), `type="hidden" name="action"`) {
 		t.Fatalf("resumed review = %d %q", resumed.Code, resumed.Body.String())
@@ -73,7 +77,7 @@ func TestCSVImportSendsExtractedTextThenCommitsAtomically(t *testing.T) {
 	}
 
 	duplicate := serve(application, importUploadRequest(t, session, "renamed.csv", "text/csv", csv, "shared"))
-	if duplicate.Code != http.StatusOK || !strings.Contains(duplicate.Body.String(), "Nothing was copied or sent") || providerCalls != 1 {
+	if duplicate.Code != http.StatusOK || !strings.Contains(duplicate.Body.String(), "Mithra already has this file") || !strings.Contains(duplicate.Body.String(), "Nothing was copied or sent") || providerCalls != 1 {
 		t.Fatalf("duplicate = %d calls=%d %q", duplicate.Code, providerCalls, duplicate.Body.String())
 	}
 	preparedDelete := serve(application, importForm(session, url.Values{"action": {"prepare_delete"}, "import_id": {importID}}))

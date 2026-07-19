@@ -184,7 +184,7 @@ func TestBriefRendersAccessibleNavigationEmptyStateAndEscapesStatus(t *testing.T
 	response := httptest.NewRecorder()
 	malicious := `</script><script>window.pwned = true</script>`
 
-	application.renderTemplate(context.Background(), response, "brief.html", BriefView{Navigation: navigationForPath("/"), Status: malicious, Freshness: "Up to date"})
+	application.renderTemplate(context.Background(), response, "brief.html", BriefView{Navigation: navigationForPath("/"), Status: malicious, Freshness: "Up to date", Owner: true})
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("shell status = %d, want %d", response.Code, http.StatusOK)

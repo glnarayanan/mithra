@@ -163,7 +163,7 @@ func (a *App) uploadImport(r *http.Request, w http.ResponseWriter, scope policy.
 		message := "That file is corrupt, unsupported, password-protected, or exceeds Mithra's safe parsing limits. Nothing was saved or sent."
 		if errors.Is(err, imports.ErrScannedPDF) {
 			if a.imports.ExactExists(r.Context(), scope, visibility, documentDigest(content)) {
-				a.renderImports(r, w, scope, csrf, "", "This file has already been imported with the same privacy setting. Nothing was copied or sent.")
+				a.renderImports(r, w, scope, csrf, "", "Mithra already has this file with the same privacy setting. Nothing was copied or sent.")
 				return
 			}
 			source, storeErr := a.sources.Store(r.Context(), scope, content, storage.Metadata{Family: "pdf", Version: 1, Visibility: visibility, LocatorKind: "source", LocatorValue: "document"})
@@ -184,7 +184,7 @@ func (a *App) uploadImport(r *http.Request, w http.ResponseWriter, scope policy.
 		return
 	}
 	if a.imports.ExactExists(r.Context(), scope, visibility, document.Digest) {
-		a.renderImports(r, w, scope, csrf, "", "This file has already been imported with the same privacy setting. Nothing was copied or sent.")
+		a.renderImports(r, w, scope, csrf, "", "Mithra already has this file with the same privacy setting. Nothing was copied or sent.")
 		return
 	}
 	source, err := a.sources.Store(r.Context(), scope, content, storage.Metadata{Family: string(document.Kind), Version: 1, Visibility: visibility, LocatorKind: "source", LocatorValue: "document"})
@@ -203,7 +203,7 @@ func (a *App) uploadImport(r *http.Request, w http.ResponseWriter, scope policy.
 	if err != nil {
 		_ = a.sources.Delete(r.Context(), scope, source.ID)
 		if errors.Is(err, imports.ErrDuplicate) {
-			a.renderImports(r, w, scope, csrf, "", "This file has already been imported with the same privacy setting. Nothing was copied.")
+			a.renderImports(r, w, scope, csrf, "", "Mithra already has this file with the same privacy setting. Nothing was copied.")
 			return
 		}
 		a.renderImports(r, w, scope, csrf, "", "Mithra could not prepare this review. Nothing was imported. Try uploading the file again.")

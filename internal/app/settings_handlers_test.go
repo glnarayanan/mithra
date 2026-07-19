@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -58,6 +59,14 @@ func TestOwnerOpenAISettingsValidateEncryptPreserveAndRemove(t *testing.T) {
 	key, err = application.providerSettings.OpenAIKey(context.Background(), ownerScope(t, application, owner))
 	if err != nil || key != firstKey {
 		t.Fatalf("working key was replaced = %q, %v", key, err)
+	}
+
+	application.openAIClient = &http.Client{Transport: appRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("provider unavailable")
+	})}
+	unavailable := serve(application, authenticatedSettingsRequest(owner, http.MethodPost, url.Values{"action": {"save_openai"}, "api_key": {replacement}}))
+	if unavailable.Code != http.StatusOK || !strings.Contains(unavailable.Body.String(), "could not verify that key right now") || !strings.Contains(unavailable.Body.String(), "existing connection is unchanged") {
+		t.Fatalf("unavailable provider = %d %q", unavailable.Code, unavailable.Body.String())
 	}
 
 	invite := serve(application, settingsPost(owner, "partner@example.com"))

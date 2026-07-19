@@ -39,7 +39,7 @@ func (a *App) saveOpenAISetting(w http.ResponseWriter, r *http.Request, scope po
 		return client.Validate(ctx)
 	})
 	if err != nil {
-		a.renderSettings(r.Context(), w, scope, csrf, "", "OpenAI did not accept that key. Your existing connection is unchanged. Check the key and try again.")
+		a.renderSettings(r.Context(), w, scope, csrf, "", "Mithra could not verify that key right now. Your existing connection is unchanged. Check the key or try again later.")
 		return
 	}
 	a.renderSettings(r.Context(), w, scope, csrf, "OpenAI is connected. Mithra never displays the saved key.", "")

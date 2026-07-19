@@ -20,7 +20,7 @@ type BriefView struct {
 	Navigation                                              []NavigationItem
 	CSRF, Status, Freshness                                 string
 	Stale, PersonalStale, HasRecords, HasShared, CanRefresh bool
-	AIConfigured                                            bool
+	AIConfigured, Owner                                     bool
 	Lead                                                    CoachingItemView
 	Dates, Priorities, OnlyYou                              []CoachingItemView
 	Nudges                                                  []CoachingNudgeView
@@ -178,7 +178,7 @@ func (a *App) renderBrief(r *http.Request, w http.ResponseWriter, scope policy.A
 	}
 	configured, _ := a.providerSettings.Configured(r.Context(), scope)
 	evidence := evidenceMap(overview.SharedContext, overview.PersonalContext)
-	view := BriefView{Navigation: navigationForPath("/"), CSRF: csrf, Status: status, HasRecords: overview.HasRecords, HasShared: overview.Shared.Lead.Title != "", CanRefresh: configured && overview.HasRecords && csrf != "", AIConfigured: configured, Stale: overview.SharedCache.Stale, PersonalStale: overview.PersonalCache.Stale, Lead: itemView(overview.Shared.Lead, evidence), Dates: itemViews(overview.Shared.Dates, evidence), Priorities: itemViews(overview.Shared.Priorities, evidence), OnlyYou: itemViews(privateItems(overview.Personal), evidence)}
+	view := BriefView{Navigation: navigationForPath("/"), CSRF: csrf, Status: status, HasRecords: overview.HasRecords, HasShared: overview.Shared.Lead.Title != "", CanRefresh: configured && overview.HasRecords && csrf != "", AIConfigured: configured, Owner: scope.Role == "owner", Stale: overview.SharedCache.Stale, PersonalStale: overview.PersonalCache.Stale, Lead: itemView(overview.Shared.Lead, evidence), Dates: itemViews(overview.Shared.Dates, evidence), Priorities: itemViews(overview.Shared.Priorities, evidence), OnlyYou: itemViews(privateItems(overview.Personal), evidence)}
 	view.Freshness = freshness(overview.SharedCache, "Up to date")
 	if view.Status == "" && view.Stale {
 		view.Status = "A newer update is available. Dates and sources are still up to date."
