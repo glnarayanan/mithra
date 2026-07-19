@@ -37,6 +37,7 @@ type AuthView struct {
 }
 
 type SettingsView struct {
+	Navigation       []NavigationItem
 	Members          []household.Member
 	Owner            bool
 	OpenAIConfigured bool
@@ -492,7 +493,7 @@ func (a *App) renderSettings(ctx context.Context, w http.ResponseWriter, scope p
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
-	a.renderTemplate(ctx, w, "settings.html", SettingsView{Members: members, Owner: scope.Role == "owner", OpenAIConfigured: configured, Timezone: timezone, CSRF: csrf, Status: status, Error: problem})
+	a.renderTemplate(ctx, w, "settings.html", SettingsView{Navigation: navigationForPath("/settings"), Members: members, Owner: scope.Role == "owner", OpenAIConfigured: configured, Timezone: timezone, CSRF: csrf, Status: status, Error: problem})
 }
 
 func (a *App) renderTemplate(ctx context.Context, w http.ResponseWriter, name string, view any) {

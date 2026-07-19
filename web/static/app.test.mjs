@@ -16,12 +16,31 @@ test("install ignores missing document capabilities", () => {
   assert.doesNotThrow(() => app.install({}));
 });
 
-test("quick navigation has only the approved destinations and filters labels", () => {
-  assert.deepEqual(app.destinations.map(({ label, path }) => [label, path]), [
-    ["Family Brief", "/"], ["Week in Review", "/review"], ["Capture", "/capture"], ["Import", "/imports"], ["Finance", "/finance"], ["Health", "/health"], ["Planning", "/planning"], ["Settings", "/settings"], ["Help", "/help"]
+test("quick navigation reads the server navigation and filters labels", () => {
+  const links = [
+    { textContent: "Family Brief", getAttribute: () => "/" },
+    { textContent: "Week in Review", getAttribute: () => "/review" },
+  ];
+  const destinations = app.navigationDestinations({ querySelectorAll: () => links });
+
+  assert.deepEqual(destinations, [
+    { label: "Family Brief", path: "/" },
+    { label: "Week in Review", path: "/review" },
   ]);
-  assert.deepEqual(app.filterQuickNavigation("review").map(({ label }) => label), ["Week in Review"]);
-  assert.deepEqual(app.filterQuickNavigation(" ").map(({ label }) => label), app.destinations.map(({ label }) => label));
+  assert.deepEqual(app.filterQuickNavigation(destinations, "review").map(({ label }) => label), ["Week in Review"]);
+  assert.deepEqual(app.filterQuickNavigation(destinations, " "), destinations);
+});
+
+test("keyboard help shortcut ignores editing, composition, repeats, and open dialogs", () => {
+  const shortcut = (overrides = {}) => ({ key: "?", target: null, ...overrides });
+  const noModal = { querySelector: () => null };
+  const input = { tagName: "INPUT", parentElement: null };
+
+  assert.equal(app.shouldOpenShortcutHelp(shortcut(), noModal, null), true);
+  assert.equal(app.shouldOpenShortcutHelp(shortcut({ target: input }), noModal, null), false);
+  assert.equal(app.shouldOpenShortcutHelp(shortcut({ isComposing: true }), noModal, null), false);
+  assert.equal(app.shouldOpenShortcutHelp(shortcut({ repeat: true }), noModal, null), false);
+  assert.equal(app.shouldOpenShortcutHelp(shortcut(), { querySelector: () => ({}) }, null), false);
 });
 
 test("quick navigation shortcut respects ordinary editing and modal use", () => {

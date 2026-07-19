@@ -12,9 +12,9 @@
     <script src="/assets/planning.js" defer></script>
     <title>Settings · Mithra</title>
   </head>
-  <body>
+  <body class="authenticated-shell">
     <a class="skip-link" href="#main-content">Skip to main content</a>
-    <header class="site-header"><div class="page-shell header-content"><a class="brand" href="/" aria-label="Mithra homepage"><span class="brand-mark" aria-hidden="true">M</span><span>Mithra</span></a><a href="/help">Help</a><form method="post" action="/auth/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="quiet-button" type="submit">Sign out</button></form></div></header>
+    {{template "app-shell" .}}
     <main id="main-content" tabindex="-1" class="auth-main">
       <section class="auth-card" aria-labelledby="page-title">
         <p class="eyebrow">Household settings</p>

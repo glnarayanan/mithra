@@ -12,13 +12,9 @@
     <script defer src="/assets/brief.js"></script>
     <title>Family Brief · Mithra</title>
   </head>
-  <body>
+  <body class="authenticated-shell">
     <a class="skip-link" href="#main-content">Skip to main content</a>
-    <header class="site-header"><div class="page-shell header-content">
-      <a class="brand" href="/" aria-label="Mithra homepage"><span class="brand-mark" aria-hidden="true">M</span><span>Mithra</span></a>
-      <nav class="desktop-navigation" aria-label="Primary navigation"><ul class="navigation-list">{{range .Navigation}}<li><a href="{{.Path}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a></li>{{end}}</ul></nav>
-      <details class="mobile-navigation"><summary>Menu</summary><nav aria-label="Primary navigation"><ul class="navigation-list">{{range .Navigation}}<li><a href="{{.Path}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a></li>{{end}}</ul></nav></details>
-    </div></header>
+    {{template "app-shell" .}}
     <main id="main-content" tabindex="-1" class="coaching-main">
       <section class="brief-introduction"><div class="page-shell coaching-heading">
         <div><p class="eyebrow">Family Brief</p><h1>The household, calmly in view.</h1><p class="introduction-copy">Facts, dates, and changes from the records you can see. Mithra does not judge, diagnose, or decide for you.</p></div>
