@@ -67,6 +67,47 @@ func TestAmbiguousTextAsksOneQuestionWithoutDerivedRecord(t *testing.T) {
 	}
 }
 
+func TestAppointmentDefaultsMissingDetailsAndAppearsOnCalendar(t *testing.T) {
+	application, mailer := newAuthTestApp(t, "owner@example.com")
+	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
+	scope := ownerScope(t, application, session)
+	if err := application.planningRecords.SetTimezone(context.Background(), scope, "Asia/Kolkata"); err != nil {
+		t.Fatal(err)
+	}
+	connectCaptureProvider(t, application, scope, func(*http.Request) string {
+		return captureProviderBody(`{"summary":"Annual checkup","variant":"health","finance":null,"health":{"kind":"appointment","subject":"Owner","label":"","analyte":"","observed_on":"","value":"","unit":"","provider":"Dr. Rao","location":"","scheduled_on":"2026-07-20","cadence":"","next_due_on":"","status":""},"planning":null}`)
+	})
+
+	response := serve(application, captureForm(session, url.Values{"action": {"text"}, "visibility": {"personal"}, "update": {"Annual checkup with Dr. Rao on 2026-07-20"}}))
+	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), "One thing to check") {
+		t.Fatalf("appointment capture = %d %q", response.Code, response.Body.String())
+	}
+	calendar := serve(application, coachingGET("/planning?date=2026-07-20", session))
+	if calendar.Code != http.StatusOK || !strings.Contains(calendar.Body.String(), "Annual checkup") {
+		t.Fatalf("calendar = %d %q", calendar.Code, calendar.Body.String())
+	}
+}
+
+func TestClarificationCanBeDiscardedWithoutAnswering(t *testing.T) {
+	application, mailer := newAuthTestApp(t, "owner@example.com")
+	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
+	connectCaptureProvider(t, application, ownerScope(t, application, session), func(*http.Request) string {
+		return captureProviderBody(`{"summary":"Milk purchase","variant":"finance","finance":{"kind":"spending","label":"Milk","category":"Groceries","date":"","end_date":"","status":"","amount":"85","incomplete_note":"","currency_context":""},"health":null,"planning":null}`)
+	})
+	response := serve(application, captureForm(session, url.Values{"action": {"text"}, "visibility": {"personal"}, "update": {"Bought milk for 85"}}))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `value="cancel" class="button-quiet" formnovalidate`) {
+		t.Fatalf("discard control = %d %q", response.Code, response.Body.String())
+	}
+	var captureID string
+	if err := application.db.QueryRow(`SELECT id FROM captures WHERE state='clarification'`).Scan(&captureID); err != nil {
+		t.Fatal(err)
+	}
+	discarded := serve(application, captureForm(session, url.Values{"action": {"cancel"}, "capture_id": {captureID}}))
+	if discarded.Code != http.StatusOK || !strings.Contains(discarded.Body.String(), "Capture discarded") {
+		t.Fatalf("discard response = %d %q", discarded.Code, discarded.Body.String())
+	}
+}
+
 func TestVoiceCaptureStagesWithoutDownloadThenDeletesRawOnConfirm(t *testing.T) {
 	application, mailer := newAuthTestApp(t, "owner@example.com")
 	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/glnarayanan/mithra/internal/health"
 	"github.com/glnarayanan/mithra/internal/planning"
 )
 
@@ -121,6 +122,11 @@ func (a *App) planningLens(w http.ResponseWriter, r *http.Request) {
 		a.renderPlanning(r.Context(), w, PlanningView{Navigation: navigationForPath("/planning"), CSRF: csrf, View: viewName, Timezone: zone, Error: "Plans could not be loaded. Try again."})
 		return
 	}
+	healthSummary, err := a.healthRecords.Summarize(r.Context(), scope, health.AllRecords)
+	if err != nil {
+		a.renderPlanning(r.Context(), w, PlanningView{Navigation: navigationForPath("/planning"), CSRF: csrf, View: viewName, Timezone: zone, Error: "Dated health records could not be loaded. Try again."})
+		return
+	}
 	conflictByID := map[string]string{}
 	for _, conflict := range conflicts {
 		conflictByID[conflict.First.ID] = conflict.Reason
@@ -128,8 +134,9 @@ func (a *App) planningLens(w http.ResponseWriter, r *http.Request) {
 	}
 	view := PlanningView{Navigation: navigationForPath("/planning"), CSRF: csrf, View: viewName, Timezone: zone, PeriodLabel: planningPeriodLabel(viewName, from, to), WeekdayLabels: []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}}
 	view.PreviousURL, view.TodayURL, view.NextURL, view.MonthURL, view.WeekURL, view.AgendaURL = planningURLs(viewName, focus, zone)
-	calendarEvents := planningEventViews(events, conflictByID, zone)
-	view.Agenda = planningEventViews(planningEventsInRange(events, from, to), conflictByID, zone)
+	healthEvents := healthPlanningEvents(healthSummary)
+	calendarEvents := planningEventViews(append(events, planningEventsInRange(healthEvents, gridFrom, gridTo)...), conflictByID, zone)
+	view.Agenda = planningEventViews(append(planningEventsInRange(events, from, to), planningEventsInRange(healthEvents, from, to)...), conflictByID, zone)
 	view.CalendarDays = planningDays(calendarEvents, gridFrom, gridTo, from, to, time.Now())
 	view.Plans = planningPlanViews(plans)
 	if r.URL.Query().Get("export") == "unavailable" {
@@ -154,6 +161,17 @@ func (a *App) planningICS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	event, err := a.planningRecords.GetEvent(r.Context(), scope, id)
+	if strings.HasPrefix(id, "health-") {
+		summary, summaryErr := a.healthRecords.Summarize(r.Context(), scope, health.AllRecords)
+		if summaryErr == nil {
+			for _, candidate := range healthPlanningEvents(summary) {
+				if candidate.ID == id {
+					event, err = candidate, nil
+					break
+				}
+			}
+		}
+	}
 	if err != nil {
 		writeError(w, http.StatusNotFound, "not found")
 		return
@@ -176,6 +194,23 @@ func (a *App) planningICS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, _ = w.Write([]byte(calendar))
+}
+
+func healthPlanningEvents(summary health.Summary) []planning.Event {
+	events := make([]planning.Event, 0, len(summary.Appointments)+len(summary.Routines))
+	for _, appointment := range summary.Appointments {
+		if appointment.Status != "planned" {
+			continue
+		}
+		events = append(events, planning.Event{ID: "health-appointment-" + appointment.ID, Title: appointment.Label, Location: appointment.Location, AllDay: true, StartsOn: appointment.ScheduledOn, EndsOn: appointment.ScheduledOn, Status: "planned", SourceID: appointment.SourceID, OwnerIDs: []string{appointment.OwnerID}})
+	}
+	for _, routine := range summary.Routines {
+		if routine.Status != "active" {
+			continue
+		}
+		events = append(events, planning.Event{ID: "health-routine-" + routine.ID, Title: routine.Label, AllDay: true, StartsOn: routine.NextDueOn, EndsOn: routine.NextDueOn, Status: "planned", SourceID: routine.SourceID, OwnerIDs: []string{routine.OwnerID}})
+	}
+	return events
 }
 
 func (a *App) renderPlanning(ctx context.Context, w http.ResponseWriter, view PlanningView) {

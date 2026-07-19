@@ -32,9 +32,9 @@ type CaptureView struct {
 }
 
 type CaptureItemView struct {
-	ID, Kind, Title, Summary, Clarification, SourceURL string
-	Details                                            []CaptureDetailView
-	Undoable                                           bool
+	ID, Kind, Title, Summary, Clarification, ClarificationField, SourceURL string
+	Details                                                                []CaptureDetailView
+	Undoable                                                               bool
 }
 
 type CaptureDetailView struct{ Label, Value string }
@@ -288,7 +288,7 @@ func captureItemView(receipt capture.Capture, now time.Time) CaptureItemView {
 	if title == "" {
 		title = "Captured update"
 	}
-	item := CaptureItemView{ID: receipt.ID, Kind: kind, Title: title, Summary: receipt.Summary, Clarification: receipt.ClarificationQuestion, Undoable: receipt.State == "confirmed" && receipt.RecordID != "" && receipt.UndoUntil.After(now)}
+	item := CaptureItemView{ID: receipt.ID, Kind: kind, Title: title, Summary: receipt.Summary, Clarification: receipt.ClarificationQuestion, ClarificationField: receipt.ClarificationField, Undoable: receipt.State == "confirmed" && receipt.RecordID != "" && receipt.UndoUntil.After(now)}
 	if receipt.SourceID != "" {
 		item.SourceURL = sourceURL(receipt.SourceID)
 	}

@@ -282,6 +282,7 @@ func (s *Service) commit(ctx context.Context, actor policy.ActorScope, id string
 	if raw != "" {
 		cleanupAt = s.now().UTC().Add(15 * time.Minute).Format(time.RFC3339Nano)
 	}
+	completeProposal(&request)
 	field, question := clarification(request.Proposal)
 	now := s.now().UTC()
 	if field != "" {
@@ -613,9 +614,6 @@ func clarification(p Proposal) (string, string) {
 		if d.Kind == Observation && d.Unit == "" {
 			return "unit", "What unit was recorded?"
 		}
-		if d.Kind != Observation && d.Status == "" {
-			return "status", "What is this health record's status?"
-		}
 	}
 	if p.Planning != nil {
 		d := p.Planning
@@ -629,11 +627,34 @@ func clarification(p Proposal) (string, string) {
 			return "date", "When does this end? Use YYYY-MM-DDTHH:MM."
 		}
 		if d.Status == "" {
-			return "status", "What is this plan's status?"
+			return "status", "Is this plan planned, completed, or cancelled?"
 		}
 	}
 	return "", ""
 }
+
+func completeProposal(request *TextRequest) {
+	if request == nil || request.Proposal.Health == nil || request.Proposal.Health.Kind != Appointment {
+		return
+	}
+	draft := request.Proposal.Health
+	if strings.TrimSpace(draft.Label) == "" {
+		label := strings.TrimSpace(request.Summary)
+		if label == "" || len(label) > 256 {
+			label = "Health appointment"
+		}
+		draft.Label = label
+	}
+	switch strings.ToLower(strings.TrimSpace(draft.Status)) {
+	case "upcoming", "scheduled", "pending":
+		draft.Status = "planned"
+	case "done":
+		draft.Status = "completed"
+	case "canceled":
+		draft.Status = "cancelled"
+	}
+}
+
 func summary(r TextRequest) string {
 	if strings.TrimSpace(r.Summary) != "" {
 		return strings.TrimSpace(r.Summary)
