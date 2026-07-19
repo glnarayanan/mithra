@@ -142,6 +142,9 @@ func runParsed(ctx context.Context, parsed parsedInstallerCommand, output io.Wri
 	f := parsed.flags
 	root, domain, proxy, port, emails, archive, confirm := f.root, f.domain, f.proxy, f.port, f.emails, f.archive, f.confirm
 	artifactPath, candidateInstallerPath, manifestPath, signaturePath, releaseVersion := f.artifact, f.candidateInstaller, f.manifest, f.signature, f.releaseVersion
+	if operation == installer.Upgrade && *artifactPath == "" && *candidateInstallerPath == "" && *manifestPath == "" && *signaturePath == "" && *releaseVersion == "" {
+		return runAutomaticUpgrade(ctx, parsed, output)
+	}
 	plunkPath, plunkFrom, ownerEmail, partnerEmail, masterKeyPath := f.plunkPath, f.plunkFrom, f.ownerEmail, f.partnerEmail, f.masterKeyPath
 	allowed := splitEmails(*emails)
 	basePaths := installer.OwnedPaths(*root, "")

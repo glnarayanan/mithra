@@ -139,7 +139,17 @@ writes to capture one consistent generation.
 
 ## Upgrade and reconfigure
 
-Plan first when practical:
+The installed CLI securely downloads and verifies the latest signed release,
+creates a backup, and activates it atomically:
+
+```bash
+sudo mithra-installer upgrade
+```
+
+Installations older than `v1.2.1` need one final verified-script upgrade to
+`v1.2.1`; the installed CLI handles later upgrades with the command above.
+
+Plan or pin a release manually only when required:
 
 ```bash
 sudo mithra-installer plan upgrade
@@ -148,8 +158,8 @@ sudo mithra-installer plan reconfigure \
   --plunk-from 'Mithra <hello@mithra.example.com>'
 ```
 
-For an upgrade, repeat the complete verified-download sequence above with the
-new exact tag, then replace the final command with:
+For a manually pinned upgrade, repeat the complete verified-download sequence
+above with the new exact tag, then replace the final command with:
 
 ```bash
 sudo env MITHRA_VERSION="$release" sh "$stage/install.sh" upgrade
