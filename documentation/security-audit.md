@@ -6,6 +6,8 @@ This is a safe post-remediation summary. It records reviewed boundaries and
 operational expectations without publishing exploit paths, payloads, secrets,
 host details, or sensitive test evidence.
 
+The consolidated final review found no unresolved P0-P2 security defects.
+
 ## Reviewed surfaces
 
 - admission, password reset, invitations, sessions, CSRF, browser headers, and
@@ -24,9 +26,10 @@ host details, or sensitive test evidence.
 
 The review remediated confirmed P1/P2 concerns in import/deletion lifecycle
 atomicity, provider redirect handling, restore ownership and preflight,
-release-artifact authentication, lifecycle CLI parsing, and browser privacy
-and responsive behavior. The following controls were verified by focused tests
-and the repository's runtime/installer checks:
+unfinished-import cleanup during restore, release-artifact authentication,
+lifecycle CLI parsing, and browser privacy and responsive behavior. The
+following controls were verified by focused tests and the repository's
+runtime/installer checks:
 
 - invitation-only, two-adult admission; scoped authorization; bounded Argon2id
   password work; short-lived hashed reset, invitation, session, and CSRF data;
