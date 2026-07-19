@@ -39,9 +39,16 @@ func TestAuthenticatedShellsExposeHelpAndHelpNavigationEscapes(t *testing.T) {
 		request.AddCookie(session.session)
 		request.AddCookie(session.csrf)
 		response := serve(application, request)
-		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `href="/help"`) {
-			t.Fatalf("shell %s = %d, Help link=%t", path, response.Code, strings.Contains(response.Body.String(), `href="/help"`))
+		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `href="/help"`) || !strings.Contains(response.Body.String(), `src="/assets/app.js"`) {
+			t.Fatalf("shell %s = %d, Help link=%t, quick navigation script=%t", path, response.Code, strings.Contains(response.Body.String(), `href="/help"`), strings.Contains(response.Body.String(), `src="/assets/app.js"`))
 		}
+		if path == "/help" && !strings.Contains(response.Body.String(), "Ctrl+K or Command+K") {
+			t.Fatalf("help does not explain quick navigation: %q", response.Body.String())
+		}
+	}
+	login := serve(application, httptest.NewRequest(http.MethodGet, "/auth/login", nil))
+	if login.Code != http.StatusOK || strings.Contains(login.Body.String(), `src="/assets/app.js"`) {
+		t.Fatalf("authentication shell quick navigation script=%t", strings.Contains(login.Body.String(), `src="/assets/app.js"`))
 	}
 
 	response := httptest.NewRecorder()
