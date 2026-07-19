@@ -261,7 +261,7 @@ func TestEmbeddedFaviconIsServedWithoutBrowserConsoleFallback(t *testing.T) {
 	}
 }
 
-func newTestApp(t *testing.T) *App {
+func newTestApp(t testing.TB) *App {
 	t.Helper()
 	application, err := New(context.Background(), Config{DatabasePath: filepath.Join(t.TempDir(), "mithra.sqlite3"), MasterKey: bytes.Repeat([]byte{7}, 32)})
 	if err != nil {

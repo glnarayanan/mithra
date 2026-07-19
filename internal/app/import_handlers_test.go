@@ -3,6 +3,8 @@ package app
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"mime/multipart"
@@ -13,6 +15,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	importcore "github.com/glnarayanan/mithra/internal/imports"
 	"github.com/glnarayanan/mithra/internal/policy"
@@ -275,6 +278,87 @@ func TestScannedPDFRequiresBoundOneTimeConsentBeforeInlineTransfer(t *testing.T)
 	if !strings.Contains(committed.Body.String(), "Import complete") {
 		t.Fatalf("visual commit = %q", committed.Body.String())
 	}
+}
+
+func FuzzVisualImportLifecycleRejectsInvalidTransitions(f *testing.F) {
+	f.Add([]byte{4, 9}) // consume v1, then finish v2
+	f.Add([]byte{8})    // consume with a stale version
+	f.Add([]byte{13})   // finish without a consumed consent
+
+	application, mailer := newAuthTestApp(f, "owner@example.com")
+	session := activate(f, application, mailer, "owner@example.com", "an owner secure password", nil)
+	scope := ownerScopeForFuzz(f, application, session)
+	source, err := application.sources.Store(context.Background(), scope, []byte("%PDF-1.7\nfuzz fixture"), storage.Metadata{Family: "pdf", Version: 1, Visibility: policy.Personal, LocatorKind: "source", LocatorValue: "fixture"})
+	if err != nil {
+		f.Fatal(err)
+	}
+	consent, err := application.imports.StageVisualConsent(context.Background(), scope, source, "fixture.pdf")
+	if err != nil {
+		f.Fatal(err)
+	}
+	valid := importcore.ProposalSet{Records: []importcore.ProposedRecord{{Family: "health", Locator: importcore.Locator{Kind: "page", Value: "page:1"}, Health: &importcore.HealthProposal{Subject: "Alex", Analyte: "Vitamin D", Specimen: "blood", ObservedOn: "2026-07-02", Value: "28", Unit: "ng/mL"}}}}
+	hash := sha256.Sum256([]byte(consent.Token))
+
+	f.Fuzz(func(t *testing.T, actions []byte) {
+		if len(actions) > 8 {
+			t.Skip()
+		}
+		if _, err := application.db.Exec(`UPDATE document_imports SET state='awaiting_visual_consent',proposal_json='',version=1,consent_token_hash=?,consent_expires_at=?,updated_at=? WHERE id=?`, hex.EncodeToString(hash[:]), time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano), time.Now().UTC().Format(time.RFC3339Nano), consent.ID); err != nil {
+			t.Fatal(err)
+		}
+		state, version := "awaiting_visual_consent", int64(1)
+		for _, action := range actions {
+			expected := int64((action >> 2) & 3)
+			switch action & 3 {
+			case 0:
+				token := consent.Token
+				if action&0x10 != 0 {
+					token = "wrong-token"
+				}
+				allowed := state == "awaiting_visual_consent" && version == expected && token == consent.Token
+				err := application.imports.ConsumeVisualConsent(context.Background(), scope, consent.ID, token, expected)
+				if allowed && err != nil {
+					t.Fatalf("consume valid transition: %v", err)
+				}
+				if !allowed && err == nil {
+					t.Fatal("consume accepted an invalid lifecycle transition")
+				}
+				if allowed {
+					state, version = "visual_processing", version+1
+				}
+			case 1:
+				allowed := state == "visual_processing" && version == expected
+				_, err := application.imports.FinishVisual(context.Background(), scope, consent.ID, expected, valid)
+				if allowed && err != nil {
+					t.Fatalf("finish valid transition: %v", err)
+				}
+				if !allowed && err == nil {
+					t.Fatal("finish accepted an invalid lifecycle transition")
+				}
+				if allowed {
+					state, version = "review", version+1
+				}
+			}
+		}
+		var gotState string
+		var gotVersion int64
+		if err := application.db.QueryRow(`SELECT state,version FROM document_imports WHERE id=?`, consent.ID).Scan(&gotState, &gotVersion); err != nil || gotState != state || gotVersion != version {
+			t.Fatalf("lifecycle = %q/%d, want %q/%d, err=%v", gotState, gotVersion, state, version, err)
+		}
+		var sourceState string
+		if err := application.db.QueryRow(`SELECT state FROM sources WHERE id=?`, source.ID).Scan(&sourceState); err != nil || sourceState != "live" {
+			t.Fatalf("transition changed source state=%q err=%v", sourceState, err)
+		}
+	})
+}
+
+func ownerScopeForFuzz(t testing.TB, application *App, session browserSession) policy.ActorScope {
+	t.Helper()
+	scope, err := application.auth.Authenticate(context.Background(), session.session.Value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return scope
 }
 
 func TestExplicitChangedVersionReplacesOnlyChosenPriorRecords(t *testing.T) {

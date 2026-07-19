@@ -1,6 +1,7 @@
 package installer
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -220,6 +221,57 @@ func FuzzParseManifest(f *testing.F) {
 	f.Add([]byte("not-a-manifest"))
 	f.Fuzz(func(t *testing.T, raw []byte) {
 		_, _ = ParseManifest(raw)
+	})
+}
+
+func FuzzExtractArchiveAuthenticatesBoundedInput(f *testing.F) {
+	key := bytes.Repeat([]byte{0x42}, 32)
+	root, err := os.MkdirTemp("", "mithra-archive-fuzz-")
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Cleanup(func() { _ = os.RemoveAll(root) })
+	source := filepath.Join(root, "source")
+	if err := os.MkdirAll(filepath.Join(source, "sources"), 0o700); err != nil {
+		f.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "sources", "fixture.enc"), []byte("ciphertext fixture"), 0o600); err != nil {
+		f.Fatal(err)
+	}
+	valid := filepath.Join(root, "valid.mbackup")
+	if err := writeArchive(source, valid, key); err != nil {
+		f.Fatal(err)
+	}
+	fixtureRaw, err := os.ReadFile(valid)
+	if err != nil {
+		f.Fatal(err)
+	}
+	tampered := append([]byte(nil), fixtureRaw...)
+	tampered[len(tampered)-1] ^= 1
+	f.Add(fixtureRaw)
+	f.Add(tampered)
+	candidate := filepath.Join(root, "candidate.mbackup")
+	stage := filepath.Join(root, "stage")
+	f.Fuzz(func(t *testing.T, raw []byte) {
+		if len(raw) > 128<<10 {
+			t.Skip()
+		}
+		if err := os.WriteFile(candidate, raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.RemoveAll(stage); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(stage, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := extractArchive(candidate, stage, key); err != nil {
+			return
+		}
+		got, err := os.ReadFile(filepath.Join(stage, "sources", "fixture.enc"))
+		if err != nil || string(got) != "ciphertext fixture" {
+			t.Fatalf("extracted fixture = %q, %v", got, err)
+		}
 	})
 }
 

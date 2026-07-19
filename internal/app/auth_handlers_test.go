@@ -237,7 +237,7 @@ func (m *fakeMailer) Send(_ context.Context, message providers.Message) error {
 	return nil
 }
 
-func (m *fakeMailer) last(t *testing.T) providers.Message {
+func (m *fakeMailer) last(t testing.TB) providers.Message {
 	t.Helper()
 	if len(m.messages) == 0 {
 		t.Fatal("expected a message")
@@ -245,7 +245,7 @@ func (m *fakeMailer) last(t *testing.T) providers.Message {
 	return m.messages[len(m.messages)-1]
 }
 
-func newAuthTestApp(t *testing.T, allowed ...string) (*App, *fakeMailer) {
+func newAuthTestApp(t testing.TB, allowed ...string) (*App, *fakeMailer) {
 	t.Helper()
 	application := newTestApp(t)
 	now := time.Date(2026, 7, 18, 0, 0, 0, 0, time.UTC)
@@ -267,7 +267,7 @@ func newAuthTestApp(t *testing.T, allowed ...string) (*App, *fakeMailer) {
 	return application, application.mailer.(*fakeMailer)
 }
 
-func activate(t *testing.T, application *App, mailer *fakeMailer, email, password string, invitation *http.Cookie) browserSession {
+func activate(t testing.TB, application *App, mailer *fakeMailer, email, password string, invitation *http.Cookie) browserSession {
 	t.Helper()
 	forgot := serve(application, authForm(http.MethodPost, "/auth/forgot-password", url.Values{"email": {email}}, nil))
 	if forgot.Code != http.StatusOK {
@@ -287,7 +287,7 @@ func activate(t *testing.T, application *App, mailer *fakeMailer, email, passwor
 	return browserSession{session: responseCookie(t, setup, application.cookieName(sessionCookieName)), csrf: responseCookie(t, setup, application.cookieName(csrfCookieName))}
 }
 
-func bootstrapInvitation(t *testing.T, application *App, token string) *http.Cookie {
+func bootstrapInvitation(t testing.TB, application *App, token string) *http.Cookie {
 	t.Helper()
 	response := serve(application, httptest.NewRequest(http.MethodGet, "/auth/invitation?token="+url.QueryEscape(token), nil))
 	if response.Code != http.StatusSeeOther || response.Header().Get("Referrer-Policy") != "no-referrer" {
@@ -296,7 +296,7 @@ func bootstrapInvitation(t *testing.T, application *App, token string) *http.Coo
 	return responseCookie(t, response, application.cookieName(invitationCookieName))
 }
 
-func activateInvitation(t *testing.T, application *App, password string, invitation *http.Cookie) browserSession {
+func activateInvitation(t testing.TB, application *App, password string, invitation *http.Cookie) browserSession {
 	t.Helper()
 	setup := serve(application, authForm(http.MethodPost, "/auth/password", url.Values{"password": {password}}, []*http.Cookie{invitation}))
 	if setup.Code != http.StatusSeeOther || setup.Header().Get("Location") != "/" {
@@ -327,7 +327,7 @@ func serve(application *App, request *http.Request) *httptest.ResponseRecorder {
 	return response
 }
 
-func responseCookie(t *testing.T, response *httptest.ResponseRecorder, name string) *http.Cookie {
+func responseCookie(t testing.TB, response *httptest.ResponseRecorder, name string) *http.Cookie {
 	t.Helper()
 	for _, cookie := range response.Result().Cookies() {
 		if cookie.Name == name && cookie.MaxAge >= 0 {
@@ -347,14 +347,14 @@ func hasClearedCookie(response *httptest.ResponseRecorder, name string) bool {
 	return false
 }
 
-func assertHostCookie(t *testing.T, cookie *http.Cookie, sameSite http.SameSite) {
+func assertHostCookie(t testing.TB, cookie *http.Cookie, sameSite http.SameSite) {
 	t.Helper()
 	if !strings.HasPrefix(cookie.Name, "__Host-") || !cookie.HttpOnly || !cookie.Secure || cookie.Path != "/" || cookie.SameSite != sameSite {
 		t.Fatalf("unsafe cookie %#v", cookie)
 	}
 }
 
-func tokenFromMessage(t *testing.T, message providers.Message, key string) string {
+func tokenFromMessage(t testing.TB, message providers.Message, key string) string {
 	t.Helper()
 	parsed, err := url.Parse(lastLine(message.Text))
 	if err != nil || parsed.Query().Get(key) == "" {
