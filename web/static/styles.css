@@ -11,16 +11,24 @@
   --navy: #062d52;
   --radius: 0.75rem;
   --space: clamp(1.25rem, 3vw, 2.75rem);
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 0.75rem;
+  --space-lg: 1rem;
+  --space-xl: 1.5rem;
+  --space-2xl: 2rem;
+  --space-3xl: 3rem;
+  --space-4xl: 4rem;
 }
 
 /* Capture keeps the conversational input visually primary and the AI review calm. */
 .capture-main { min-width: 0; }
-.capture-heading { padding: clamp(3rem, 8vw, 6.5rem) 0 2.5rem; background: radial-gradient(circle at 82% 18%, rgba(176, 102, 64, .13), transparent 28rem); }
+.capture-heading { padding: var(--space-4xl) 0 var(--space-2xl); }
 .capture-heading-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(14rem, 22rem); gap: 2rem; align-items: end; }
 .capture-heading h1 { max-width: 15ch; }
-.capture-privacy-note { padding: 1.1rem 1.25rem; border: 1px solid var(--line, #d8cdbd); border-radius: 1rem; background: rgba(255, 255, 255, .52); }
+.capture-privacy-note { padding: var(--space-lg) var(--space-xl); border-radius: var(--radius); background: var(--moss-wash); }
 .capture-content { display: grid; gap: 2rem; padding-bottom: 5rem; }
-.capture-composer, .capture-pending, .capture-recent { border: 1px solid var(--line, #d8cdbd); border-radius: 1.4rem; background: rgba(255, 253, 248, .82); box-shadow: 0 1.2rem 3rem rgba(66, 49, 32, .06); padding: clamp(1.3rem, 3vw, 2.2rem); }
+.capture-composer, .capture-pending, .capture-recent { border: 1px solid var(--line, #d8cdbd); border-radius: var(--radius); background: var(--paper); padding: var(--space-xl); }
 .capture-composer { display: grid; grid-template-columns: minmax(12rem, .72fr) minmax(18rem, 1.35fr); gap: clamp(1.5rem, 4vw, 3.5rem); }
 .capture-text-form { min-width: 0; }
 .capture-text-form textarea { width: 100%; resize: vertical; min-height: 9rem; margin-top: .45rem; }
@@ -54,11 +62,11 @@
 
 /* Import keeps local extraction and human review in one calm, linear flow. */
 .imports-main { padding-bottom: clamp(3rem, 8vw, 6rem); }
-.imports-heading { padding: clamp(2.5rem, 7vw, 5rem) 0 clamp(2rem, 5vw, 3.5rem); background: linear-gradient(135deg, rgb(224 233 223 / 55%), transparent 62%); }
+.imports-heading { padding: var(--space-4xl) 0 var(--space-2xl); }
 .imports-heading-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 1.5rem; }
-.imports-heading h1 { max-width: 14ch; font-size: clamp(2.5rem, 6vw, 4.75rem); }
-.imports-privacy-note { max-width: 24rem; margin: 0; padding-left: 1rem; border-left: .2rem solid var(--moss); color: var(--muted-ink); }
-.imports-content { display: grid; gap: clamp(2.5rem, 6vw, 4.5rem); padding-top: clamp(2rem, 5vw, 3.5rem); }
+.imports-heading h1 { max-width: 14ch; }
+.imports-privacy-note { max-width: 24rem; margin: 0; padding: var(--space-lg) var(--space-xl); border-radius: var(--radius); background: var(--moss-wash); color: var(--muted-ink); }
+.imports-content { display: grid; gap: var(--space-3xl); padding-top: var(--space-2xl); }
 .import-composer, .import-review { display: grid; gap: 1.5rem; padding: clamp(1rem, 3vw, 2rem); border: .0625rem solid var(--line); border-radius: var(--radius); background: var(--paper); }
 .import-composer { grid-template-columns: minmax(0, 4fr) minmax(18rem, 3fr); }
 .import-composer p { max-width: 56ch; color: var(--muted-ink); }
@@ -66,11 +74,11 @@
 .import-upload-form label, .import-field-grid label { display: grid; gap: .35rem; color: var(--muted-ink); font-size: .875rem; font-weight: 700; }
 .import-upload-form input, .import-upload-form select, .import-field-grid input { width: 100%; min-height: 2.8rem; padding: .6rem .75rem; border: .0625rem solid var(--line); border-radius: .625rem; background: var(--paper); color: var(--ink); font: inherit; }
 .import-upload-form input[type="file"] { padding: .45rem; background: rgb(239 230 214 / 45%); }
-.import-upload-form button, .import-review-actions button { min-height: 2.35rem; padding: .45rem .75rem; border: .0625rem solid var(--moss); border-radius: .625rem; background: var(--moss); color: var(--paper); cursor: pointer; font: inherit; font-size: .875rem; font-weight: 700; }
+.import-upload-form button, .import-review-actions button { min-height: 2.75rem; padding: .5rem .75rem; border: .0625rem solid var(--moss); border-radius: .625rem; background: var(--moss); color: var(--paper); cursor: pointer; font: inherit; font-size: .875rem; font-weight: 700; }
 .import-upload-form button:disabled, .import-review-actions button:disabled { cursor: not-allowed; opacity: .55; }
 .import-upload-form p, .import-review-actions p { margin: 0; }
 .import-upload-form p[data-tone="error"], .field-error { color: #8a3326; }
-.import-blockers { padding: 1rem; border-left: .25rem solid var(--terracotta); background: #fff5ec; }
+.import-blockers { padding: 1rem; border: .0625rem solid rgb(181 71 62 / 24%); border-radius: var(--radius); background: #fff5ec; }
 .import-blockers h3, .import-blockers p { margin: 0; }
 .import-blockers ol, .import-warnings ul { display: grid; gap: .65rem; margin: 1rem 0 0; padding-left: 1.35rem; }
 .import-blockers li, .import-warnings li { padding-left: .25rem; }
@@ -430,8 +438,8 @@ h2 {
 
 .authenticated-shell .navigation-list a {
   width: 100%;
-  min-height: 2.4rem;
-  padding: 0.45rem 0.625rem;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.75rem;
   border-radius: 0.5rem;
   font-size: 0.875rem;
 }
@@ -477,8 +485,8 @@ h2 {
 .shortcut-help-trigger,
 .account-menu summary,
 .account-menu button {
-  min-height: 2.35rem;
-  padding: 0.45rem 0.65rem;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.75rem;
   border: 0.0625rem solid var(--line);
   border-radius: 0.5rem;
   background: var(--paper);
@@ -690,14 +698,14 @@ kbd {
 
 h1 {
   max-width: 18ch;
-  font-size: clamp(2.4rem, 7vw, 5rem);
-  letter-spacing: -0.04em;
-  line-height: 1.02;
+  font-size: 3rem;
+  letter-spacing: -0.03em;
+  line-height: 1.08;
   text-wrap: balance;
 }
 
 h2 {
-  font-size: clamp(1.5rem, 4vw, 2.25rem);
+  font-size: 2rem;
   letter-spacing: -0.025em;
   line-height: 1.15;
   text-wrap: balance;
@@ -714,8 +722,9 @@ h2 {
   max-width: 60ch;
   margin: 1.5rem 0 0;
   padding: 0.875rem 1rem;
-  border-left: 0.25rem solid var(--terracotta);
-  background: rgb(255 253 248 / 68%);
+  border: 0.0625rem solid rgb(181 71 62 / 24%);
+  border-radius: var(--radius);
+  background: #fff5ec;
   color: var(--ink);
   text-wrap: pretty;
 }
@@ -728,9 +737,7 @@ h2 {
   padding-bottom: clamp(3rem, 8vw, 6rem);
 }
 
-.finance-heading {
-  padding: clamp(2.5rem, 7vw, 5rem) 0 clamp(2rem, 5vw, 3.5rem);
-}
+.finance-heading { padding: var(--space-4xl) 0 var(--space-2xl); }
 
 .finance-heading-row,
 .section-heading,
@@ -743,10 +750,7 @@ h2 {
   gap: 1.5rem;
 }
 
-.finance-heading h1 {
-  max-width: 14ch;
-  font-size: clamp(2.5rem, 6vw, 4.75rem);
-}
+.finance-heading h1 { max-width: 14ch; }
 
 .scope-filter {
   display: grid;
@@ -784,7 +788,7 @@ h2 {
 
 .finance-content {
   display: grid;
-  gap: clamp(2.5rem, 6vw, 4.5rem);
+  gap: var(--space-3xl);
 }
 
 .finance-section {
@@ -829,7 +833,7 @@ h2 {
 .finance-totals strong {
   overflow-wrap: anywhere;
   font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(1.6rem, 4vw, 2.5rem);
+  font-size: 2rem;
   font-variant-numeric: tabular-nums;
   line-height: 1.2;
 }
@@ -985,10 +989,7 @@ h2 {
   padding-bottom: clamp(3rem, 8vw, 6rem);
 }
 
-.health-heading {
-  padding: clamp(2.5rem, 7vw, 5rem) 0 clamp(2rem, 5vw, 3.5rem);
-  background: linear-gradient(135deg, rgb(224 233 223 / 55%), transparent 62%);
-}
+.health-heading { padding: var(--space-4xl) 0 var(--space-2xl); }
 
 .health-heading-row {
   display: flex;
@@ -997,15 +998,12 @@ h2 {
   gap: 1.5rem;
 }
 
-.health-heading h1 {
-  max-width: 14ch;
-  font-size: clamp(2.5rem, 6vw, 4.75rem);
-}
+.health-heading h1 { max-width: 14ch; }
 
 .health-content {
   display: grid;
-  gap: clamp(2.5rem, 6vw, 4.5rem);
-  padding-top: clamp(2rem, 5vw, 3.5rem);
+  gap: var(--space-3xl);
+  padding-top: var(--space-2xl);
 }
 
 .health-series-grid {
@@ -1121,10 +1119,7 @@ h2 {
   padding-bottom: clamp(3rem, 8vw, 6rem);
 }
 
-.planning-heading {
-  padding: clamp(2.5rem, 7vw, 5rem) 0 clamp(2rem, 5vw, 3.5rem);
-  background: linear-gradient(135deg, rgb(224 233 223 / 55%), transparent 62%);
-}
+.planning-heading { padding: var(--space-4xl) 0 var(--space-2xl); }
 
 .planning-heading-row,
 .calendar-toolbar,
@@ -1137,10 +1132,7 @@ h2 {
   gap: 0.75rem;
 }
 
-.planning-heading h1 {
-  max-width: 14ch;
-  font-size: clamp(2.5rem, 6vw, 4.75rem);
-}
+.planning-heading h1 { max-width: 14ch; }
 
 .planning-timezone {
   max-width: 24rem;
@@ -1150,8 +1142,8 @@ h2 {
 
 .planning-content {
   display: grid;
-  gap: clamp(2.5rem, 6vw, 4.5rem);
-  padding-top: clamp(2rem, 5vw, 3.5rem);
+  gap: var(--space-3xl);
+  padding-top: var(--space-2xl);
 }
 
 .calendar-section,
@@ -1161,7 +1153,7 @@ h2 {
 
 .calendar-toolbar h2,
 .plans-section h2 {
-  font-size: clamp(1.8rem, 4vw, 2.6rem);
+  font-size: 2rem;
 }
 
 .calendar-controls a,
@@ -1229,8 +1221,8 @@ h2 {
 
 .calendar-day-number {
   display: inline-grid;
-  width: 2rem;
-  height: 2rem;
+  width: 2.75rem;
+  height: 2.75rem;
   place-items: center;
   border-radius: 999px;
   font-variant-numeric: tabular-nums;
@@ -1249,9 +1241,11 @@ h2 {
 
 .calendar-day-events a,
 .calendar-overflow a {
-  display: block;
+  display: flex;
   overflow: hidden;
-  padding: 0.25rem 0.35rem;
+  min-height: 2.75rem;
+  align-items: center;
+  padding: 0.5rem;
   border-radius: 0.35rem;
   background: var(--moss-wash);
   font-size: 0.75rem;
@@ -1267,6 +1261,9 @@ h2 {
 }
 
 .calendar-overflow summary {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
   margin-top: 0.35rem;
   color: var(--moss);
   cursor: pointer;
@@ -1320,17 +1317,18 @@ h2 {
 
 .plan-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem;
+  grid-template-columns: 1fr;
+  gap: 0;
   margin-top: 1rem;
 }
 
 .plan-card {
   min-width: 0;
-  padding: clamp(1rem, 3vw, 1.5rem);
-  border: 0.0625rem solid var(--line);
-  border-radius: 1rem;
-  background: var(--paper);
+  padding: var(--space-xl) 0;
+  border: 0;
+  border-bottom: 0.0625rem solid var(--line);
+  border-radius: 0;
+  background: transparent;
 }
 
 .plan-card > p,
@@ -1535,10 +1533,6 @@ h2 {
 }
 
 @media (min-width: 40rem) {
-  body {
-    font-size: 0.9375rem;
-  }
-
   .lens-overview {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -1655,14 +1649,14 @@ h2 {
 /* Coaching keeps evidence primary and AI wording visibly subordinate to facts. */
 .coaching-main { padding-bottom: clamp(3rem, 8vw, 6rem); }
 .coaching-heading { display: flex; align-items: end; justify-content: space-between; gap: 2rem; }
-.coaching-heading h1 { max-width: 14ch; font-size: clamp(2.75rem, 7vw, 5.75rem); }
+.coaching-heading h1 { max-width: 14ch; }
 .coaching-freshness { display: grid; flex: 0 0 auto; gap: .25rem; padding: 1rem 1.2rem; border: .0625rem solid var(--line); border-radius: 1rem; background: rgb(255 253 248 / 70%); }
 .coaching-freshness span { color: var(--muted-ink); font-size: .8125rem; }
 .coaching-freshness strong { color: var(--moss); }
 .coaching-layout { display: grid; gap: clamp(2.25rem, 6vw, 4.75rem); padding-top: clamp(2rem, 5vw, 3.5rem); }
 .coaching-lead { position: relative; overflow: hidden; padding: clamp(1.5rem, 4vw, 3rem); border-radius: var(--radius); background: var(--ink); color: var(--paper); }
 .coaching-lead::after { position: absolute; right: -4rem; bottom: -7rem; width: 17rem; height: 17rem; border: 2.25rem solid rgb(224 233 223 / 10%); border-radius: 50%; content: ""; }
-.coaching-lead h2 { max-width: 22ch; font-size: clamp(1.8rem, 4vw, 3rem); }
+.coaching-lead h2 { max-width: 22ch; font-size: 2rem; }
 .coaching-lead p:not(.eyebrow) { max-width: 62ch; color: rgb(255 253 248 / 78%); }
 .coaching-lead a { position: relative; z-index: 1; color: var(--paper); font-weight: 750; }
 .coaching-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(2rem, 6vw, 5rem); }
@@ -1691,7 +1685,7 @@ h2 {
 .nudge-strip article p { margin: .35rem 0; color: var(--muted-ink); }
 .nudge-strip article a { color: var(--moss); font-weight: 700; }
 .nudge-strip form { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
-.nudge-strip button { min-height: 2.5rem; padding: .55rem .75rem; border: .0625rem solid var(--moss); border-radius: .65rem; background: var(--moss); color: var(--paper); cursor: pointer; font: inherit; font-weight: 700; }
+.nudge-strip button { min-height: 2.75rem; padding: .5rem .75rem; border: .0625rem solid var(--moss); border-radius: .65rem; background: var(--moss); color: var(--paper); cursor: pointer; font: inherit; font-weight: 700; }
 .nudge-strip .button-quiet { background: transparent; color: var(--moss); }
 
 @media (max-width: 45rem) {
@@ -1712,13 +1706,6 @@ h2 {
 }
 
 /* Household lenses share one sober information hierarchy. */
-.finance-heading,
-.health-heading,
-.planning-heading {
-  padding: clamp(2.5rem, 6vw, 4.75rem) 0 2.5rem;
-  background: transparent;
-}
-
 .finance-heading h1,
 .health-heading h1,
 .planning-heading h1,
@@ -1728,8 +1715,8 @@ h2 {
 .imports-heading h1,
 .coaching-heading h1 {
   max-width: none;
-  font-size: clamp(2.5rem, 6vw, 4.75rem);
-  letter-spacing: -0.055em;
+  font-size: 3rem;
+  letter-spacing: -0.03em;
 }
 
 .scope-filter {
@@ -1761,8 +1748,9 @@ h2 {
 .health-safety-note {
   max-width: 72ch;
   margin: 0;
-  padding: 0.85rem 1rem;
-  border-left: 0.2rem solid var(--moss);
+  padding: var(--space-lg) var(--space-xl);
+  border-radius: var(--radius);
+  background: var(--moss-wash);
   color: var(--muted-ink);
 }
 
@@ -1915,8 +1903,8 @@ body:not(.authenticated-shell) .auth-main {
 .auth-welcome h2 {
   max-width: 12ch;
   color: white;
-  font-size: clamp(2.4rem, 5vw, 4.75rem);
-  letter-spacing: -0.055em;
+  font-size: 3rem;
+  letter-spacing: -0.03em;
 }
 
 body:not(.authenticated-shell) .auth-card {
@@ -1928,7 +1916,7 @@ body:not(.authenticated-shell) .auth-card {
 }
 
 body:not(.authenticated-shell) .auth-card h1 {
-  font-size: clamp(2.25rem, 5vw, 3.75rem);
+  font-size: 2.5rem;
 }
 
 @media (max-width: 52rem) {
@@ -1942,7 +1930,7 @@ body:not(.authenticated-shell) .auth-card h1 {
 
   .auth-welcome h2 {
     max-width: 18ch;
-    font-size: clamp(2rem, 8vw, 3.25rem);
+    font-size: 2.25rem;
   }
 }
 
@@ -1966,21 +1954,14 @@ body:not(.authenticated-shell) .auth-card h1 {
 }
 
 /* Capture and import use a calm two-step workspace, not a promotional hero. */
-.capture-heading,
-.imports-heading {
-  padding: clamp(2.5rem, 6vw, 4.75rem) 0 2.5rem;
-  background: transparent;
-}
-
 .capture-privacy-note,
 .imports-privacy-note {
   max-width: 24rem;
   margin: 0;
-  padding: 1rem 1.1rem;
+  padding: var(--space-lg) var(--space-xl);
   border: 0;
-  border-left: 0.2rem solid var(--moss);
-  border-radius: 0;
-  background: transparent;
+  border-radius: var(--radius);
+  background: var(--moss-wash);
   color: var(--muted-ink);
 }
 
@@ -2059,7 +2040,7 @@ body:not(.authenticated-shell) .auth-card h1 {
 
 .brief-glance h2 {
   color: white;
-  font-size: clamp(1.75rem, 4vw, 2.75rem);
+  font-size: 2rem;
 }
 
 .brief-glance dl {
@@ -2102,7 +2083,6 @@ body:not(.authenticated-shell) .auth-card h1 {
 .brief-main-update {
   display: grid;
   align-content: end;
-  min-height: 23rem;
   padding: clamp(1.5rem, 4vw, 2.5rem);
   border: 0.0625rem solid var(--line);
   border-radius: 0.85rem;
