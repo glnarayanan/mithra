@@ -48,7 +48,7 @@ func TestHealthLensRendersFactualSeriesConflictDatesAndCorrection(t *testing.T) 
 	}
 	page := serve(application, authenticatedHealthRequest(session, http.MethodGet, "/health", nil))
 	body := page.Body.String()
-	for _, required := range []string{"Observed over time.", "does not diagnose", "Glucose", "105", "mg/dL", "Values kept separate", "Correct value", "Help with corrections", "Annual check-up", "Recorded routine", "View latest source"} {
+	for _, required := range []string{"Health trends", "For your records, not medical advice.", "does not diagnose", "Glucose", "105", "mg/dL", "Values kept separate", "Correct value", "Help with corrections", "Annual check-up", "Recorded routine", "View latest source"} {
 		if !strings.Contains(body, required) {
 			t.Fatalf("health lens missing %q: %s", required, body)
 		}
@@ -72,7 +72,7 @@ func TestHealthLensEmptyAndCSRFBoundary(t *testing.T) {
 	application, mailer := newAuthTestApp(t, "owner@example.com")
 	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
 	empty := serve(application, authenticatedHealthRequest(session, http.MethodGet, "/health?scope=personal", nil))
-	if empty.Code != http.StatusOK || !strings.Contains(empty.Body.String(), "No observations or dates yet") {
+	if empty.Code != http.StatusOK || !strings.Contains(empty.Body.String(), "No health records yet") {
 		t.Fatalf("empty health=%d %q", empty.Code, empty.Body.String())
 	}
 	bad := httptest.NewRequest(http.MethodPost, "/health/correct", strings.NewReader(url.Values{"record_id": {"x"}, "version": {"1"}, "value": {"1"}, "unit": {"kg"}}.Encode()))

@@ -105,7 +105,7 @@ func (a *App) importDocuments(w http.ResponseWriter, r *http.Request) {
 	case "delete_confirm":
 		if err := a.imports.ConfirmDeletion(r.Context(), scope, boundedField(r, "import_id", 64), boundedField(r, "deletion_token", 128)); err != nil {
 			if errors.Is(err, imports.ErrCleanupPending) {
-				a.renderImports(r, w, scope, csrf, "Source and dependent records are inaccessible. Encrypted-file cleanup will retry from the deletion journal.", "")
+				a.renderImports(r, w, scope, csrf, "The source and its records are no longer available. Mithra will finish removing the encrypted file automatically.", "")
 				return
 			}
 			a.renderImports(r, w, scope, csrf, "", "That deletion confirmation expired or changed. Nothing was removed.")
@@ -264,7 +264,7 @@ func (a *App) correctImport(r *http.Request, w http.ResponseWriter, scope policy
 	}
 	status := "Corrections saved."
 	if blockingIssues(updated.Issues) == 0 {
-		status = "Corrections saved. This import is ready to commit."
+		status = "Corrections saved. This file is ready to import."
 	}
 	a.renderImportReview(r, w, scope, csrf, id, status, "")
 }
@@ -285,7 +285,7 @@ func (a *App) renderImports(r *http.Request, w http.ResponseWriter, scope policy
 		}
 	}
 	for _, item := range recent {
-		summary := fmt.Sprintf("%d source-linked records", item.Records)
+		summary := fmt.Sprintf("%d records · Source kept", item.Records)
 		if item.State == "superseded" {
 			summary += " · Prior version"
 		}
@@ -347,7 +347,7 @@ func importReviewView(review imports.Review) ImportReviewView {
 	return out
 }
 func importRecordView(index int, p imports.ProposedRecord) ImportRecordView {
-	record := ImportRecordView{Family: strings.Title(p.Family), Locator: p.Locator.Value, Change: "New source-linked record"}
+	record := ImportRecordView{Family: strings.Title(p.Family), Locator: p.Locator.Value, Change: "New record"}
 	add := func(name, label, value string, required bool) {
 		record.Fields = append(record.Fields, ImportFieldView{ID: fmt.Sprintf("%d-%s", index, name), Label: label, Value: value, Required: required})
 	}

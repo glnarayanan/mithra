@@ -20,6 +20,12 @@ func TestTextCaptureUsesQuotedProviderInputAndTypedCommit(t *testing.T) {
 	application, mailer := newAuthTestApp(t, "owner@example.com")
 	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
 	scope := ownerScope(t, application, session)
+	page := serve(application, coachingGET("/capture", session))
+	for _, copy := range []string{"<h1>Capture</h1>", "Write or speak naturally.", "Who can see this?", "Add update"} {
+		if !strings.Contains(page.Body.String(), copy) {
+			t.Fatalf("capture page missing %q", copy)
+		}
+	}
 	connectCaptureProvider(t, application, scope, func(request *http.Request) string {
 		var payload map[string]any
 		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {

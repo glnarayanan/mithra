@@ -4,7 +4,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#f5efe2">
+    <meta name="theme-color" content="#062d52">
     <meta name="referrer" content="same-origin">
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/assets/styles.css">
@@ -12,22 +12,16 @@
     <script defer src="/assets/finance.js"></script>
     <title>Finance · Mithra</title>
   </head>
-  <body>
+  <body class="authenticated-shell">
     <a class="skip-link" href="#main-content">Skip to main content</a>
-    <header class="site-header">
-      <div class="page-shell header-content">
-        <a class="brand" href="/" aria-label="Mithra homepage"><span class="brand-mark" aria-hidden="true">M</span><span>Mithra</span></a>
-        <nav class="desktop-navigation" aria-label="Primary navigation"><ul class="navigation-list">{{range .Navigation}}<li><a href="{{.Path}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a></li>{{end}}</ul></nav>
-        <details class="mobile-navigation"><summary>Menu</summary><nav aria-label="Primary navigation"><ul class="navigation-list">{{range .Navigation}}<li><a href="{{.Path}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a></li>{{end}}</ul></nav></details>
-      </div>
-    </header>
+    {{template "app-shell" .}}
     <main id="main-content" tabindex="-1" class="finance-main">
       <section class="finance-heading">
         <div class="page-shell finance-heading-row">
           <div>
-            <p class="eyebrow">Finance lens</p>
-            <h1>What the numbers show.</h1>
-            <p class="introduction-copy">Exact totals, recent changes, and upcoming obligations from the records you can see. No estimates, conversion, or financial advice.</p>
+            <p class="eyebrow">Household money</p>
+            <h1>Finance</h1>
+            <p class="introduction-copy">See your totals, recent changes, upcoming payments, and the records behind every number.</p>
           </div>
           <form class="scope-filter" method="get" action="/finance" data-auto-submit>
             <label for="finance-scope">Records shown</label>
@@ -45,10 +39,10 @@
         {{if .Error}}
         <section class="finance-error" role="alert" aria-labelledby="finance-error-title"><h2 id="finance-error-title">Finance is temporarily unavailable</h2><p>{{.Error}}</p></section>
         {{else if not .HasRecords}}
-        <section class="empty-state" aria-labelledby="finance-empty-title"><p class="eyebrow">No finance records</p><h2 id="finance-empty-title">Nothing to total yet</h2><p>Imported and captured income, spending, assets, liabilities, budgets, and obligations will appear here with their sources.</p></section>
+        <section class="empty-state" aria-labelledby="finance-empty-title"><p class="eyebrow">Get started</p><h2 id="finance-empty-title">No finance records yet</h2><p>Capture an update or import a file to see totals, changes, and upcoming payments here.</p><div class="empty-actions"><a href="/capture">Capture an update</a><a href="/imports">Import a file</a></div></section>
         {{else}}
         <section aria-labelledby="finance-summary-title">
-          <div class="section-heading"><div><p class="eyebrow">Current view</p><h2 id="finance-summary-title">Totals by record type</h2></div><p>{{.CompleteCount}} complete records included{{if .IncompleteCount}} · {{.IncompleteCount}} incomplete excluded{{end}}</p></div>
+          <div class="section-heading"><div><p class="eyebrow">Overview</p><h2 id="finance-summary-title">Your totals</h2></div><p>{{.CompleteCount}} records included{{if .IncompleteCount}} · {{.IncompleteCount}} need a value{{end}}</p></div>
           <div class="finance-totals">
             {{range .Totals}}<article><p>{{.Label}}</p><strong>{{.Value}}</strong><span>{{.Count}} records</span></article>{{end}}
           </div>
@@ -56,7 +50,7 @@
 
         {{if .Trends}}
         <section class="finance-section" aria-labelledby="finance-trends-title">
-          <div class="section-heading"><div><p class="eyebrow">Recent periods</p><h2 id="finance-trends-title">Category changes</h2></div><p>Calculated from complete dated records.</p></div>
+          <div class="section-heading"><div><p class="eyebrow">Over time</p><h2 id="finance-trends-title">Recent changes</h2></div><p>Based on records with a date and number.</p></div>
           <div class="trend-list">
             {{range .Trends}}
             <article class="trend-row">
@@ -74,20 +68,20 @@
 
         {{if .Obligations}}
         <section class="finance-section" aria-labelledby="finance-obligations-title">
-          <div class="section-heading"><div><p class="eyebrow">On the horizon</p><h2 id="finance-obligations-title">Upcoming obligations</h2></div><p>Dated records only.</p></div>
+          <div class="section-heading"><div><p class="eyebrow">Coming up</p><h2 id="finance-obligations-title">Upcoming payments</h2></div><p>From dated records.</p></div>
           <ol class="obligation-list">{{range .Obligations}}<li><time datetime="{{.DateISO}}">{{.DateLabel}}</time><div><strong>{{.Name}}</strong><span>{{.Amount}}</span></div><a href="{{.EvidenceURL}}">View source</a></li>{{end}}</ol>
         </section>
         {{end}}
 
         {{if .Issues}}
         <section class="finance-section incomplete-panel" aria-labelledby="finance-issues-title">
-          <div class="section-heading"><div><p class="eyebrow">Needs a value</p><h2 id="finance-issues-title">Excluded records</h2></div><p>These records stay visible but do not affect totals or trends.</p></div>
+          <div class="section-heading"><div><p class="eyebrow">Worth checking</p><h2 id="finance-issues-title">Records that need a value</h2></div><p>These stay visible but are not included in totals or trends.</p></div>
           <ul class="issue-list">{{range .Issues}}<li><div><strong>{{.Label}}</strong><p>{{.Reason}}</p></div><a href="{{.EvidenceURL}}">View source</a></li>{{end}}</ul>
         </section>
         {{end}}
 
         <section class="finance-section" aria-labelledby="finance-records-title">
-          <div class="section-heading"><div><p class="eyebrow">Source-linked</p><h2 id="finance-records-title">Records in this view</h2></div><p>Only active records are shown.</p></div>
+          <div class="section-heading"><div><p class="eyebrow">Details</p><h2 id="finance-records-title">Finance records</h2></div><p>Open a source to check where a number came from.</p></div>
           <div class="record-table-wrap"><table class="record-table"><thead><tr><th scope="col">Record</th><th scope="col">Type</th><th scope="col">Date</th><th scope="col">Number</th><th scope="col">Visibility</th><th scope="col">Source</th></tr></thead><tbody>{{range .Records}}<tr><th scope="row">{{.Label}}</th><td>{{.Kind}}</td><td>{{.Date}}</td><td class="number-cell">{{.Amount}}</td><td>{{.Scope}}</td><td><a href="{{.EvidenceURL}}">View</a></td></tr>{{end}}</tbody></table></div>
         </section>
         {{end}}

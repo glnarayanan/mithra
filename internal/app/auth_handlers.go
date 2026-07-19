@@ -37,6 +37,7 @@ type AuthView struct {
 }
 
 type SettingsView struct {
+	Navigation       []NavigationItem
 	Members          []household.Member
 	Owner            bool
 	OpenAIConfigured bool
@@ -121,7 +122,7 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 func (a *App) forgotPassword(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		a.renderAuth(r.Context(), w, AuthView{Title: "Set a password", Heading: "Set or reset your password", Copy: "Enter the email on your household allowlist. If it is eligible, we will send a link."})
+		a.renderAuth(r.Context(), w, AuthView{Title: "Set a password", Heading: "Set or reset your password", Copy: "Enter the email approved for your household. If it matches, we’ll send a link."})
 	case http.MethodHead:
 		writeHTMLHead(w)
 	case http.MethodPost:
@@ -176,7 +177,7 @@ func (a *App) bootstrapInvitation(w http.ResponseWriter, r *http.Request) {
 func (a *App) passwordSetup(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		a.renderAuth(r.Context(), w, AuthView{Title: "Choose a password", Heading: "Choose a password", Copy: "Use at least 12 characters. This link does not become used until you save your password.", Password: true})
+		a.renderAuth(r.Context(), w, AuthView{Title: "Choose a password", Heading: "Choose a password", Copy: "Use at least 12 characters. Your link stays valid until you save the new password.", Password: true})
 	case http.MethodHead:
 		writeHTMLHead(w)
 	case http.MethodPost:
@@ -492,7 +493,7 @@ func (a *App) renderSettings(ctx context.Context, w http.ResponseWriter, scope p
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
-	a.renderTemplate(ctx, w, "settings.html", SettingsView{Members: members, Owner: scope.Role == "owner", OpenAIConfigured: configured, Timezone: timezone, CSRF: csrf, Status: status, Error: problem})
+	a.renderTemplate(ctx, w, "settings.html", SettingsView{Navigation: navigationForPath("/settings"), Members: members, Owner: scope.Role == "owner", OpenAIConfigured: configured, Timezone: timezone, CSRF: csrf, Status: status, Error: problem})
 }
 
 func (a *App) renderTemplate(ctx context.Context, w http.ResponseWriter, name string, view any) {

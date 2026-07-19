@@ -17,3 +17,11 @@ backups/
 .env.*
 !.env.example
 documentation/deployment-receipt.local.md
+
+# Licensed design references and internal planning artifacts
+/.reference/
+/documentation/plans/
+/PLAN.md
+/PRODUCT.md
+/DESIGN.md
+/.playwright-cli/

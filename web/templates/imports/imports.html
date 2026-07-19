@@ -4,7 +4,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#f5efe2">
+    <meta name="theme-color" content="#062d52">
     <meta name="referrer" content="same-origin">
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/assets/styles.css">
@@ -12,23 +12,19 @@
     <script defer src="/assets/imports.js"></script>
     <title>Import · Mithra</title>
   </head>
-  <body>
+  <body class="authenticated-shell">
     <a class="skip-link" href="#main-content">Skip to main content</a>
-    <header class="site-header"><div class="page-shell header-content">
-      <a class="brand" href="/" aria-label="Mithra homepage"><span class="brand-mark" aria-hidden="true">M</span><span>Mithra</span></a>
-      <nav class="desktop-navigation" aria-label="Primary navigation"><ul class="navigation-list">{{range .Navigation}}<li><a href="{{.Path}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a></li>{{end}}</ul></nav>
-      <details class="mobile-navigation"><summary>Menu</summary><nav aria-label="Primary navigation"><ul class="navigation-list">{{range .Navigation}}<li><a href="{{.Path}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a></li>{{end}}</ul></nav></details>
-    </div></header>
+    {{template "app-shell" .}}
     <main id="main-content" tabindex="-1" class="imports-main">
-      <section class="imports-heading"><div class="page-shell imports-heading-row"><div><p class="eyebrow">Bring what you already have</p><h1>Import, then check.</h1><p class="introduction-copy">Mithra reads CSV, Excel, and PDF files locally first. It proposes source-linked records for you to review and never silently fixes a mismatch.</p></div><p class="imports-privacy-note">Files stay encrypted. Only the extracted text needed for mapping is sent to OpenAI.</p></div></section>
+      <section class="imports-heading"><div class="page-shell imports-heading-row"><div><p class="eyebrow">Bring in your files</p><h1>Import</h1><p class="introduction-copy">Start with an existing spreadsheet or report. Mithra reads it, organises the details, and waits for your approval.</p></div><p class="imports-privacy-note"><strong>Your file stays encrypted.</strong> Mithra sends extracted text to OpenAI only when it needs help organising it.</p></div></section>
       <div class="page-shell imports-content">
         {{if .Status}}<p class="status-message" role="status" aria-live="polite">{{.Status}}</p>{{end}}
         {{if .Error}}<div class="finance-error" role="alert"><p>{{.Error}}</p></div>{{end}}
         {{if .Deletion}}
-        <section class="import-review import-deletion" aria-labelledby="import-deletion-title"><div><p class="eyebrow">Delete source</p><h2 id="import-deletion-title">Delete {{.Deletion.FileName}}?</h2><p>This {{.Deletion.Visibility}} source supports {{.Deletion.Records}} active records and {{.Deletion.Jobs}} pending jobs. Confirming makes the source and every dependent live item inaccessible together, then removes its encrypted file.</p><p>This exact confirmation expires at {{.Deletion.Expires}}.</p></div><form method="post" action="/imports" class="import-review-actions"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="import_id" value="{{.Deletion.ID}}"><input type="hidden" name="deletion_token" value="{{.Deletion.Token}}"><button type="submit" name="action" value="delete_confirm">Delete source and records</button><a href="/imports">Keep this import</a></form></section>
+        <section class="import-review import-deletion" aria-labelledby="import-deletion-title"><div><p class="eyebrow">Delete source</p><h2 id="import-deletion-title">Delete {{.Deletion.FileName}}?</h2><p>This {{.Deletion.Visibility}} file is linked to {{.Deletion.Records}} records{{if .Deletion.Jobs}} and {{.Deletion.Jobs}} unfinished actions{{end}}. Deleting it also removes everything that depends on it.</p><p>For your protection, this confirmation is available until {{.Deletion.Expires}}.</p></div><form method="post" action="/imports" class="import-review-actions"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="import_id" value="{{.Deletion.ID}}"><input type="hidden" name="deletion_token" value="{{.Deletion.Token}}"><button type="submit" name="action" value="delete_confirm">Delete file and records</button><a href="/imports">Keep this import</a></form></section>
         {{else if .VisualConsent}}
         <section class="import-review import-visual-consent" aria-labelledby="visual-consent-title">
-          <div><p class="eyebrow">Your confirmation</p><h2 id="visual-consent-title">This PDF needs visual reading</h2><p><strong>{{.VisualConsent.FileName}}</strong> has no locally recoverable text. If you continue, Mithra will send this one encrypted source to OpenAI inline so it can read the visible pages. The request uses storage disabled. No other household file or record is included.</p><p>This one-time confirmation expires at {{.VisualConsent.Expires}}. Cancelling sends no file and deletes the staged source.</p><p><a href="/help#visual-pdf">Help with visual PDF transfer</a></p></div>
+          <div><p class="eyebrow">Your confirmation</p><h2 id="visual-consent-title">This PDF contains scanned pages</h2><p><strong>{{.VisualConsent.FileName}}</strong> does not contain readable text. If you continue, Mithra will send this file to OpenAI once so it can read the visible pages. No other household file or record is included, and OpenAI is asked not to store the response.</p><p>This choice is available until {{.VisualConsent.Expires}}. Cancelling sends nothing and deletes the uploaded file.</p><p><a href="/help#visual-pdf">Learn about scanned PDFs</a></p></div>
           <form method="post" action="/imports" class="import-review-actions"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="import_id" value="{{.VisualConsent.ID}}"><input type="hidden" name="version" value="{{.VisualConsent.Version}}"><input type="hidden" name="consent_token" value="{{.VisualConsent.Token}}"><button type="submit" name="action" value="visual_confirm">Send this PDF once</button><button type="submit" name="action" value="discard" class="button-quiet">Cancel and delete</button></form>
         </section>
         {{else if .Review}}
@@ -44,15 +40,15 @@
         </section>
         {{else}}
         <section class="import-composer" aria-labelledby="import-composer-title">
-          <div><p class="eyebrow">One file at a time</p><h2 id="import-composer-title">Choose an existing file</h2><p>Use a CSV, XLSX, or PDF up to 10 MB. Mithra will show proposed records, duplicates, changes, and inconsistencies before committing anything.</p></div>
+          <div><p class="eyebrow">Step 1 of 2</p><h2 id="import-composer-title">Choose a file</h2><p>Upload one CSV, Excel, or PDF file up to 10 MB. You will review every proposed record before it is added.</p></div>
           <form method="post" action="/imports" enctype="multipart/form-data" class="import-upload-form" data-import-upload>
             <input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="upload">
             {{if .Replacement}}<input type="hidden" name="replaces_import_id" value="{{.Replacement.ID}}"><p class="status-message">New version of <strong>{{.Replacement.FileName}}</strong>. The prior {{.Replacement.Visibility}} records will be replaced only when this review commits.</p>{{end}}
             <label for="import-file">CSV, Excel, or PDF file<input id="import-file" type="file" name="file" accept=".csv,.xlsx,.pdf,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/pdf" required data-import-file></label>
-            <label for="import-visibility">Keep imported records<select id="import-visibility" name="visibility"><option value="personal">Only you</option><option value="shared">Shared with your partner</option></select></label>
-            <p data-import-status role="status" aria-live="polite">Mithra accepts exactly one file and does not infer a relationship from its filename.</p>
-            <button type="submit"{{if not .ProviderConfigured}} disabled aria-describedby="imports-provider-note"{{end}}>Read this file</button>
-            {{if not .ProviderConfigured}}<p id="imports-provider-note"><a href="/settings">Connect OpenAI in Settings</a> to map extracted facts into records.</p>{{end}}
+            <label for="import-visibility">Who can see these records?<select id="import-visibility" name="visibility"><option value="personal">Only you</option><option value="shared">Shared with your partner</option></select></label>
+            <p data-import-status role="status" aria-live="polite">Choose one file to continue.</p>
+            <button type="submit"{{if not .ProviderConfigured}} disabled aria-describedby="imports-provider-note"{{end}}>Review file</button>
+            {{if not .ProviderConfigured}}<p id="imports-provider-note"><a href="/settings">Connect OpenAI in Settings</a> to organise imported information.</p>{{end}}
           </form>
         </section>
         {{end}}

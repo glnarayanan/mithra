@@ -15,6 +15,7 @@ import (
 
 type PlanningView struct {
 	Navigation    []NavigationItem
+	CSRF          string
 	View          string
 	Timezone      string
 	Status        string
@@ -85,7 +86,7 @@ func (a *App) planningLens(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w)
 		return
 	}
-	scope, _, ok := a.authenticated(r)
+	scope, csrf, ok := a.authenticated(r)
 	if !ok {
 		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
@@ -96,7 +97,7 @@ func (a *App) planningLens(w http.ResponseWriter, r *http.Request) {
 	}
 	zone, err := a.planningRecords.GetTimezone(r.Context(), scope)
 	if err != nil {
-		a.renderPlanning(r.Context(), w, PlanningView{Navigation: navigationForPath("/planning"), Error: "The household calendar is temporarily unavailable."})
+		a.renderPlanning(r.Context(), w, PlanningView{Navigation: navigationForPath("/planning"), CSRF: csrf, Error: "The calendar is temporarily unavailable."})
 		return
 	}
 	focus := planningFocusDate(r.URL.Query().Get("date"), zone, time.Now())
@@ -107,17 +108,17 @@ func (a *App) planningLens(w http.ResponseWriter, r *http.Request) {
 	from, to, gridFrom, gridTo := planningRange(viewName, focus)
 	events, err := a.planningRecords.Events(r.Context(), scope, planning.AllRecords, gridFrom.Format("2006-01-02"), gridTo.Format("2006-01-02"))
 	if err != nil {
-		a.renderPlanning(r.Context(), w, PlanningView{Navigation: navigationForPath("/planning"), View: viewName, Timezone: zone, Error: "The household calendar was not changed. Try again."})
+		a.renderPlanning(r.Context(), w, PlanningView{Navigation: navigationForPath("/planning"), CSRF: csrf, View: viewName, Timezone: zone, Error: "The calendar could not be loaded. Try again."})
 		return
 	}
 	conflicts, err := a.planningRecords.Conflicts(r.Context(), scope, planning.AllRecords, gridFrom.Format("2006-01-02"), gridTo.Format("2006-01-02"))
 	if err != nil {
-		a.renderPlanning(r.Context(), w, PlanningView{Navigation: navigationForPath("/planning"), View: viewName, Timezone: zone, Error: "Calendar conflicts could not be checked. Try again."})
+		a.renderPlanning(r.Context(), w, PlanningView{Navigation: navigationForPath("/planning"), CSRF: csrf, View: viewName, Timezone: zone, Error: "Schedule conflicts could not be checked. Try again."})
 		return
 	}
 	plans, err := a.planningRecords.Plans(r.Context(), scope, planning.AllRecords)
 	if err != nil {
-		a.renderPlanning(r.Context(), w, PlanningView{Navigation: navigationForPath("/planning"), View: viewName, Timezone: zone, Error: "Household plans could not be loaded. Try again."})
+		a.renderPlanning(r.Context(), w, PlanningView{Navigation: navigationForPath("/planning"), CSRF: csrf, View: viewName, Timezone: zone, Error: "Plans could not be loaded. Try again."})
 		return
 	}
 	conflictByID := map[string]string{}
@@ -125,7 +126,7 @@ func (a *App) planningLens(w http.ResponseWriter, r *http.Request) {
 		conflictByID[conflict.First.ID] = conflict.Reason
 		conflictByID[conflict.Second.ID] = conflict.Reason
 	}
-	view := PlanningView{Navigation: navigationForPath("/planning"), View: viewName, Timezone: zone, PeriodLabel: planningPeriodLabel(viewName, from, to), WeekdayLabels: []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}}
+	view := PlanningView{Navigation: navigationForPath("/planning"), CSRF: csrf, View: viewName, Timezone: zone, PeriodLabel: planningPeriodLabel(viewName, from, to), WeekdayLabels: []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}}
 	view.PreviousURL, view.TodayURL, view.NextURL, view.MonthURL, view.WeekURL, view.AgendaURL = planningURLs(viewName, focus, zone)
 	calendarEvents := planningEventViews(events, conflictByID, zone)
 	view.Agenda = planningEventViews(planningEventsInRange(events, from, to), conflictByID, zone)

@@ -16,6 +16,7 @@ import (
 
 type FinanceView struct {
 	Navigation      []NavigationItem
+	CSRF            string
 	Scope           string
 	HasRecords      bool
 	CompleteCount   int
@@ -71,7 +72,7 @@ func (a *App) financeLens(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w)
 		return
 	}
-	scope, ok := a.sessionScope(r)
+	scope, csrf, ok := a.authenticated(r)
 	if !ok {
 		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
@@ -88,10 +89,10 @@ func (a *App) financeLens(w http.ResponseWriter, r *http.Request) {
 	summary, err := a.finance.Summarize(r.Context(), scope, filter, time.Now())
 	if err != nil {
 		logRequestError(a.logger, r.Context(), "finance_query_failed")
-		a.renderFinance(r.Context(), w, FinanceView{Navigation: navigationForPath("/finance"), Scope: string(filter), Error: "Your records were not changed. Try this view again."})
+		a.renderFinance(r.Context(), w, FinanceView{Navigation: navigationForPath("/finance"), CSRF: csrf, Scope: string(filter), Error: "Your information could not be loaded. Try again."})
 		return
 	}
-	a.renderFinance(r.Context(), w, financeView(summary, filter))
+	a.renderFinance(r.Context(), w, financeView(summary, filter, csrf))
 }
 
 func (a *App) renderFinance(ctx context.Context, w http.ResponseWriter, view FinanceView) {
@@ -111,9 +112,9 @@ func (a *App) renderFinance(ctx context.Context, w http.ResponseWriter, view Fin
 	rendered.commit(w)
 }
 
-func financeView(summary finance.Summary, filter finance.ScopeFilter) FinanceView {
+func financeView(summary finance.Summary, filter finance.ScopeFilter, csrf string) FinanceView {
 	view := FinanceView{
-		Navigation: navigationForPath("/finance"), Scope: string(filter), HasRecords: len(summary.Records) > 0,
+		Navigation: navigationForPath("/finance"), CSRF: csrf, Scope: string(filter), HasRecords: len(summary.Records) > 0,
 		CompleteCount: summary.Complete, IncompleteCount: summary.Incomplete,
 	}
 	for _, item := range []struct {

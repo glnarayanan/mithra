@@ -184,7 +184,7 @@ func TestBriefRendersAccessibleNavigationEmptyStateAndEscapesStatus(t *testing.T
 	response := httptest.NewRecorder()
 	malicious := `</script><script>window.pwned = true</script>`
 
-	application.renderTemplate(context.Background(), response, "brief.html", BriefView{Navigation: navigationForPath("/"), Status: malicious, Freshness: "Live application view"})
+	application.renderTemplate(context.Background(), response, "brief.html", BriefView{Navigation: navigationForPath("/"), Status: malicious, Freshness: "Up to date"})
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("shell status = %d, want %d", response.Code, http.StatusOK)
@@ -198,7 +198,7 @@ func TestBriefRendersAccessibleNavigationEmptyStateAndEscapesStatus(t *testing.T
 		`href="/planning"`,
 		`href="/assets/favicon.svg"`,
 		`aria-live="polite"`,
-		`Bring in the first household fact`,
+		`Add your first update`,
 	} {
 		if !strings.Contains(body, required) {
 			t.Fatalf("shell is missing %q", required)

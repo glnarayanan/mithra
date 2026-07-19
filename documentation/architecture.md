@@ -163,9 +163,10 @@ Startup replays the journal before serving; ciphertext cleanup is idempotent.
 
 ## Browser shell
 
-`web/templates/shell.html`, `web/static/styles.css`, and `web/static/app.js`
+`web/templates/shared/shell.html`, `web/static/styles.css`, and `web/static/app.js`
 are embedded first-party assets. The mobile-first shell renders without
-JavaScript, exposes Brief, Capture, Import, Finance, Health, and Planning navigation, has a
+JavaScript, exposes Family Brief, Week in Review, Capture, Import, Finance,
+Health, Planning, Settings, and Help navigation, has a
 keyboard-visible skip link and focus treatment, and declares an accessible
 status region plus an honest empty state. The tiny JavaScript enhancement writes
 updates with `textContent`, never HTML, so untrusted future import/model text

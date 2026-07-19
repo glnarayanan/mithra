@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	PromptVersion = "coaching-v1"
+	PromptVersion = "coaching-v2"
 	SchemaVersion = "coaching-v1"
 )
 
@@ -246,11 +246,15 @@ func (s *Service) load(ctx context.Context, actor policy.ActorScope, mode string
 	if visibility == policy.Shared {
 		owner = ""
 	}
-	var encoded, evidence, generated string
+	var encoded, evidence, generated, promptVersion, schemaVersion string
 	var shared, personal int64
-	err := s.db.QueryRowContext(ctx, `SELECT content_json,evidence_json,shared_revision,personal_revision,generated_at FROM coaching_cache WHERE household_id=? AND IFNULL(owner_user_id,'')=? AND mode=? AND visibility=?`, actor.HouseholdID, owner, mode, visibility).Scan(&encoded, &evidence, &shared, &personal, &generated)
+	err := s.db.QueryRowContext(ctx, `SELECT content_json,evidence_json,shared_revision,personal_revision,generated_at,prompt_version,schema_version FROM coaching_cache WHERE household_id=? AND IFNULL(owner_user_id,'')=? AND mode=? AND visibility=?`, actor.HouseholdID, owner, mode, visibility).Scan(&encoded, &evidence, &shared, &personal, &generated, &promptVersion, &schemaVersion)
 	if err != nil {
 		return Narrative{}, CacheState{}, err
+	}
+	if promptVersion != PromptVersion || schemaVersion != SchemaVersion {
+		_, _ = s.db.ExecContext(ctx, `DELETE FROM coaching_cache WHERE household_id=? AND IFNULL(owner_user_id,'')=? AND mode=? AND visibility=?`, actor.HouseholdID, owner, mode, visibility)
+		return Narrative{}, CacheState{}, ErrStale
 	}
 	state := CacheState{Found: true}
 	state.GeneratedAt, _ = time.Parse(time.RFC3339Nano, generated)
@@ -372,7 +376,7 @@ func markConflicts(ctx context.Context, tx *sql.Tx, householdID string, facts []
 			rows.Close()
 			return err
 		}
-		mark("health", first, second, "reported units differ; compare the source context")
+		mark("health", first, second, "reported units differ")
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
@@ -428,7 +432,7 @@ func deterministic(facts []Fact, asOf time.Time) Narrative {
 		}
 		if f.Issue != "" {
 			issue := item
-			issue.Copy = "The source needs a correction: " + f.Issue + "."
+			issue.Copy = "Check this update: " + f.Issue + "."
 			out.Inconsistencies = append(out.Inconsistencies, issue)
 		}
 		if d, err := time.Parse("2006-01-02", f.Date); err == nil && !d.Before(day(asOf)) && d.Before(day(asOf).AddDate(0, 0, 31)) {

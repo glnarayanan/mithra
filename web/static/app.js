@@ -1,18 +1,6 @@
 (function (global) {
   "use strict";
 
-  var quickNavigationDestinations = Object.freeze([
-    Object.freeze({ label: "Family Brief", path: "/" }),
-    Object.freeze({ label: "Week in Review", path: "/review" }),
-    Object.freeze({ label: "Capture", path: "/capture" }),
-    Object.freeze({ label: "Import", path: "/imports" }),
-    Object.freeze({ label: "Finance", path: "/finance" }),
-    Object.freeze({ label: "Health", path: "/health" }),
-    Object.freeze({ label: "Planning", path: "/planning" }),
-    Object.freeze({ label: "Settings", path: "/settings" }),
-    Object.freeze({ label: "Help", path: "/help" })
-  ]);
-
   function setStatus(target, message) {
     if (!target) {
       return;
@@ -20,11 +8,31 @@
     target.textContent = message == null ? "" : String(message);
   }
 
-  function filterQuickNavigation(query) {
+  function navigationDestinations(root) {
+    if (!root || typeof root.querySelectorAll !== "function") {
+      return [];
+    }
+    var seen = Object.create(null);
+    return Array.prototype.map.call(root.querySelectorAll("[data-quick-destination]"), function (link) {
+      return { label: String(link.textContent || "").trim(), path: String(link.getAttribute("href") || "") };
+    }).filter(function (destination) {
+      if (!destination.label || destination.path.charAt(0) !== "/" || seen[destination.path]) {
+        return false;
+      }
+      seen[destination.path] = true;
+      return true;
+    });
+  }
+
+  function filterQuickNavigation(destinations, query) {
     var needle = String(query || "").trim().toLowerCase();
-    return quickNavigationDestinations.filter(function (destination) {
+    return destinations.filter(function (destination) {
       return destination.label.toLowerCase().indexOf(needle) !== -1;
     });
+  }
+
+  function shortcutModifierLabel() {
+    return global && global.navigator && /Mac|iPhone|iPad/.test(String(global.navigator.platform || "")) ? "⌘" : "Ctrl";
   }
 
   function isEditableControl(target) {
@@ -48,6 +56,14 @@
     return !modal || modal === ownedDialog;
   }
 
+  function shouldOpenShortcutHelp(event, documentRoot, ownedDialog) {
+    if (!event || event.defaultPrevented || event.repeat || event.isComposing || event.keyCode === 229 || event.ctrlKey || event.metaKey || event.altKey || event.key !== "?" || isEditableControl(event.target)) {
+      return false;
+    }
+    var modal = documentRoot && typeof documentRoot.querySelector === "function" ? documentRoot.querySelector("dialog[open], [aria-modal=\"true\"]") : null;
+    return !modal || modal === ownedDialog;
+  }
+
   function restoreFocus(previousFocus, fallback) {
     var target = previousFocus && previousFocus.isConnected !== false && typeof previousFocus.focus === "function" ? previousFocus : fallback;
     if (target && typeof target.focus === "function") {
@@ -59,8 +75,9 @@
     if (!root || typeof root.querySelector !== "function" || typeof root.createElement !== "function" || root.querySelector("[data-quick-navigation-trigger]")) {
       return;
     }
-    var header = root.querySelector(".header-content");
-    if (!header) {
+    var mount = root.querySelector("[data-quick-navigation-mount]");
+    var destinations = navigationDestinations(root);
+    if (!mount || !destinations.length) {
       return;
     }
 
@@ -71,7 +88,13 @@
     trigger.setAttribute("aria-haspopup", "dialog");
     trigger.setAttribute("aria-controls", "quick-navigation");
     trigger.setAttribute("aria-keyshortcuts", "Control+K Meta+K");
-    trigger.textContent = "Quick navigation";
+    var triggerLabel = root.createElement("span");
+    triggerLabel.textContent = "Quick navigation";
+    var triggerKeys = root.createElement("kbd");
+    triggerKeys.textContent = shortcutModifierLabel() + " K";
+    triggerKeys.setAttribute("aria-hidden", "true");
+    trigger.appendChild(triggerLabel);
+    trigger.appendChild(triggerKeys);
 
     var dialog = root.createElement("dialog");
     dialog.id = "quick-navigation";
@@ -103,10 +126,10 @@
     panel.appendChild(search);
     panel.appendChild(results);
     dialog.appendChild(panel);
-    header.appendChild(trigger);
+    mount.appendChild(trigger);
     root.body.appendChild(dialog);
 
-    var filtered = quickNavigationDestinations.slice();
+    var filtered = destinations.slice();
     var activeIndex = 0;
     var previousFocus = trigger;
 
@@ -157,7 +180,7 @@
       if (dialog.open || typeof dialog.showModal !== "function") {
         return;
       }
-      filtered = quickNavigationDestinations.slice();
+      filtered = destinations.slice();
       activeIndex = 0;
       previousFocus = root.activeElement;
       search.value = "";
@@ -169,7 +192,7 @@
     trigger.addEventListener("click", openPalette);
     close.addEventListener("click", closePalette);
     search.addEventListener("input", function () {
-      filtered = filterQuickNavigation(search.value);
+      filtered = filterQuickNavigation(destinations, search.value);
       activeIndex = 0;
       renderResults();
     });
@@ -224,6 +247,69 @@
     });
   }
 
+  function installShortcutHelp(root) {
+    var trigger = root.querySelector("[data-shortcut-help-trigger]");
+    if (!trigger || root.querySelector("#keyboard-shortcuts")) {
+      return;
+    }
+    var dialog = root.createElement("dialog");
+    dialog.id = "keyboard-shortcuts";
+    dialog.className = "quick-navigation-dialog shortcut-help-dialog";
+    dialog.setAttribute("aria-labelledby", "keyboard-shortcuts-title");
+    var panel = root.createElement("div");
+    panel.className = "quick-navigation-panel";
+    var heading = root.createElement("h2");
+    heading.id = "keyboard-shortcuts-title";
+    heading.textContent = "Keyboard shortcuts";
+    var close = root.createElement("button");
+    close.type = "button";
+    close.className = "quick-navigation-close";
+    close.textContent = "Close";
+    var list = root.createElement("dl");
+    list.className = "shortcut-list";
+    [
+      [shortcutModifierLabel() + " K", "Open Quick navigation"],
+      ["↑ / ↓", "Move through results"],
+      ["Enter", "Open the highlighted page"],
+      ["Esc", "Close a dialog"],
+      ["?", "Show keyboard shortcuts"]
+    ].forEach(function (shortcut) {
+      var row = root.createElement("div");
+      var description = root.createElement("dt");
+      var keys = root.createElement("dd");
+      var keycap = root.createElement("kbd");
+      description.textContent = shortcut[1];
+      keycap.textContent = shortcut[0];
+      keys.appendChild(keycap);
+      row.appendChild(description);
+      row.appendChild(keys);
+      list.appendChild(row);
+    });
+    panel.appendChild(heading);
+    panel.appendChild(close);
+    panel.appendChild(list);
+    dialog.appendChild(panel);
+    root.body.appendChild(dialog);
+    var previousFocus = trigger;
+    function closeDialog() { if (dialog.open) { dialog.close(); } }
+    function openDialog() {
+      if (dialog.open || typeof dialog.showModal !== "function") { return; }
+      previousFocus = root.activeElement;
+      dialog.showModal();
+      close.focus();
+    }
+    trigger.addEventListener("click", openDialog);
+    close.addEventListener("click", closeDialog);
+    dialog.addEventListener("cancel", function (event) { event.preventDefault(); closeDialog(); });
+    dialog.addEventListener("close", function () { restoreFocus(previousFocus, trigger); });
+    root.addEventListener("keydown", function (event) {
+      if (shouldOpenShortcutHelp(event, root, dialog)) {
+        event.preventDefault();
+        openDialog();
+      }
+    });
+  }
+
   function install(root) {
     if (!root || typeof root.querySelector !== "function") {
       return;
@@ -235,16 +321,18 @@
       });
     }
     installQuickNavigation(root);
+    installShortcutHelp(root);
   }
 
   var api = Object.freeze({
-    destinations: quickNavigationDestinations,
     filterQuickNavigation: filterQuickNavigation,
     install: install,
     isEditableControl: isEditableControl,
+    navigationDestinations: navigationDestinations,
     restoreFocus: restoreFocus,
     setStatus: setStatus,
-    shouldOpenQuickNavigation: shouldOpenQuickNavigation
+    shouldOpenQuickNavigation: shouldOpenQuickNavigation,
+    shouldOpenShortcutHelp: shouldOpenShortcutHelp
   });
 
   if (typeof module !== "undefined" && module.exports) {

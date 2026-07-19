@@ -26,6 +26,12 @@ func TestCSVImportSendsExtractedTextThenCommitsAtomically(t *testing.T) {
 	application, mailer := newAuthTestApp(t, "owner@example.com")
 	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
 	scope := ownerScope(t, application, session)
+	page := serve(application, coachingGET("/imports", session))
+	for _, copy := range []string{"<h1>Import</h1>", "Start with an existing spreadsheet or report.", "Step 1 of 2", "Review file"} {
+		if !strings.Contains(page.Body.String(), copy) {
+			t.Fatalf("import page missing %q", copy)
+		}
+	}
 	providerCalls := 0
 	connectImportProvider(t, application, scope, func(request *http.Request) string {
 		providerCalls++
@@ -72,7 +78,7 @@ func TestCSVImportSendsExtractedTextThenCommitsAtomically(t *testing.T) {
 	}
 	preparedDelete := serve(application, importForm(session, url.Values{"action": {"prepare_delete"}, "import_id": {importID}}))
 	deleteMatch := regexp.MustCompile(`name="deletion_token" value="([a-f0-9]+)"`).FindStringSubmatch(preparedDelete.Body.String())
-	if !strings.Contains(preparedDelete.Body.String(), "1 active records") || len(deleteMatch) != 2 {
+	if !strings.Contains(preparedDelete.Body.String(), "linked to 1 records") || len(deleteMatch) != 2 {
 		t.Fatalf("delete impact = %q", preparedDelete.Body.String())
 	}
 	deleted := serve(application, importForm(session, url.Values{"action": {"delete_confirm"}, "import_id": {importID}, "deletion_token": {deleteMatch[1]}}))
@@ -119,7 +125,7 @@ func TestImportBlockerRequiresUserCorrectionAndRevisionFence(t *testing.T) {
 
 	values := url.Values{"action": {"correct"}, "import_id": {id}, "version": {"1"}, "field_0-subject": {"Alex"}, "field_0-analyte": {"HbA1c"}, "field_0-observed_on": {"2026-07-02"}, "field_0-value": {"5.8"}, "field_0-unit": {"%"}}
 	corrected := serve(application, importForm(session, values))
-	if corrected.Code != http.StatusOK || !strings.Contains(corrected.Body.String(), "ready to commit") {
+	if corrected.Code != http.StatusOK || !strings.Contains(corrected.Body.String(), "ready to import") {
 		t.Fatalf("correction = %d %q", corrected.Code, corrected.Body.String())
 	}
 	committed := serve(application, importForm(session, url.Values{"action": {"commit"}, "import_id": {id}, "version": {"2"}}))
@@ -254,7 +260,7 @@ func TestScannedPDFRequiresBoundOneTimeConsentBeforeInlineTransfer(t *testing.T)
 	})
 	pdf := []byte("%PDF-1.7\nscanned fixture")
 	prepared := serve(application, importUploadRequest(t, session, "scan.pdf", "application/pdf", pdf, "personal"))
-	if prepared.Code != http.StatusOK || !strings.Contains(prepared.Body.String(), "This PDF needs visual reading") || !strings.Contains(prepared.Body.String(), "Help with visual PDF transfer") || providerCalls != 0 {
+	if prepared.Code != http.StatusOK || !strings.Contains(prepared.Body.String(), "This PDF contains scanned pages") || !strings.Contains(prepared.Body.String(), "Learn about scanned PDFs") || providerCalls != 0 {
 		t.Fatalf("visual consent = %d calls=%d %q", prepared.Code, providerCalls, prepared.Body.String())
 	}
 	var id string

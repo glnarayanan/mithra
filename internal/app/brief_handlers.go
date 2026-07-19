@@ -128,11 +128,11 @@ func (a *App) refreshCoaching(w http.ResponseWriter, r *http.Request, mode strin
 			a.sendNudgeEmail(r.Context(), scope, nudge, true)
 		}
 	}
-	status := "Mithra refreshed the evidence-linked view."
+	status := "Your summary is up to date."
 	if updated == 0 && failed > 0 {
-		status = "Mithra could not refresh right now. The prior labelled view and live application facts remain available."
+		status = "Mithra could not refresh right now. Your saved information is still available."
 	} else if failed > 0 {
-		status = "The Shared and Only you sections refresh separately. One section kept its prior labelled view because it could not be refreshed."
+		status = "One private or shared section could not be refreshed. Your saved information is still available."
 	}
 	a.renderCoachingMode(r, w, scope, csrf, mode, status)
 }
@@ -178,13 +178,9 @@ func (a *App) renderBrief(r *http.Request, w http.ResponseWriter, scope policy.A
 	configured, _ := a.providerSettings.Configured(r.Context(), scope)
 	evidence := evidenceMap(overview.SharedContext, overview.PersonalContext)
 	view := BriefView{Navigation: navigationForPath("/"), CSRF: csrf, Status: status, HasRecords: overview.HasRecords, HasShared: overview.Shared.Lead.Title != "", CanRefresh: configured && overview.HasRecords && csrf != "", Stale: overview.SharedCache.Stale, PersonalStale: overview.PersonalCache.Stale, Lead: itemView(overview.Shared.Lead, evidence), Dates: itemViews(overview.Shared.Dates, evidence), Priorities: itemViews(overview.Shared.Priorities, evidence), OnlyYou: itemViews(privateItems(overview.Personal), evidence)}
-	view.Freshness = freshness(overview.SharedCache, "Live application view")
-	if view.Status == "" {
-		if view.Stale {
-			view.Status = "Household facts changed. The prior coaching wording is labelled while the live application view stays current."
-		} else {
-			view.Status = "Mithra is showing only facts and evidence visible to you."
-		}
+	view.Freshness = freshness(overview.SharedCache, "Up to date")
+	if view.Status == "" && view.Stale {
+		view.Status = "A newer update is available. Dates and sources are still up to date."
 	}
 	view.Nudges = a.nudgeViews(r.Context(), scope, append(overview.SharedContext.Facts, overview.PersonalContext.Facts...))
 	a.renderTemplate(r.Context(), w, "brief.html", view)
@@ -201,13 +197,9 @@ func (a *App) renderWeek(r *http.Request, w http.ResponseWriter, scope policy.Ac
 	configured, _ := a.providerSettings.Configured(r.Context(), scope)
 	evidence := evidenceMap(overview.SharedContext, overview.PersonalContext)
 	from := now.AddDate(0, 0, -6)
-	view := WeekReviewView{Navigation: navigationForPath("/review"), CSRF: csrf, Status: status, Period: from.Format("2 Jan") + " – " + now.Format("2 Jan 2006"), PrivateFreshness: freshness(overview.PersonalCache, "Live Only you view"), Stale: overview.SharedCache.Stale, PrivateStale: overview.PersonalCache.Stale, CanRefresh: configured && overview.HasRecords && csrf != "", Changes: itemViews(overview.Shared.Changes, evidence), Dates: itemViews(overview.Shared.Dates, evidence), Inconsistencies: itemViews(overview.Shared.Inconsistencies, evidence), Priorities: itemViews(overview.Shared.Priorities, evidence), OnlyYou: itemViews(privateItems(overview.Personal), evidence)}
-	if view.Status == "" {
-		if view.Stale {
-			view.Status = "Shared facts changed after this wording was prepared. Live dates and evidence remain current."
-		} else {
-			view.Status = "Shared and Only you sections are built and refreshed separately."
-		}
+	view := WeekReviewView{Navigation: navigationForPath("/review"), CSRF: csrf, Status: status, Period: from.Format("2 Jan") + " – " + now.Format("2 Jan 2006"), PrivateFreshness: freshness(overview.PersonalCache, "Up to date"), Stale: overview.SharedCache.Stale, PrivateStale: overview.PersonalCache.Stale, CanRefresh: configured && overview.HasRecords && csrf != "", Changes: itemViews(overview.Shared.Changes, evidence), Dates: itemViews(overview.Shared.Dates, evidence), Inconsistencies: itemViews(overview.Shared.Inconsistencies, evidence), Priorities: itemViews(overview.Shared.Priorities, evidence), OnlyYou: itemViews(privateItems(overview.Personal), evidence)}
+	if view.Status == "" && view.Stale {
+		view.Status = "A newer update is available. Dates and sources are still up to date."
 	}
 	view.Nudges = a.nudgeViews(r.Context(), scope, append(overview.SharedContext.Facts, overview.PersonalContext.Facts...))
 	a.renderTemplate(r.Context(), w, "review.html", view)
@@ -227,7 +219,7 @@ func itemView(item coaching.Item, evidence map[string]coaching.Fact) CoachingIte
 	if len(item.EvidenceIDs) > 0 {
 		if fact, ok := evidence[item.EvidenceIDs[0]]; ok {
 			view.EvidenceURL = sourceURL(fact.SourceID)
-			view.EvidenceLabel = "View source evidence"
+			view.EvidenceLabel = "View source"
 		}
 	}
 	return view
@@ -319,7 +311,7 @@ func (a *App) nudgeViews(ctx context.Context, scope policy.ActorScope, facts []c
 		if !ok {
 			continue
 		}
-		out = append(out, CoachingNudgeView{ID: n.ID, Title: fact.Content, Copy: "Mithra is waiting for a record update or a quick acknowledgement—nothing more.", LensURL: "/" + n.Family, LensLabel: strings.Title(n.Family), FollowUpEnabled: n.FollowUpEnabled})
+		out = append(out, CoachingNudgeView{ID: n.ID, Title: fact.Content, Copy: "Add an update when you have one, or mark this as reviewed.", LensURL: "/" + n.Family, LensLabel: strings.Title(n.Family), FollowUpEnabled: n.FollowUpEnabled})
 	}
 	return out
 }

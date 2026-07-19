@@ -12,7 +12,7 @@ import (
 func (a *App) invitePartner(w http.ResponseWriter, r *http.Request, scope policy.ActorScope, csrf string) {
 	email := r.PostForm.Get("email")
 	if strings.TrimSpace(email) == "" || len(email) > 254 {
-		a.renderSettings(r.Context(), w, scope, csrf, "", "Enter an allowlisted email address.")
+		a.renderSettings(r.Context(), w, scope, csrf, "", "Enter an email approved for this household.")
 		return
 	}
 	invitation, err := a.auth.CreateInvitation(r.Context(), scope, email, invitationLifetime)
@@ -50,18 +50,18 @@ func (a *App) removeOpenAISetting(w http.ResponseWriter, r *http.Request, scope 
 		a.renderSettings(r.Context(), w, scope, csrf, "", "Only the active household owner can remove the OpenAI connection.")
 		return
 	}
-	a.renderSettings(r.Context(), w, scope, csrf, "OpenAI was disconnected. Deterministic household records remain available.", "")
+	a.renderSettings(r.Context(), w, scope, csrf, "OpenAI was disconnected. Your saved household records remain available.", "")
 }
 
 func (a *App) saveHouseholdTimezone(w http.ResponseWriter, r *http.Request, scope policy.ActorScope, csrf string) {
 	zone := strings.TrimSpace(r.PostForm.Get("timezone"))
 	if zone == "" || len(zone) > 64 {
-		a.renderSettings(r.Context(), w, scope, csrf, "", "Enter a valid IANA timezone such as Asia/Kolkata.")
+		a.renderSettings(r.Context(), w, scope, csrf, "", "Enter a valid timezone such as Asia/Kolkata.")
 		return
 	}
 	if err := a.planningRecords.SetTimezone(r.Context(), scope, zone); err != nil {
 		a.renderSettings(r.Context(), w, scope, csrf, "", "Only the household owner can confirm a valid timezone.")
 		return
 	}
-	a.renderSettings(r.Context(), w, scope, csrf, "Household calendar timezone confirmed as "+zone+".", "")
+	a.renderSettings(r.Context(), w, scope, csrf, "Household timezone saved as "+zone+".", "")
 }

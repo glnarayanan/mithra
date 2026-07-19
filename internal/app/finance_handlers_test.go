@@ -18,7 +18,7 @@ func TestFinanceLensRendersEmptyPartialAndExactScopedStates(t *testing.T) {
 	owner := ownerScope(t, application, ownerSession)
 
 	empty := serve(application, authenticatedFinanceRequest(ownerSession, "/finance"))
-	if empty.Code != http.StatusOK || !strings.Contains(empty.Body.String(), "Nothing to total yet") {
+	if empty.Code != http.StatusOK || !strings.Contains(empty.Body.String(), "<h1>Finance</h1>") || !strings.Contains(empty.Body.String(), "No finance records yet") {
 		t.Fatalf("empty finance = %d %q", empty.Code, empty.Body.String())
 	}
 
@@ -43,7 +43,7 @@ func TestFinanceLensRendersEmptyPartialAndExactScopedStates(t *testing.T) {
 
 	ownerAll := serve(application, authenticatedFinanceRequest(ownerSession, "/finance"))
 	body := ownerAll.Body.String()
-	for _, text := range []string{"Shared groceries", "Unreadable receipt", "200.50", "1 incomplete excluded", "amount needs correction", "/sources/" + shared.SourceID} {
+	for _, text := range []string{"Shared groceries", "Unreadable receipt", "200.50", "1 need a value", "amount needs correction", "/sources/" + shared.SourceID} {
 		if !strings.Contains(body, text) {
 			t.Fatalf("owner finance missing %q: %s", text, body)
 		}

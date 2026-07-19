@@ -238,6 +238,51 @@ func TestCacheStalesOnSharedRevisionButIgnoresPartnerPrivateAndHardInvalidatesDe
 	}
 }
 
+func TestCacheRejectsOutdatedVersions(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		column string
+		value  string
+	}{
+		{name: "prompt", column: "prompt_version", value: "coaching-v1"},
+		{name: "schema", column: "schema_version", value: "schema-v0"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newFixture(t)
+			ctx := context.Background()
+			source := f.source(t, f.owner, policy.Shared, "salary")
+			if _, err := f.finance.Create(ctx, f.owner, finance.Draft{Kind: finance.Income, Visibility: policy.Shared, Label: "Salary", Category: "Income", Date: "2026-07-17", AmountText: "5000", Provenance: financeProvenance(source)}); err != nil {
+				t.Fatal(err)
+			}
+			input, err := f.service.BuildContext(ctx, f.owner, policy.Shared)
+			if err != nil {
+				t.Fatal(err)
+			}
+			output := deterministic(input.Facts, time.Date(2026, 7, 18, 0, 0, 0, 0, time.UTC))
+			if err := f.service.Publish(ctx, f.owner, "brief", policy.Shared, input, output, "test-model"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.db.Exec(`UPDATE coaching_cache SET `+test.column+`=?`, test.value); err != nil {
+				t.Fatal(err)
+			}
+			overview, err := f.service.Overview(ctx, f.owner, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if overview.SharedCache.Found {
+				t.Fatalf("outdated cache remained visible: %#v", overview.SharedCache)
+			}
+			var remaining int
+			if err := f.db.QueryRow(`SELECT COUNT(*) FROM coaching_cache`).Scan(&remaining); err != nil {
+				t.Fatal(err)
+			}
+			if remaining != 0 {
+				t.Fatalf("outdated cache rows=%d", remaining)
+			}
+		})
+	}
+}
+
 func TestNudgeIsIdempotentAndFollowupIsExplicit(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()

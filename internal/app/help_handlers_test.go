@@ -23,7 +23,7 @@ func TestHelpRequiresAuthenticationAndExplainsCoreBoundaries(t *testing.T) {
 		t.Fatalf("authenticated help = %d %q", response.Code, response.Body.String())
 	}
 	for _, required := range []string{
-		"Start here", "Only you", "Shared", "Capture", "Import", "Finance", "Health", "Planning", "Family Brief", "Week in Review", "OpenAI boundary", "Visual PDF transfer", "Deleting a source and recovery",
+		"Start here", "Keyboard shortcuts", "Only you", "Shared", "Capture", "Import", "Finance", "Health", "Planning", "Family Brief", "Week in Review", "How Mithra uses OpenAI", "PDFs without readable text", "Deleting a source and recovery", "Complete text updates are added after processing and can be undone for ten minutes.", "Voice captures and imports wait for your review.",
 	} {
 		if !strings.Contains(response.Body.String(), required) {
 			t.Fatalf("help missing %q: %s", required, response.Body.String())
@@ -39,10 +39,20 @@ func TestAuthenticatedShellsExposeHelpAndHelpNavigationEscapes(t *testing.T) {
 		request.AddCookie(session.session)
 		request.AddCookie(session.csrf)
 		response := serve(application, request)
-		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `href="/help"`) || !strings.Contains(response.Body.String(), `src="/assets/app.js"`) {
+		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `href="/help"`) || !strings.Contains(response.Body.String(), `src="/assets/app.js"`) || !strings.Contains(response.Body.String(), `data-app-shell`) {
 			t.Fatalf("shell %s = %d, Help link=%t, quick navigation script=%t", path, response.Code, strings.Contains(response.Body.String(), `href="/help"`), strings.Contains(response.Body.String(), `src="/assets/app.js"`))
 		}
-		if path == "/help" && !strings.Contains(response.Body.String(), "Ctrl+K or Command+K") {
+		for _, label := range []string{"Family Brief", "Week in Review", "Capture", "Import", "Finance", "Health", "Planning", "Settings", "Help"} {
+			if !strings.Contains(response.Body.String(), ">"+label+"</a>") {
+				t.Fatalf("shell %s missing navigation label %q", path, label)
+			}
+		}
+		for _, contract := range []string{`data-quick-destination`, `data-quick-navigation-mount`, `data-shortcut-help-trigger`, `aria-keyshortcuts="?"`, `action="/auth/logout"`} {
+			if !strings.Contains(response.Body.String(), contract) {
+				t.Fatalf("shell %s missing %q", path, contract)
+			}
+		}
+		if path == "/help" && (!strings.Contains(response.Body.String(), "Open quick navigation") || !strings.Contains(response.Body.String(), "Show keyboard shortcuts")) {
 			t.Fatalf("help does not explain quick navigation: %q", response.Body.String())
 		}
 	}

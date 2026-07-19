@@ -2,14 +2,18 @@ package app
 
 import "net/http"
 
-type HelpView struct{ Navigation []NavigationItem }
+type HelpView struct {
+	Navigation []NavigationItem
+	CSRF       string
+}
 
 func (a *App) help(w http.ResponseWriter, r *http.Request) {
 	if !allowsRead(r.Method) {
 		methodNotAllowed(w)
 		return
 	}
-	if _, ok := a.sessionScope(r); !ok {
+	_, csrf, ok := a.authenticated(r)
+	if !ok {
 		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
@@ -17,5 +21,5 @@ func (a *App) help(w http.ResponseWriter, r *http.Request) {
 		writeHTMLHead(w)
 		return
 	}
-	a.renderTemplate(r.Context(), w, "help.html", HelpView{Navigation: navigationForPath("/help")})
+	a.renderTemplate(r.Context(), w, "help.html", HelpView{Navigation: navigationForPath("/help"), CSRF: csrf})
 }

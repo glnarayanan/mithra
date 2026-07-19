@@ -56,7 +56,7 @@ func TestPlanningLensCalendarViewsConflictsAndExports(t *testing.T) {
 	if month.Code != http.StatusOK {
 		t.Fatalf("month status=%d body=%s", month.Code, month.Body.String())
 	}
-	for _, required := range []string{"A bird’s-eye view.", "July 2026", "Family trip", "School conversation", "Home contractor", "Assigned owners have overlapping events", "Download .ics", "Open Google Calendar draft", "Later Mithra changes will not update", "Help with calendar exports", "calendar-mobile-agenda", "Owned plans", "School transition", "Make the school transition calm", "Meet the teacher", "availability: after the family trip", "After Family trip", "View goal source", "View plan source", "View milestone source"} {
+	for _, required := range []string{"Calendar &amp; plans", "July 2026", "Family trip", "School conversation", "Home contractor", "Assigned owners have overlapping events", "Download .ics", "Open Google Calendar draft", "Changes in Mithra will not update", "Help with calendar exports", "calendar-mobile-agenda", "Beyond the calendar", "School transition", "Make the school transition calm", "Meet the teacher", "availability: after the family trip", "After Family trip", "View goal source", "View plan source", "View milestone source"} {
 		if !strings.Contains(month.Body.String(), required) {
 			t.Fatalf("month missing %q: %s", required, month.Body.String())
 		}
@@ -106,7 +106,7 @@ func TestPlanningLensRequiresSessionAndSettingsConfirmsTimezone(t *testing.T) {
 	}
 	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
 	saved := serve(application, authenticatedSettingsRequest(session, http.MethodPost, url.Values{"action": {"save_timezone"}, "timezone": {"Asia/Kolkata"}}))
-	if saved.Code != http.StatusOK || !strings.Contains(saved.Body.String(), "timezone confirmed as Asia/Kolkata") || !strings.Contains(saved.Body.String(), `value="Asia/Kolkata"`) {
+	if saved.Code != http.StatusOK || !strings.Contains(saved.Body.String(), "timezone saved as Asia/Kolkata") || !strings.Contains(saved.Body.String(), `value="Asia/Kolkata"`) {
 		t.Fatalf("saved timezone=%d %s", saved.Code, saved.Body.String())
 	}
 	bad := serve(application, authenticatedSettingsRequest(session, http.MethodPost, url.Values{"action": {"save_timezone"}, "timezone": {"Mars/Olympus"}}))

@@ -91,6 +91,7 @@ type App struct {
 type NavigationItem struct {
 	Path    string
 	Label   string
+	Group   string
 	Current bool
 }
 
@@ -108,7 +109,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		return nil, err
 	}
 
-	templates, err := template.ParseFS(web.Files, "templates/auth/*.html", "templates/brief/*.html", "templates/capture/*.html", "templates/finance/*.html", "templates/health/*.html", "templates/help/*.html", "templates/imports/*.html", "templates/planning/*.html", "templates/review/*.html", "templates/settings/*.html")
+	templates, err := template.ParseFS(web.Files, "templates/shared/*.html", "templates/auth/*.html", "templates/brief/*.html", "templates/capture/*.html", "templates/finance/*.html", "templates/health/*.html", "templates/help/*.html", "templates/imports/*.html", "templates/planning/*.html", "templates/review/*.html", "templates/settings/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse embedded templates: %w", err)
 	}
@@ -308,14 +309,14 @@ func (a *App) serveEmbeddedFile(w http.ResponseWriter, r *http.Request, name, co
 
 func navigationForPath(path string) []NavigationItem {
 	return []NavigationItem{
-		{Path: "/", Label: "Family Brief", Current: path == "/"},
+		{Path: "/", Label: "Family Brief", Group: "Overview", Current: path == "/"},
 		{Path: "/review", Label: "Week in Review", Current: path == "/review"},
-		{Path: "/capture", Label: "Capture", Current: path == "/capture"},
+		{Path: "/capture", Label: "Capture", Group: "Add", Current: path == "/capture"},
 		{Path: "/imports", Label: "Import", Current: path == "/imports"},
-		{Path: "/finance", Label: "Finance", Current: path == "/finance"},
+		{Path: "/finance", Label: "Finance", Group: "Household", Current: path == "/finance"},
 		{Path: "/health", Label: "Health", Current: path == "/health"},
 		{Path: "/planning", Label: "Planning", Current: path == "/planning"},
-		{Path: "/settings", Label: "Settings", Current: path == "/settings"},
+		{Path: "/settings", Label: "Settings", Group: "Account", Current: path == "/settings"},
 		{Path: "/help", Label: "Help", Current: path == "/help"},
 	}
 }
