@@ -57,7 +57,7 @@
   }
 
   function shouldOpenShortcutHelp(event, documentRoot, ownedDialog) {
-    if (!event || event.defaultPrevented || event.repeat || event.isComposing || event.keyCode === 229 || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || event.key !== "?" || isEditableControl(event.target)) {
+    if (!event || event.defaultPrevented || event.repeat || event.isComposing || event.keyCode === 229 || event.ctrlKey || event.metaKey || event.altKey || event.key !== "?" || isEditableControl(event.target)) {
       return false;
     }
     var modal = documentRoot && typeof documentRoot.querySelector === "function" ? documentRoot.querySelector("dialog[open], [aria-modal=\"true\"]") : null;

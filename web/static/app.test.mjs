@@ -38,6 +38,7 @@ test("keyboard help shortcut ignores editing, composition, repeats, and open dia
   const input = { tagName: "INPUT", parentElement: null };
 
   assert.equal(app.shouldOpenShortcutHelp(shortcut(), noModal, null), true);
+  assert.equal(app.shouldOpenShortcutHelp(shortcut({ shiftKey: true }), noModal, null), true);
   assert.equal(app.shouldOpenShortcutHelp(shortcut({ target: input }), noModal, null), false);
   assert.equal(app.shouldOpenShortcutHelp(shortcut({ isComposing: true }), noModal, null), false);
   assert.equal(app.shouldOpenShortcutHelp(shortcut({ repeat: true }), noModal, null), false);
