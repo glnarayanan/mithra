@@ -198,7 +198,8 @@ func TestBriefRendersAccessibleNavigationEmptyStateAndEscapesStatus(t *testing.T
 		`href="/planning"`,
 		`href="/assets/favicon.svg"`,
 		`aria-live="polite"`,
-		`Add your first update`,
+		`Connect OpenAI to begin`,
+		`href="/settings#openai-title"`,
 	} {
 		if !strings.Contains(body, required) {
 			t.Fatalf("shell is missing %q", required)
@@ -209,6 +210,21 @@ func TestBriefRendersAccessibleNavigationEmptyStateAndEscapesStatus(t *testing.T
 	}
 	if !strings.Contains(body, `&lt;/script&gt;&lt;script&gt;window.pwned = true&lt;/script&gt;`) {
 		t.Fatalf("shell did not render escaped status: %q", body)
+	}
+}
+
+func TestBriefOnboardingLeadsConfiguredHouseholdsToFirstValue(t *testing.T) {
+	t.Parallel()
+
+	application := newTestApp(t)
+	response := httptest.NewRecorder()
+	application.renderTemplate(context.Background(), response, "brief.html", BriefView{Navigation: navigationForPath("/"), AIConfigured: true})
+
+	body := response.Body.String()
+	for _, required := range []string{"Add your first update", "build your first Family Brief", `href="/capture"`, `href="/imports"`} {
+		if !strings.Contains(body, required) {
+			t.Fatalf("configured onboarding is missing %q", required)
+		}
 	}
 }
 
