@@ -691,9 +691,16 @@ kbd {
   width: min(calc(100% - 2rem), 48rem);
 }
 
-.source-preview-frame,
+.source-preview-content,
 .source-preview-open {
   grid-column: 1 / -1;
+}
+
+.source-preview-content {
+  min-height: 12rem;
+  overflow: auto;
+  border-radius: var(--radius);
+  background: var(--base-50);
 }
 
 .source-preview-frame {
@@ -703,6 +710,20 @@ kbd {
   border: 0;
   border-radius: var(--radius);
   background: var(--base-50);
+}
+
+.source-preview-text {
+  margin: 0;
+  padding: 1.25rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}
+
+.source-preview-message {
+  margin: 0;
+  padding: 1.25rem;
+  color: var(--muted-ink);
 }
 
 .source-preview-open {

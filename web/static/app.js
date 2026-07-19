@@ -355,9 +355,9 @@
     close.type = "button";
     close.className = "quick-navigation-close";
     close.textContent = "Close";
-    var frame = root.createElement("iframe");
-    frame.className = "source-preview-frame";
-    frame.title = "Original source";
+    var content = root.createElement("div");
+    content.className = "source-preview-content";
+    content.setAttribute("aria-live", "polite");
     var open = root.createElement("a");
     open.className = "source-preview-open";
     open.target = "_blank";
@@ -365,11 +365,77 @@
     open.textContent = "Open in a new tab";
     panel.appendChild(heading);
     panel.appendChild(close);
-    panel.appendChild(frame);
+    panel.appendChild(content);
     panel.appendChild(open);
     dialog.appendChild(panel);
     root.body.appendChild(dialog);
     var previousFocus = null;
+    var previewURL = "";
+    var loadID = 0;
+
+    function clearPreview() {
+      while (content.firstChild) {
+        content.removeChild(content.firstChild);
+      }
+      if (previewURL && global.URL && typeof global.URL.revokeObjectURL === "function") {
+        global.URL.revokeObjectURL(previewURL);
+      }
+      previewURL = "";
+    }
+
+    function showMessage(message) {
+      clearPreview();
+      var paragraph = root.createElement("p");
+      paragraph.className = "source-preview-message";
+      paragraph.textContent = message;
+      content.appendChild(paragraph);
+    }
+
+    function loadSource(path, requestedID) {
+      if (!global || typeof global.fetch !== "function") {
+        showMessage("This original cannot be previewed here. Open it in a new tab.");
+        return;
+      }
+      global.fetch(path).then(function (response) {
+        if (!response.ok) {
+          throw new Error("source unavailable");
+        }
+        var contentType = String(response.headers.get("Content-Type") || "").toLowerCase();
+        if (contentType.indexOf("text/plain") === 0 || contentType.indexOf("text/csv") === 0) {
+          return response.text().then(function (text) { return { kind: "text", value: text }; });
+        }
+        if (contentType.indexOf("application/pdf") === 0 && global.URL && typeof global.URL.createObjectURL === "function") {
+          return response.blob().then(function (blob) { return { kind: "pdf", value: blob }; });
+        }
+        return { kind: "unsupported" };
+      }).then(function (preview) {
+        if (requestedID !== loadID || !dialog.open) {
+          return;
+        }
+        clearPreview();
+        if (preview.kind === "text") {
+          var text = root.createElement("pre");
+          text.className = "source-preview-text";
+          text.textContent = preview.value;
+          content.appendChild(text);
+          return;
+        }
+        if (preview.kind === "pdf") {
+          previewURL = global.URL.createObjectURL(preview.value);
+          var frame = root.createElement("iframe");
+          frame.className = "source-preview-frame";
+          frame.title = "Original PDF";
+          frame.src = previewURL;
+          content.appendChild(frame);
+          return;
+        }
+        showMessage("This file type cannot be previewed here. Open it in a new tab.");
+      }).catch(function () {
+        if (requestedID === loadID && dialog.open) {
+          showMessage("The original could not be loaded. Open it in a new tab.");
+        }
+      });
+    }
 
     function closeDialog() {
       if (dialog.open) {
@@ -379,7 +445,8 @@
     close.addEventListener("click", closeDialog);
     dialog.addEventListener("cancel", function (event) { event.preventDefault(); closeDialog(); });
     dialog.addEventListener("close", function () {
-      frame.removeAttribute("src");
+      loadID += 1;
+      clearPreview();
       restoreFocus(previousFocus, null);
     });
     root.addEventListener("click", function (event) {
@@ -391,9 +458,11 @@
       previousFocus = link;
       var path = link.getAttribute("href");
       open.href = path;
-      frame.src = path;
+      loadID += 1;
+      showMessage("Loading original…");
       dialog.showModal();
       close.focus();
+      loadSource(path, loadID);
     });
   }
 
