@@ -261,6 +261,30 @@ func TestEmbeddedFaviconIsServedWithoutBrowserConsoleFallback(t *testing.T) {
 	}
 }
 
+func TestEmbeddedAssetsRevalidateWithoutResendingTheirBody(t *testing.T) {
+	t.Parallel()
+
+	application := newTestApp(t)
+	first := httptest.NewRecorder()
+	application.Handler().ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/assets/styles.css", nil))
+
+	if first.Code != http.StatusOK || first.Body.Len() == 0 {
+		t.Fatalf("first asset response = %d, body bytes = %d", first.Code, first.Body.Len())
+	}
+	etag := first.Header().Get("ETag")
+	if etag == "" || first.Header().Get("Cache-Control") != "public, max-age=0, must-revalidate" {
+		t.Fatalf("asset cache headers = ETag %q, Cache-Control %q", etag, first.Header().Get("Cache-Control"))
+	}
+
+	revalidatedRequest := httptest.NewRequest(http.MethodGet, "/assets/styles.css", nil)
+	revalidatedRequest.Header.Set("If-None-Match", etag)
+	revalidated := httptest.NewRecorder()
+	application.Handler().ServeHTTP(revalidated, revalidatedRequest)
+	if revalidated.Code != http.StatusNotModified || revalidated.Body.Len() != 0 {
+		t.Fatalf("revalidated asset = %d, body bytes = %d", revalidated.Code, revalidated.Body.Len())
+	}
+}
+
 func newTestApp(t testing.TB) *App {
 	t.Helper()
 	application, err := New(context.Background(), Config{DatabasePath: filepath.Join(t.TempDir(), "mithra.sqlite3"), MasterKey: bytes.Repeat([]byte{7}, 32)})
