@@ -35,13 +35,30 @@ const maxCredentialBytes = 16 << 10
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
-		logStartupFailure(os.Stderr)
+		logStartupFailure(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func logStartupFailure(output io.Writer) {
-	fmt.Fprintln(output, "error_code=startup_failed")
+type startupError struct {
+	stage string
+	err   error
+}
+
+func (e startupError) Error() string { return e.err.Error() }
+func (e startupError) Unwrap() error { return e.err }
+
+func failStartup(stage string, err error) error {
+	return startupError{stage: stage, err: err}
+}
+
+func logStartupFailure(output io.Writer, err error) {
+	var failure startupError
+	if errors.As(err, &failure) {
+		fmt.Fprintf(output, "error_code=startup_failed stage=%s\n", failure.stage)
+		return
+	}
+	fmt.Fprintln(output, "error_code=startup_failed stage=command")
 }
 
 func run(args []string) error {
@@ -88,33 +105,33 @@ func run(args []string) error {
 
 	listener, err := listen(*address, *socketPath, addressConfigured)
 	if err != nil {
-		return err
+		return failStartup("listener", err)
 	}
 	defer listener.Close()
 
 	allowedEmails, err := parseAllowedEmails(*allowedRaw)
 	if err != nil {
-		return err
+		return failStartup("allowlist", err)
 	}
 	secureCookies, err := secureCookiesForOrigin(*originRaw)
 	if err != nil {
-		return err
+		return failStartup("origin", err)
 	}
 	credential, err := readCredentialFile(*plunkKeyFile)
 	if err != nil {
-		return err
+		return failStartup("plunk_credential", err)
 	}
 	mailer, err := providers.NewPlunk(providers.PlunkConfig{APIKey: credential, From: strings.TrimSpace(*plunkFrom)})
 	if err != nil {
-		return errors.New("Plunk configuration is invalid")
+		return failStartup("plunk_config", errors.New("Plunk configuration is invalid"))
 	}
 	masterCredential, err := readCredentialFile(*masterKeyFile)
 	if err != nil {
-		return err
+		return failStartup("master_credential", err)
 	}
 	masterKey, err := decodeMasterKey(masterCredential)
 	if err != nil {
-		return err
+		return failStartup("master_key", err)
 	}
 	application, err := app.New(context.Background(), app.Config{
 		DatabasePath:    *databasePath,
@@ -128,7 +145,7 @@ func run(args []string) error {
 		ImportPDF:       imports.SocketPDFParser{Path: *pdfParserSocket},
 	})
 	if err != nil {
-		return fmt.Errorf("initialize Mithra: %w", err)
+		return failStartup("application", fmt.Errorf("initialize Mithra: %w", err))
 	}
 	defer application.Close()
 
@@ -154,15 +171,15 @@ func run(args []string) error {
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
-		return fmt.Errorf("serve Mithra: %w", err)
+		return failStartup("server", fmt.Errorf("serve Mithra: %w", err))
 	case <-stop.Done():
 		shutdown, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer shutdownCancel()
 		if err := server.Shutdown(shutdown); err != nil {
-			return fmt.Errorf("shut down Mithra: %w", err)
+			return failStartup("shutdown", fmt.Errorf("shut down Mithra: %w", err))
 		}
 		if err := <-serveErrors; err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return fmt.Errorf("serve Mithra during shutdown: %w", err)
+			return failStartup("shutdown", fmt.Errorf("serve Mithra during shutdown: %w", err))
 		}
 		return nil
 	}

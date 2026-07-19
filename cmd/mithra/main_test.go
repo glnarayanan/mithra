@@ -174,12 +174,17 @@ func TestStartupFailureLoggingRedactsSensitiveCLIAndPathText(t *testing.T) {
 	}
 
 	var logs bytes.Buffer
-	logStartupFailure(&logs)
-	if got, want := logs.String(), "error_code=startup_failed\n"; got != want {
+	logStartupFailure(&logs, failStartup("master_credential", errors.New(sensitive)))
+	if got, want := logs.String(), "error_code=startup_failed stage=master_credential\n"; got != want {
 		t.Fatalf("startup log = %q, want %q", got, want)
 	}
 	if strings.Contains(logs.String(), sensitive) || strings.Contains(logs.String(), "/private/mithra") {
 		t.Fatalf("startup log leaked sensitive CLI data: %q", logs.String())
+	}
+	logs.Reset()
+	logStartupFailure(&logs, errors.New(sensitive))
+	if got, want := logs.String(), "error_code=startup_failed stage=command\n"; got != want {
+		t.Fatalf("generic startup log = %q, want %q", got, want)
 	}
 }
 

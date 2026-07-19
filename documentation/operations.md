@@ -66,6 +66,9 @@ key and all household data. Upgrade and reconfigure require a recognized
 migration history, clean SQLite, matching key evidence, and a verified
 pre-mutation backup. Files are staged before activation and restored if service
 or health validation fails; schema down-migrations are never attempted.
+Startup failures expose only a stable `stage` code through
+`journalctl -u mithra.service`; secrets, paths, addresses, and provider errors
+remain redacted.
 
 On a shared VPS, Mithra owns only its user, binaries, `/etc/mithra`,
 `/var/lib/mithra`, `/var/backups/mithra`, `/run/mithra`, its systemd units, and
