@@ -26,6 +26,12 @@ func TestCSVImportSendsExtractedTextThenCommitsAtomically(t *testing.T) {
 	application, mailer := newAuthTestApp(t, "owner@example.com")
 	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
 	scope := ownerScope(t, application, session)
+	page := serve(application, coachingGET("/imports", session))
+	for _, copy := range []string{"<h1>Import</h1>", "Start with an existing spreadsheet or report.", "Step 1 of 2", "Review file"} {
+		if !strings.Contains(page.Body.String(), copy) {
+			t.Fatalf("import page missing %q", copy)
+		}
+	}
 	providerCalls := 0
 	connectImportProvider(t, application, scope, func(request *http.Request) string {
 		providerCalls++
