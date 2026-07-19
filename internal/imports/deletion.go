@@ -91,6 +91,15 @@ func (s *Service) ReconcileDeletions(ctx context.Context) error {
 	return nil
 }
 
+// ReplayDeletionIntent applies the same tombstone-first deletion boundary used
+// by the running application when an authenticated restore replays its journal.
+func ReplayDeletionIntent(ctx context.Context, db *sql.DB, sources *storage.Service, intent DeletionIntent) error {
+	if db == nil || sources == nil {
+		return ErrInvalidInput
+	}
+	return (&Service{db: db, sources: sources, now: time.Now}).applyDeletionIntent(ctx, intent)
+}
+
 var deletionTables = []string{"finance_income", "finance_spending", "finance_assets", "finance_liabilities", "finance_budgets", "finance_obligations", "health_observations", "health_appointments", "health_care_routines", "planning_goals", "planning_plans", "planning_milestones", "planning_events"}
 
 func deactivateSourceRecords(ctx context.Context, tx *sql.Tx, sourceID string, now time.Time) error {

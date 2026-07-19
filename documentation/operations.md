@@ -9,8 +9,8 @@ must already exist. It never installs packages or changes firewall policy.
 
 Release builds contain an Ed25519 publisher public key. `install.sh` verifies
 the detached signature over the canonical release manifest, then checks the
-application and installer byte counts and SHA-256 digests before executing the
-installer. The installer performs the same verification before any owned path
+application and installer SHA-256 digests before executing the installer. The
+installer also verifies each signed artifact's byte count before any owned path
 is staged. Replacing an artifact and its checksum is therefore insufficient.
 
 Configure these repository release settings before the first tag:
@@ -45,12 +45,27 @@ mithra-installer plan \
 
 ## Install and reconfigure
 
-Download the release `install.sh`, inspect it, set an exact tag, and provide the
-Plunk credential through an existing `0600` file. The sender domain must first
-be verified in Plunk:
+Download and verify the release as an unprivileged user before any `sudo`
+execution. The public-key DER SHA-256 fingerprint is
+`044843e7944e940c1dfe513f61425902fde751348bd4d7dedb4f10d8a0f720c9`.
+The sender domain must first be verified in Plunk:
 
 ```bash
-MITHRA_VERSION=v1.0.3 sh install.sh \
+release=v1.0.3
+stage=$(mktemp -d)
+base="https://github.com/glnarayanan/mithra/releases/download/$release"
+for name in RELEASE-MANIFEST RELEASE-MANIFEST.sig release-public-key.pem install.sh; do
+  curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+    --output "$stage/$name" "$base/$name"
+done
+fingerprint=$(openssl pkey -pubin -in "$stage/release-public-key.pem" -pubout -outform DER | sha256sum | awk '{print $1}')
+test "$fingerprint" = 044843e7944e940c1dfe513f61425902fde751348bd4d7dedb4f10d8a0f720c9
+openssl pkeyutl -verify -pubin -inkey "$stage/release-public-key.pem" -rawin \
+  -in "$stage/RELEASE-MANIFEST" -sigfile "$stage/RELEASE-MANIFEST.sig"
+expected=$(awk '$1=="artifact" && $2=="install.sh" {print $4}' "$stage/RELEASE-MANIFEST")
+test "$(sha256sum "$stage/install.sh" | awk '{print $1}')" = "$expected"
+
+sudo env MITHRA_VERSION="$release" sh "$stage/install.sh" \
   --domain mithrahq.com \
   --proxy caddy \
   --allowed-emails owner@example.com,partner@example.com \

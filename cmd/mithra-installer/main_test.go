@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/glnarayanan/mithra/internal/installer"
 )
 
 func TestWaitForHealthRetriesUntilReady(t *testing.T) {
@@ -81,5 +83,26 @@ func TestSystemUserExistsTreatsMissingParserIdentityAsAbsent(t *testing.T) {
 	exists, err := systemUserExists(context.Background(), "mithra-pdf-test-identity-that-does-not-exist")
 	if err != nil || exists {
 		t.Fatalf("missing parser identity exists=%t err=%v", exists, err)
+	}
+}
+
+func TestParserActivationRequiresBothInstalledUnits(t *testing.T) {
+	paths := installer.OwnedPaths(t.TempDir(), installer.AppOnly)
+	for _, path := range []string{paths.PDFParserService, paths.PDFParserSocket} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("unit"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !parserUnitsPresent(paths) {
+		t.Fatal("complete parser units were not recognized")
+	}
+	if err := os.Remove(paths.PDFParserSocket); err != nil {
+		t.Fatal(err)
+	}
+	if parserUnitsPresent(paths) {
+		t.Fatal("partial parser units enabled parser activation")
 	}
 }

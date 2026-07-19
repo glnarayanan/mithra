@@ -31,6 +31,7 @@ import (
 	"github.com/glnarayanan/mithra/internal/auth"
 	mithradb "github.com/glnarayanan/mithra/internal/database"
 	"github.com/glnarayanan/mithra/internal/imports"
+	"github.com/glnarayanan/mithra/internal/storage"
 	"golang.org/x/crypto/hkdf"
 )
 
@@ -60,6 +61,17 @@ type StatusReport struct {
 type RestoreOwnership struct {
 	UID, GID int
 	Set      bool
+}
+
+// PreparedRestore is an authenticated archive generation retained across the
+// service quiesce boundary so activation never reopens caller-controlled bytes.
+type PreparedRestore struct{ stage string }
+
+func (p *PreparedRestore) Cleanup() {
+	if p != nil && p.stage != "" {
+		_ = os.RemoveAll(p.stage)
+		p.stage = ""
+	}
 }
 
 func DatabasePreflight(ctx context.Context, path string) error {
@@ -116,6 +128,7 @@ type ReleaseInstall struct {
 	Artifact, Installer                          []byte
 	Manifest, Signature                          []byte
 	PublisherKey                                 ed25519.PublicKey
+	RequestedVersion, InstalledVersion           string
 	Validate                                     func() error
 }
 
@@ -125,12 +138,17 @@ func InstallRelease(plan Plan, release ReleaseInstall) error {
 	if plan.Options.Operation != Install && plan.Options.Operation != Upgrade && plan.Options.Operation != Reconfigure {
 		return errors.New("release activation requires an install, upgrade, or reconfigure plan")
 	}
-	releaseManifest, err := VerifyRelease(release.Manifest, release.Signature, release.PublisherKey, release.ArtifactName, release.Artifact)
-	if err != nil {
-		return err
-	}
-	if len(release.Installer) > 0 {
+	var releaseManifest ReleaseManifest
+	if plan.Options.Operation != Reconfigure {
+		var err error
+		releaseManifest, err = VerifyRelease(release.Manifest, release.Signature, release.PublisherKey, release.ArtifactName, release.Artifact)
+		if err != nil {
+			return err
+		}
 		if _, err := VerifyRelease(release.Manifest, release.Signature, release.PublisherKey, release.InstallerName, release.Installer); err != nil {
+			return err
+		}
+		if err := VerifyReleaseVersion(releaseManifest, release.RequestedVersion, release.InstalledVersion); err != nil {
 			return err
 		}
 	}
@@ -319,44 +337,62 @@ func RehearseMigrations(ctx context.Context, databasePath string) error {
 // PreflightRestore authenticates and opens every recovery input before the
 // caller quiesces the running service. It only creates a temporary directory.
 func PreflightRestore(ctx context.Context, paths Paths, archive string, masterKey []byte, allowedEmails []string, owner RestoreOwnership) error {
+	prepared, err := PrepareRestore(ctx, paths, archive, masterKey, allowedEmails, owner)
+	if prepared != nil {
+		prepared.Cleanup()
+	}
+	return err
+}
+
+// PrepareRestore authenticates and opens every recovery input before the
+// caller quiesces the running service. The returned generation is private to
+// the installer and must be consumed or cleaned up.
+func PrepareRestore(ctx context.Context, paths Paths, archive string, masterKey []byte, allowedEmails []string, owner RestoreOwnership) (*PreparedRestore, error) {
 	if len(masterKey) != 32 || len(allowedEmails) == 0 {
-		return errors.New("restore requires the retained key and current non-empty allowlist")
+		return nil, errors.New("restore requires the retained key and current non-empty allowlist")
 	}
 	if err := validateRestoreOwnership(paths, owner); err != nil {
-		return err
+		return nil, err
 	}
 	parent := filepath.Dir(paths.Data)
-	stage, err := os.MkdirTemp(parent, ".mithra-restore-preflight-")
-	if err != nil {
-		return err
+	if err := os.MkdirAll(parent, 0o750); err != nil {
+		return nil, err
 	}
-	defer os.RemoveAll(stage)
+	stage, err := os.MkdirTemp(parent, ".mithra-restore-")
+	if err != nil {
+		return nil, err
+	}
+	prepared := &PreparedRestore{stage: stage}
+	fail := func(err error) (*PreparedRestore, error) {
+		prepared.Cleanup()
+		return nil, err
+	}
 	if err := extractArchive(archive, stage, masterKey); err != nil {
-		return err
+		return fail(err)
 	}
 	if err := verifyExtracted(stage, masterKey); err != nil {
-		return err
+		return fail(err)
 	}
 	if err := DatabasePreflight(ctx, filepath.Join(stage, "mithra.sqlite3")); err != nil {
-		return fmt.Errorf("restored database preflight: %w", err)
+		return fail(fmt.Errorf("restored database preflight: %w", err))
 	}
 	archivedJournal, err := imports.NewDeletionJournal(filepath.Join(stage, "deletion.journal"), masterKey)
 	if err != nil {
-		return fmt.Errorf("open archived deletion journal: %w", err)
+		return fail(fmt.Errorf("open archived deletion journal: %w", err))
 	}
 	if _, err := archivedJournal.ReadAll(); err != nil {
-		return fmt.Errorf("verify archived deletion journal: %w", err)
+		return fail(fmt.Errorf("verify archived deletion journal: %w", err))
 	}
 	if exists(paths.Journal) {
 		journal, err := imports.NewDeletionJournal(paths.Journal, masterKey)
 		if err != nil {
-			return fmt.Errorf("open current deletion journal: %w", err)
+			return fail(fmt.Errorf("open current deletion journal: %w", err))
 		}
 		if _, err := journal.ReadAll(); err != nil {
-			return fmt.Errorf("verify current deletion journal: %w", err)
+			return fail(fmt.Errorf("verify current deletion journal: %w", err))
 		}
 	}
-	return nil
+	return prepared, nil
 }
 
 func RestoreBackup(ctx context.Context, paths Paths, archive string, masterKey []byte, allowedEmails []string, health func() error) error {
@@ -364,8 +400,19 @@ func RestoreBackup(ctx context.Context, paths Paths, archive string, masterKey [
 }
 
 func RestoreBackupWithOwnership(ctx context.Context, paths Paths, archive string, masterKey []byte, allowedEmails []string, owner RestoreOwnership, health func() error) error {
-	if len(masterKey) != 32 || len(allowedEmails) == 0 {
-		return errors.New("restore requires the retained key and current non-empty allowlist")
+	prepared, err := PrepareRestore(ctx, paths, archive, masterKey, allowedEmails, owner)
+	if err != nil {
+		return err
+	}
+	defer prepared.Cleanup()
+	return RestorePrepared(ctx, paths, prepared, masterKey, allowedEmails, owner, health)
+}
+
+// RestorePrepared activates a generation returned by PrepareRestore without
+// rereading its original archive.
+func RestorePrepared(ctx context.Context, paths Paths, prepared *PreparedRestore, masterKey []byte, allowedEmails []string, owner RestoreOwnership, health func() error) error {
+	if prepared == nil || prepared.stage == "" || len(masterKey) != 32 || len(allowedEmails) == 0 {
+		return errors.New("restore requires a prepared authenticated generation and current allowlist")
 	}
 	if err := validateRestoreOwnership(paths, owner); err != nil {
 		return err
@@ -374,25 +421,12 @@ func RestoreBackupWithOwnership(ctx context.Context, paths Paths, archive string
 	if err := os.MkdirAll(parent, 0o750); err != nil {
 		return err
 	}
-	stage, err := os.MkdirTemp(parent, ".mithra-restore-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(stage)
-	if err := extractArchive(archive, stage, masterKey); err != nil {
-		return err
-	}
-	if err := verifyExtracted(stage, masterKey); err != nil {
-		return err
-	}
-	if err := DatabasePreflight(ctx, filepath.Join(stage, "mithra.sqlite3")); err != nil {
-		return fmt.Errorf("restored database preflight: %w", err)
-	}
+	stage := prepared.stage
 	intents, err := mergeDeletionJournals(filepath.Join(stage, "deletion.journal"), paths.Journal, masterKey)
 	if err != nil {
 		return err
 	}
-	if err := sanitizeRestore(ctx, stage, intents, allowedEmails); err != nil {
+	if err := sanitizeRestore(ctx, stage, intents, allowedEmails, masterKey); err != nil {
 		return err
 	}
 	if err := os.Remove(filepath.Join(stage, "manifest.json")); err != nil {
@@ -419,6 +453,7 @@ func RestoreBackupWithOwnership(ctx context.Context, paths Paths, archive string
 		}
 		return err
 	}
+	prepared.stage = ""
 	if health != nil {
 		if err := health(); err != nil {
 			failed := paths.Data + ".failed-restore"
@@ -743,7 +778,7 @@ func mergeDeletionJournals(archivedPath, currentPath string, key []byte) ([]impo
 	return intents, nil
 }
 
-func sanitizeRestore(ctx context.Context, stage string, intents []imports.DeletionIntent, allowlist []string) error {
+func sanitizeRestore(ctx context.Context, stage string, intents []imports.DeletionIntent, allowlist []string, masterKey []byte) error {
 	dbPath := filepath.Join(stage, "mithra.sqlite3")
 	db, err := sql.Open("sqlite3", "file:"+filepath.ToSlash(dbPath)+"?_foreign_keys=on&_busy_timeout=5000")
 	if err != nil {
@@ -754,15 +789,12 @@ func sanitizeRestore(ctx context.Context, stage string, intents []imports.Deleti
 	if err := db.QueryRowContext(ctx, "PRAGMA quick_check").Scan(&check); err != nil || check != "ok" {
 		return errors.New("restored SQLite database failed integrity check")
 	}
+	sources, err := storage.New(db, filepath.Join(stage, "sources"), masterKey)
+	if err != nil {
+		return err
+	}
 	for _, intent := range intents {
-		var storageKey string
-		err := db.QueryRowContext(ctx, `SELECT storage_key FROM sources WHERE id=?`, intent.SourceID).Scan(&storageKey)
-		if err == nil {
-			if _, err := db.ExecContext(ctx, `DELETE FROM sources WHERE id=?`, intent.SourceID); err != nil {
-				return err
-			}
-			_ = os.Remove(filepath.Join(stage, "sources", storageKey+".enc"))
-		} else if !errors.Is(err, sql.ErrNoRows) {
+		if err := imports.ReplayDeletionIntent(ctx, db, sources, intent); err != nil && !errors.Is(err, storage.ErrNotFound) {
 			return err
 		}
 	}

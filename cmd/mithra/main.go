@@ -30,6 +30,10 @@ import (
 
 const shutdownTimeout = 20 * time.Second
 
+// Set by the release build with -X main.buildVersion=... . The command-level
+// version interface is added with the public CLI contract.
+var buildVersion = "dev"
+
 const unixSocketMode = 0o660
 const maxCredentialBytes = 16 << 10
 

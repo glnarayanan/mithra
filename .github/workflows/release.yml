@@ -24,17 +24,13 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - name: Require publisher key
-        env:
-          PUBLISHER_KEY: ${{ vars.MITHRA_RELEASE_PUBLIC_KEY_RAW_B64 }}
-        run: test -n "$PUBLISHER_KEY"
       - name: Build release binaries
-        env:
-          PUBLISHER_KEY: ${{ vars.MITHRA_RELEASE_PUBLIC_KEY_RAW_B64 }}
         run: |
           mkdir -p dist
-          go build -trimpath -ldflags "-s -w" -o "dist/mithra-linux-${{ matrix.arch }}" ./cmd/mithra
-          go build -trimpath -ldflags "-s -w -X main.publisherKeyBase64=$PUBLISHER_KEY" -o "dist/mithra-installer-linux-${{ matrix.arch }}" ./cmd/mithra-installer
+          PUBLISHER_KEY=$(openssl pkey -pubin -in deploy/release-public-key.pem -outform DER | tail -c 32 | base64 -w0 | tr -d '=')
+          test -n "$PUBLISHER_KEY"
+          go build -trimpath -ldflags "-s -w -X main.buildVersion=$GITHUB_REF_NAME" -o "dist/mithra-linux-${{ matrix.arch }}" ./cmd/mithra
+          go build -trimpath -ldflags "-s -w -X main.buildVersion=$GITHUB_REF_NAME -X main.publisherKeyBase64=$PUBLISHER_KEY" -o "dist/mithra-installer-linux-${{ matrix.arch }}" ./cmd/mithra-installer
       - uses: actions/upload-artifact@v7
         with:
           name: mithra-linux-${{ matrix.arch }}
@@ -51,26 +47,34 @@ jobs:
           pattern: mithra-linux-*
           path: dist
           merge-multiple: true
+      - name: Render signed install script
+        env:
+          PUBLIC_KEY_PEM_B64: ${{ vars.MITHRA_RELEASE_PUBLIC_KEY_PEM_B64 }}
+        run: |
+          test -n "$PUBLIC_KEY_PEM_B64"
+          expected_key=$(base64 < deploy/release-public-key.pem | tr -d '\n')
+          test "$PUBLIC_KEY_PEM_B64" = "$expected_key"
+          sed "s|__MITHRA_RELEASE_PUBLIC_KEY_PEM_B64__|$PUBLIC_KEY_PEM_B64|" deploy/install.sh > dist/install.sh
+          rendered_key=$(sed -n "s/^publisher_key_b64='\(.*\)'$/\1/p" dist/install.sh)
+          test "$rendered_key" = "$expected_key"
+          chmod 0755 dist/install.sh
+          cp deploy/release-public-key.pem dist/release-public-key.pem
       - name: Build canonical manifest
         run: |
           printf 'mithra-release-v1\nversion %s\n' "$GITHUB_REF_NAME" > dist/RELEASE-MANIFEST
-          for name in $(find dist -maxdepth 1 -type f -name 'mithra-*' -printf '%f\n' | LC_ALL=C sort); do
+          for name in $(find dist -maxdepth 1 -type f \( -name 'mithra-*' -o -name install.sh -o -name release-public-key.pem \) -printf '%f\n' | LC_ALL=C sort); do
             size=$(stat -c '%s' "dist/$name")
             digest=$(sha256sum "dist/$name" | awk '{print $1}')
             printf 'artifact %s %s %s\n' "$name" "$size" "$digest" >> dist/RELEASE-MANIFEST
           done
-      - name: Sign manifest and pin install script
+      - name: Sign canonical manifest
         env:
           PRIVATE_KEY_B64: ${{ secrets.MITHRA_RELEASE_PRIVATE_KEY_PEM_B64 }}
-          PUBLIC_KEY_PEM_B64: ${{ vars.MITHRA_RELEASE_PUBLIC_KEY_PEM_B64 }}
         run: |
           test -n "$PRIVATE_KEY_B64"
-          test -n "$PUBLIC_KEY_PEM_B64"
           printf '%s' "$PRIVATE_KEY_B64" | base64 -d > "$RUNNER_TEMP/release-private.pem"
           openssl pkeyutl -sign -inkey "$RUNNER_TEMP/release-private.pem" -rawin -in dist/RELEASE-MANIFEST -out dist/RELEASE-MANIFEST.sig
-          sed "s|__MITHRA_RELEASE_PUBLIC_KEY_PEM_B64__|$PUBLIC_KEY_PEM_B64|" deploy/install.sh > dist/install.sh
-          chmod 0755 dist/install.sh
-      - name: Publish immutable release assets
+      - name: Publish release assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --title "$GITHUB_REF_NAME" --generate-notes

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -25,6 +26,9 @@ import (
 // Set by the release build with -X main.publisherKeyBase64=... . An unset key
 // deliberately makes installation impossible rather than weakening trust.
 var publisherKeyBase64 string
+
+// Set by the release build with -X main.buildVersion=... .
+var buildVersion = "dev"
 
 func main() {
 	if err := run(context.Background(), os.Args[1:]); err != nil {
@@ -51,8 +55,10 @@ func run(ctx context.Context, args []string) error {
 	archive := flags.String("archive", "", "backup archive")
 	confirm := flags.Bool("confirm-purge", false, "confirm the printed exact recovery targets")
 	artifactPath := flags.String("artifact", "", "verified Mithra binary candidate")
+	candidateInstallerPath := flags.String("candidate-installer", "", "verified Mithra installer candidate")
 	manifestPath := flags.String("manifest", "", "canonical signed release manifest")
 	signaturePath := flags.String("signature", "", "detached Ed25519 signature")
+	releaseVersion := flags.String("release-version", "", "requested signed release tag")
 	plunkPath := flags.String("plunk-key-file", "", "input Plunk credential file")
 	plunkFrom := flags.String("plunk-from", "", "validated Plunk sender identity")
 	ownerEmail := flags.String("owner-email", "", "seed household owner email")
@@ -78,6 +84,9 @@ func run(ctx context.Context, args []string) error {
 	}
 	facts := installer.DetectHost(ctx, *root, *domain, *port)
 	paths := installer.OwnedPaths(*root, installer.ProxyMode(*proxy))
+	if operation == installer.Upgrade && len(allowed) == 0 {
+		allowed = installedAllowlist(paths.Config)
+	}
 	if args[0] == "reset-demo" {
 		if len(allowed) == 0 {
 			allowed = installedAllowlist(paths.Config)
@@ -147,10 +156,12 @@ func run(ctx context.Context, args []string) error {
 			clear(key)
 			return err
 		}
-		if err := installer.PreflightRestore(ctx, paths, *archive, key, allowed, owner); err != nil {
+		prepared, err := installer.PrepareRestore(ctx, paths, *archive, key, allowed, owner)
+		if err != nil {
 			clear(key)
 			return err
 		}
+		defer prepared.Cleanup()
 		restart, err := quiesce(ctx, *root)
 		if err != nil {
 			clear(key)
@@ -195,7 +206,7 @@ func run(ctx context.Context, args []string) error {
 			}
 			return installer.VerifyArivuBaseline(ctx, *root, facts.ArivuBaseline)
 		}
-		err = installer.RestoreBackupWithOwnership(ctx, paths, *archive, key, allowed, owner, health)
+		err = installer.RestorePrepared(ctx, paths, prepared, key, allowed, owner, health)
 		clear(key)
 		if err != nil {
 			return errors.Join(err, restart())
@@ -227,7 +238,7 @@ func run(ctx context.Context, args []string) error {
 	}
 	switch operation {
 	case installer.Install, installer.Upgrade, installer.Reconfigure:
-		return installRelease(ctx, plan, *artifactPath, *manifestPath, *signaturePath, *plunkPath)
+		return installRelease(ctx, plan, *artifactPath, *candidateInstallerPath, *manifestPath, *signaturePath, *releaseVersion, *plunkPath)
 	case installer.Uninstall:
 		if *root == "/" {
 			if output, stopErr := exec.CommandContext(ctx, "systemctl", "disable", "--now", "mithra.service", "mithra-backup.timer", "mithra-pdf-parser.service", "mithra-pdf-parser.socket").CombinedOutput(); stopErr != nil {
@@ -256,25 +267,49 @@ func run(ctx context.Context, args []string) error {
 	}
 }
 
-func installRelease(ctx context.Context, plan installer.Plan, artifactPath, manifestPath, signaturePath, plunkPath string) error {
-	if artifactPath == "" || manifestPath == "" || signaturePath == "" || ((plan.Options.Operation == installer.Install || plan.Options.Operation == installer.Reconfigure) && plunkPath == "") {
-		return errors.New("artifact, manifest, signature, and operation-required plunk-key-file are required")
+func installRelease(ctx context.Context, plan installer.Plan, artifactPath, candidateInstallerPath, manifestPath, signaturePath, requestedVersion, plunkPath string) error {
+	if (plan.Options.Operation == installer.Install || plan.Options.Operation == installer.Reconfigure) && plunkPath == "" {
+		return errors.New("operation-required plunk-key-file is required")
 	}
-	key, err := installer.DecodePublisherKey(publisherKeyBase64)
-	if err != nil {
-		return errors.New("this installer was not built with the pinned publisher key")
-	}
-	artifact, err := readBounded(artifactPath, 256<<20)
-	if err != nil {
-		return err
-	}
-	manifest, err := readBounded(manifestPath, 128<<10)
-	if err != nil {
-		return err
-	}
-	signature, err := readBounded(signaturePath, 1<<10)
-	if err != nil {
-		return err
+	var artifact, candidateInstaller, manifest, signature []byte
+	var publisherKey ed25519.PublicKey
+	var err error
+	if plan.Options.Operation != installer.Reconfigure {
+		if artifactPath == "" || candidateInstallerPath == "" || manifestPath == "" || signaturePath == "" || requestedVersion == "" {
+			return errors.New("artifact, candidate-installer, manifest, signature, and release-version are required")
+		}
+		if buildVersion != "dev" && buildVersion != requestedVersion {
+			return errors.New("candidate installer version does not match the requested tag")
+		}
+		artifact, err = readBounded(artifactPath, 256<<20)
+		if err != nil {
+			return err
+		}
+		candidateInstaller, err = readBounded(candidateInstallerPath, 256<<20)
+		if err != nil {
+			return err
+		}
+		manifest, err = readBounded(manifestPath, 128<<10)
+		if err != nil {
+			return err
+		}
+		signature, err = readBounded(signaturePath, 1<<10)
+		if err != nil {
+			return err
+		}
+		var keyErr error
+		publisherKey, keyErr = installer.DecodePublisherKey(publisherKeyBase64)
+		if keyErr != nil {
+			return errors.New("this installer was not built with the pinned publisher key")
+		}
+		if _, verifyErr := installer.VerifyRelease(manifest, signature, publisherKey, filepath.Base(artifactPath), artifact); verifyErr != nil {
+			return verifyErr
+		}
+		if verified, verifyErr := installer.VerifyRelease(manifest, signature, publisherKey, filepath.Base(candidateInstallerPath), candidateInstaller); verifyErr != nil {
+			return verifyErr
+		} else if verifyErr = installer.VerifyReleaseVersion(verified, requestedVersion, versionOf(installer.OwnedPaths(plan.Options.Root, plan.Proxy).Version)); verifyErr != nil {
+			return verifyErr
+		}
 	}
 	var plunk []byte
 	if plunkPath != "" {
@@ -282,14 +317,6 @@ func installRelease(ctx context.Context, plan installer.Plan, artifactPath, mani
 		if err != nil {
 			return err
 		}
-	}
-	self, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	installerBinary, err := readBounded(self, 256<<20)
-	if err != nil {
-		return err
 	}
 	validate := func() error { return nil }
 	if plan.Options.Root == "/" {
@@ -330,7 +357,8 @@ func installRelease(ctx context.Context, plan installer.Plan, artifactPath, mani
 			freshDirectories[directory] = pathExists(directory)
 		}
 	}
-	if err := installer.InstallRelease(plan, installer.ReleaseInstall{ArtifactName: filepath.Base(artifactPath), InstallerName: filepath.Base(self), Artifact: artifact, Installer: installerBinary, Manifest: manifest, Signature: signature, PublisherKey: key, PlunkCredential: string(plunk), Validate: validate}); err != nil {
+	paths = installer.OwnedPaths(plan.Options.Root, plan.Proxy)
+	if err := installer.InstallRelease(plan, installer.ReleaseInstall{ArtifactName: filepath.Base(artifactPath), InstallerName: filepath.Base(candidateInstallerPath), Artifact: artifact, Installer: candidateInstaller, Manifest: manifest, Signature: signature, PublisherKey: publisherKey, RequestedVersion: requestedVersion, InstalledVersion: versionOf(paths.Version), PlunkCredential: string(plunk), Validate: validate}); err != nil {
 		if rollbackArchive != "" {
 			_ = exec.CommandContext(ctx, "systemctl", "stop", "mithra.service").Run()
 			rollbackErr := installer.RestoreGenerationWithOwnership(paths, rollbackArchive, masterKey, rollbackOwner, func() error {
@@ -395,14 +423,25 @@ func quiesce(ctx context.Context, root string) (func() error, error) {
 }
 
 func activate(ctx context.Context, plan installer.Plan) error {
-	identity, err := ensureIdentity(ctx, plan.Proxy)
+	paths := installer.OwnedPaths(plan.Options.Root, plan.Proxy)
+	parserEnabled := parserUnitsPresent(paths)
+	if !parserEnabled {
+		if err := removeParserIdentity(ctx); err != nil {
+			return err
+		}
+	}
+	identity, err := ensureIdentity(ctx, plan.Proxy, parserEnabled)
 	if err != nil {
 		return err
 	}
 	fail := func(activationErr error) error {
 		return errors.Join(activationErr, rollbackIdentity(ctx, identity))
 	}
-	for _, command := range [][]string{{"systemctl", "daemon-reload"}, {"systemctl", "enable", "--now", "mithra.service"}, {"systemctl", "enable", "--now", "mithra-pdf-parser.socket"}} {
+	commands := [][]string{{"systemctl", "daemon-reload"}, {"systemctl", "enable", "--now", "mithra.service"}}
+	if parserEnabled {
+		commands = append(commands, []string{"systemctl", "enable", "--now", "mithra-pdf-parser.socket"})
+	}
+	for _, command := range commands {
 		if output, err := exec.CommandContext(ctx, command[0], command[1:]...).CombinedOutput(); err != nil {
 			return fail(fmt.Errorf("%s: %w", strings.TrimSpace(string(output)), err))
 		}
@@ -430,6 +469,10 @@ func activate(ctx context.Context, plan installer.Plan) error {
 		return fail(err)
 	}
 	return nil
+}
+
+func parserUnitsPresent(paths installer.Paths) bool {
+	return pathExists(paths.PDFParserService) && pathExists(paths.PDFParserSocket)
 }
 
 func localHealth(ctx context.Context, port int) error {
@@ -507,7 +550,7 @@ type directoryState struct {
 	uid, gid int
 }
 
-func ensureIdentity(ctx context.Context, proxy installer.ProxyMode) (identityState, error) {
+func ensureIdentity(ctx context.Context, proxy installer.ProxyMode, parserEnabled bool) (identityState, error) {
 	state := identityState{}
 	if exec.CommandContext(ctx, "id", "-u", "mithra").Run() != nil {
 		if output, err := exec.CommandContext(ctx, "useradd", "--system", "--user-group", "--home-dir", "/var/lib/mithra", "--shell", "/usr/sbin/nologin", "mithra").CombinedOutput(); err != nil {
@@ -515,22 +558,24 @@ func ensureIdentity(ctx context.Context, proxy installer.ProxyMode) (identitySta
 		}
 		state.userCreated = true
 	}
-	parserExists, err := systemUserExists(ctx, "mithra-pdf")
-	if err != nil {
-		return state, err
-	}
-	if !parserExists {
-		if output, err := exec.CommandContext(ctx, "useradd", "--system", "--no-create-home", "--shell", "/usr/sbin/nologin", "--gid", "mithra", "mithra-pdf").CombinedOutput(); err != nil {
-			return state, fmt.Errorf("create PDF parser identity: %s: %w", strings.TrimSpace(string(output)), err)
-		}
-		state.parserUserCreated = true
-	} else {
-		groups, err := exec.CommandContext(ctx, "id", "-nG", "mithra-pdf").Output()
+	if parserEnabled {
+		parserExists, err := systemUserExists(ctx, "mithra-pdf")
 		if err != nil {
-			return state, fmt.Errorf("inspect PDF parser identity: %w", err)
+			return state, err
 		}
-		if !containsField(string(groups), "mithra") {
-			return state, errors.New("PDF parser identity must be in the mithra group")
+		if !parserExists {
+			if output, err := exec.CommandContext(ctx, "useradd", "--system", "--no-create-home", "--shell", "/usr/sbin/nologin", "--gid", "mithra", "mithra-pdf").CombinedOutput(); err != nil {
+				return state, fmt.Errorf("create PDF parser identity: %s: %w", strings.TrimSpace(string(output)), err)
+			}
+			state.parserUserCreated = true
+		} else {
+			groups, err := exec.CommandContext(ctx, "id", "-nG", "mithra-pdf").Output()
+			if err != nil {
+				return state, fmt.Errorf("inspect PDF parser identity: %w", err)
+			}
+			if !containsField(string(groups), "mithra") {
+				return state, errors.New("PDF parser identity must be in the mithra group")
+			}
 		}
 	}
 	for _, directory := range []string{"/var/lib/mithra", "/var/lib/mithra/sources", "/var/backups/mithra", "/etc/mithra/credentials"} {

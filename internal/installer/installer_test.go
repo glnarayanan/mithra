@@ -161,6 +161,68 @@ func TestReleaseSignaturePreventsArtifactAndChecksumSubstitution(t *testing.T) {
 	}
 }
 
+func TestReleaseManifestAuthenticatesBootstrapAndVersionTransitionBeforeMutation(t *testing.T) {
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, candidate, bootstrap := []byte("mithra"), []byte("installer"), []byte("#!/bin/sh\n")
+	artifacts := map[string]ReleaseArtifact{}
+	for name, value := range map[string][]byte{"mithra-linux-amd64": app, "mithra-installer-linux-amd64": candidate, "install.sh": bootstrap} {
+		digest := sha256.Sum256(value)
+		artifacts[name] = ReleaseArtifact{SHA256: hex.EncodeToString(digest[:]), Size: int64(len(value))}
+	}
+	raw, err := CanonicalManifest(ReleaseManifest{Version: "v1.2.3", Artifacts: artifacts})
+	if err != nil {
+		t.Fatal(err)
+	}
+	signature := ed25519.Sign(privateKey, raw)
+	if _, err := VerifyRelease(raw, signature, publicKey, "install.sh", bootstrap); err != nil {
+		t.Fatalf("verified bootstrap: %v", err)
+	}
+	if _, err := VerifyRelease(raw, signature, publicKey, "install.sh", []byte("tampered")); err == nil {
+		t.Fatal("tampered bootstrap was accepted")
+	}
+	manifest, err := VerifyRelease(raw, signature, publicKey, "mithra-linux-amd64", app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyReleaseVersion(manifest, "v9.9.9", ""); err == nil {
+		t.Fatal("tag mismatch was accepted")
+	}
+	if err := VerifyReleaseVersion(manifest, "v1.2.3", "v1.2.3"); err == nil {
+		t.Fatal("same-version upgrade was accepted")
+	}
+	if err := VerifyReleaseVersion(manifest, "v1.2.3", "v1.3.0"); err == nil {
+		t.Fatal("downgrade was accepted")
+	}
+	if err := VerifyReleaseVersion(manifest, "v1.2.3", "v1.2"); err == nil {
+		t.Fatal("malformed installed version was accepted")
+	}
+	if err := VerifyReleaseVersion(ReleaseManifest{Version: "v1.2.3-rc1"}, "v1.2.3-rc1", ""); err == nil {
+		t.Fatal("malformed candidate version was accepted")
+	}
+	plan, err := BuildPlan(Options{Operation: Install, Root: t.TempDir(), Proxy: AppOnly, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}, healthyFacts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := InstallRelease(plan, ReleaseInstall{ArtifactName: "mithra-linux-amd64", InstallerName: "mithra-installer-linux-amd64", Artifact: app, Installer: candidate, Manifest: raw, Signature: signature, PublisherKey: publicKey, RequestedVersion: "v9.9.9", PlunkCredential: "sk_plunk"}); err == nil {
+		t.Fatal("tag mismatch mutated an install plan")
+	}
+	if exists(OwnedPaths(plan.Options.Root, AppOnly).Binary) {
+		t.Fatal("tag mismatch wrote an owned path")
+	}
+}
+
+func FuzzParseManifest(f *testing.F) {
+	digest := strings.Repeat("0", 64)
+	f.Add([]byte("mithra-release-v1\nversion v1.0.0\nartifact install.sh 1 " + digest + "\n"))
+	f.Add([]byte("not-a-manifest"))
+	f.Fuzz(func(t *testing.T, raw []byte) {
+		_, _ = ParseManifest(raw)
+	})
+}
+
 func TestAtomicOwnedApplyRollsBackAndLeavesArivuByteStable(t *testing.T) {
 	root := t.TempDir()
 	arivu := filepath.Join(root, "etc", "arivu", "arivu.env")
@@ -194,6 +256,32 @@ func TestAtomicOwnedApplyRollsBackAndLeavesArivuByteStable(t *testing.T) {
 	after, _ := os.ReadFile(arivu)
 	if string(after) != string(before) {
 		t.Fatalf("Arivu changed: %q", after)
+	}
+}
+
+func TestFailedUpgradeRestoresPreParserGeneration(t *testing.T) {
+	root := t.TempDir()
+	paths := OwnedPaths(root, AppOnly)
+	if err := os.MkdirAll(filepath.Dir(paths.Binary), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.Binary, []byte("old"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	plan := Plan{Options: Options{Operation: Upgrade, Root: root}, Proxy: AppOnly, Mutations: []string{paths.Binary, paths.PDFParserService, paths.PDFParserSocket}}
+	checks := 0
+	err := ApplyOwnedFiles(plan, []OwnedFile{{Path: paths.Binary, Mode: 0o755, Content: []byte("new")}, {Path: paths.PDFParserService, Mode: 0o644, Content: []byte("service")}, {Path: paths.PDFParserSocket, Mode: 0o644, Content: []byte("socket")}}, func() error {
+		checks++
+		if checks == 1 {
+			return errors.New("candidate health failed")
+		}
+		if exists(paths.PDFParserService) || exists(paths.PDFParserSocket) {
+			return errors.New("parser units leaked into restored generation")
+		}
+		return nil
+	})
+	if err == nil || checks != 2 {
+		t.Fatalf("failed upgrade err=%v recovery checks=%d", err, checks)
 	}
 }
 
@@ -301,8 +389,7 @@ func TestInstallReconfigureUninstallAndConfirmedPurgePreserveExactBoundaries(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	release.PlunkCredential = "sk_plunk-rotated"
-	if err := InstallRelease(reconfigure, release); err != nil {
+	if err := InstallRelease(reconfigure, ReleaseInstall{PlunkCredential: "sk_plunk-rotated"}); err != nil {
 		t.Fatal(err)
 	}
 	masterAfter, _ := os.ReadFile(paths.MasterKey)
@@ -363,7 +450,7 @@ func TestBackupRestoreAuthenticatesGenerationReconcilesDeletionAndClearsAccess(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	source, err := store.Store(ctx, policy.ActorScope{ActorID: "owner", HouseholdID: "home", Role: "owner"}, []byte("must stay deleted"), storage.Metadata{Family: "text", Version: 1, Visibility: policy.Shared, LocatorKind: "source", LocatorValue: "fixture"})
+	source, err := store.Store(ctx, policy.ActorScope{ActorID: "owner", HouseholdID: "home", Role: "owner"}, []byte("must stay deleted"), storage.Metadata{Family: "csv", Version: 1, Visibility: policy.Shared, LocatorKind: "source", LocatorValue: "fixture"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,7 +465,7 @@ func TestBackupRestoreAuthenticatesGenerationReconcilesDeletionAndClearsAccess(t
 	for _, item := range []struct {
 		id, state string
 		source    storage.Source
-	}{{strings.Repeat("c", 32), "committed", preserved}, {strings.Repeat("d", 32), "review", pending}} {
+	}{{strings.Repeat("b", 32), "committed", source}, {strings.Repeat("c", 32), "committed", preserved}, {strings.Repeat("d", 32), "review", pending}} {
 		if _, err := db.Exec(`INSERT INTO document_imports(id,household_id,owner_user_id,visibility,source_id,file_name,document_kind,source_digest,state,proposal_json,expected_shared_revision,expected_personal_revision,committed_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, item.id, "home", "owner", "shared", item.source.ID, item.state+".csv", "csv", item.source.PlaintextDigest, item.state, "", 0, 0, stamp, stamp, stamp); err != nil {
 			t.Fatal(err)
 		}
@@ -413,10 +500,15 @@ func TestBackupRestoreAuthenticatesGenerationReconcilesDeletionAndClearsAccess(t
 		t.Fatal(err)
 	}
 	owner := RestoreOwnership{UID: os.Getuid(), GID: os.Getgid(), Set: true}
-	if err := PreflightRestore(ctx, target, archive, key, []string{"owner@example.com"}, owner); err != nil {
+	prepared, err := PrepareRestore(ctx, target, archive, key, []string{"owner@example.com"}, owner)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := RestoreBackupWithOwnership(ctx, target, archive, key, []string{"owner@example.com"}, owner, func() error { return nil }); err != nil {
+	defer prepared.Cleanup()
+	if err := os.WriteFile(archive, []byte("replaced-after-preflight"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := RestorePrepared(ctx, target, prepared, key, []string{"owner@example.com"}, owner, func() error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	restored, err := database.Open(ctx, target.Database)
@@ -428,11 +520,16 @@ func TestBackupRestoreAuthenticatesGenerationReconcilesDeletionAndClearsAccess(t
 	if err := restored.QueryRow(`SELECT password_hash,status FROM users WHERE email='owner@example.com'`).Scan(&password, &status); err != nil || password != "" || status != "pending" {
 		t.Fatalf("restored access password=%q status=%q err=%v", password, status, err)
 	}
-	var sessions, sources int
+	var sessions int
 	_ = restored.QueryRow(`SELECT COUNT(*) FROM browser_sessions`).Scan(&sessions)
-	_ = restored.QueryRow(`SELECT COUNT(*) FROM sources WHERE id=?`, source.ID).Scan(&sources)
-	if sessions != 0 || sources != 0 {
-		t.Fatalf("restored sessions=%d deleted sources=%d", sessions, sources)
+	var sourceState, deletedImport string
+	_ = restored.QueryRow(`SELECT state FROM sources WHERE id=?`, source.ID).Scan(&sourceState)
+	_ = restored.QueryRow(`SELECT state FROM document_imports WHERE id=?`, strings.Repeat("b", 32)).Scan(&deletedImport)
+	if sessions != 0 || sourceState != "deleted" || deletedImport != "deleted" {
+		t.Fatalf("restored sessions=%d source=%q import=%q", sessions, sourceState, deletedImport)
+	}
+	if _, err := os.Stat(filepath.Join(target.Sources, source.StorageKey+".enc")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("deleted ciphertext err=%v", err)
 	}
 	var committed, pendingState string
 	if err := restored.QueryRow(`SELECT state FROM document_imports WHERE id=?`, strings.Repeat("c", 32)).Scan(&committed); err != nil || committed != "committed" {

@@ -97,6 +97,63 @@ func VerifyRelease(raw, signature []byte, publicKey ed25519.PublicKey, name stri
 	return manifest, nil
 }
 
+// VerifyReleaseVersion binds an optional operator-requested release tag to the
+// signed manifest and prevents an upgrade from silently reapplying its current bytes.
+func VerifyReleaseVersion(manifest ReleaseManifest, requested, installed string) error {
+	requested = strings.TrimSpace(requested)
+	installed = strings.TrimSpace(installed)
+	if requested != "" && manifest.Version != requested {
+		return errors.New("release manifest version does not match the requested tag")
+	}
+	candidate, err := parseReleaseVersion(manifest.Version)
+	if err != nil {
+		return errors.New("release manifest version is invalid")
+	}
+	if installed != "" {
+		current, err := parseReleaseVersion(installed)
+		if err != nil {
+			return errors.New("installed release version is invalid")
+		}
+		for index := range candidate {
+			if candidate[index] > current[index] {
+				return nil
+			}
+			if candidate[index] < current[index] {
+				return errors.New("release version is not newer than the installed version")
+			}
+		}
+		return errors.New("release version is not newer than the installed version")
+	}
+	return nil
+}
+
+func parseReleaseVersion(value string) ([3]uint64, error) {
+	var parsed [3]uint64
+	if len(value) < 6 || value[0] != 'v' {
+		return parsed, errors.New("invalid release version")
+	}
+	parts := strings.Split(value[1:], ".")
+	if len(parts) != 3 {
+		return parsed, errors.New("invalid release version")
+	}
+	for index, part := range parts {
+		if part == "" || (len(part) > 1 && part[0] == '0') {
+			return parsed, errors.New("invalid release version")
+		}
+		for _, rune := range part {
+			if rune < '0' || rune > '9' {
+				return parsed, errors.New("invalid release version")
+			}
+		}
+		value, err := strconv.ParseUint(part, 10, 64)
+		if err != nil {
+			return parsed, errors.New("invalid release version")
+		}
+		parsed[index] = value
+	}
+	return parsed, nil
+}
+
 func DecodePublisherKey(value string) (ed25519.PublicKey, error) {
 	decoded, err := base64.RawStdEncoding.DecodeString(strings.TrimSpace(value))
 	if err != nil || len(decoded) != ed25519.PublicKeySize {
