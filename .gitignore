@@ -24,3 +24,4 @@ documentation/deployment-receipt.local.md
 /PLAN.md
 /PRODUCT.md
 /DESIGN.md
+/.playwright-cli/
