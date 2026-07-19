@@ -5,6 +5,18 @@ and [FAQ](https://openai.devpost.com/details/faqs) on 2026-07-18. The submission
 deadline is 2026-07-21 at 5:00 PM Pacific. Recheck the live pages before the
 final submission because Devpost controls the requirements.
 
+## Current release truth
+
+- **Hosted app:** <https://mithrahq.com> (`/healthz` returned `ready` on
+  2026-07-19).
+- **Public repository:** <https://github.com/glnarayanan/mithra> with an MIT
+  license.
+- **Release:** [`v1.0.3`](https://github.com/glnarayanan/mithra/releases/tag/v1.0.3)
+  from commit `43c84e0`, including signed application and installer artifacts.
+- **Email provider:** Plunk; Resend is not part of the deployed application.
+- **Devpost draft:** <https://devpost.com/software/mithra> with the project
+  description, stack, hosted URL, and repository populated.
+
 ## Submission draft
 
 - **Project:** Mithra
@@ -43,7 +55,8 @@ Primary Codex build task: `019f7561-247d-7d60-b17e-e046156f8fdf`.
 | `952c2d0`–`dcefeb9` | Codex implementation plus GPT-5.6 architecture/security review established the runtime, allowlisted household access, encryption, providers, and durable jobs. |
 | `62afe7b`–`bc7d382` | Finance, factual health, full calendar, conversational capture, local-first imports, Family Brief, and Week in Review landed with focused tests and consolidated GPT-5.6 Sol review fixes. |
 | `c483cf4` | GPT-5.6 Sol review drove encrypted backups, deletion-journal reconciliation, exact rollback errors, symlink defenses, Caddy ownership, and Arivu baseline verification. |
-| U11 commit | Fixture-only reset, arbitrary-household restart acceptance, judge path, browser QA, deployment receipt, and submission audit. |
+| `83c187d` | Fixture-only reset, arbitrary-household restart acceptance, judge path, browser QA, deployment receipt, and submission audit. |
+| `930bbcd`–`43c84e0` | Plunk delivery, public release artifacts, safe startup diagnostics, private systemd credentials, and bounded activation readiness landed before the live VPS deployment. |
 
 GPT-5.6 Sol was used for high-rigor consolidated review and root-cause fixes;
 GPT-5.6 Luna assisted implementation and debugging. The product owner made the
@@ -56,14 +69,13 @@ runtime models are `gpt-5.4-mini` and `gpt-4o-mini-transcribe`.
 - [ ] `https://mithrahq.com` remains free and available through the end of judging.
 - [ ] Private testing instructions contain two judge accounts and the four
   workflows in `demo-script.md`; credentials appear nowhere public.
-- [ ] Repository URL is public with an appropriate license, or the private repo
-  is shared with `testing@devpost.com` and `build-week-event@openai.com`.
+- [x] Repository URL is public with an appropriate license.
 - [ ] Public YouTube video is 3:00 or shorter, has clear audio, demonstrates the
   working product, and specifically explains Codex and GPT-5.6 contributions.
 - [ ] Devpost text description and **Apps for Your Life** category are set.
 - [ ] The `/feedback` Codex Session ID is generated in the primary build task
   and pasted into Devpost; a thread ID is not substituted for it.
-- [ ] README setup/sample-data/testing and Codex/GPT-5.6 sections match the
+- [x] README setup/sample-data/testing and Codex/GPT-5.6 sections match the
   deployed commit.
 - [ ] No third-party trademarks, unlicensed music, real personal data, or
   credentials appear in public artifacts.
@@ -80,7 +92,7 @@ git status --short
 git rev-parse HEAD
 shasum -a 256 /usr/local/bin/mithra /usr/local/bin/mithra-installer
 sudo mithra-installer status
-curl --fail --silent --show-error https://YOUR_HOST/healthz
+curl --fail --silent --show-error https://mithrahq.com/healthz
 ```
 
 Do not submit until every external checkbox above is complete. Devpost notes

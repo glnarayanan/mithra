@@ -50,7 +50,7 @@ Plunk credential through an existing `0600` file. The sender domain must first
 be verified in Plunk:
 
 ```bash
-MITHRA_VERSION=v1.0.0 sh install.sh \
+MITHRA_VERSION=v1.0.3 sh install.sh \
   --domain mithrahq.com \
   --proxy caddy \
   --allowed-emails owner@example.com,partner@example.com \
