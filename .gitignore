@@ -19,6 +19,7 @@ backups/
 documentation/deployment-receipt.local.md
 
 # Licensed design references and internal planning artifacts
+/.codegraph/
 /.reference/
 /documentation/plans/
 /PLAN.md
