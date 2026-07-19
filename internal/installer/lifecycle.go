@@ -51,9 +51,9 @@ type OwnedFile struct {
 }
 
 type StatusReport struct {
-	Installed, Database, DataPreserved, BackupTimer, BackupTimerActive, ServiceHealthy, PDFParserSocket, PDFParserActive, MasterKey, PlunkCredential bool
-	Version, Listener, LastBackup, SocketMode                                                                                                        string
-	SocketUID, SocketGID                                                                                                                             uint32
+	Installed, Database, DataPreserved, BackupTimer, BackupTimerActive, ServiceActive, ServiceHealthy, PDFParserSocket, PDFParserActive, MasterKey, PlunkCredential bool
+	Version, Listener, LastBackup, SocketMode                                                                                                                       string
+	SocketUID, SocketGID                                                                                                                                            uint32
 }
 
 // RestoreOwnership is resolved by the command before it stops Mithra. Tests

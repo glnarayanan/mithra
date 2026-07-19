@@ -263,6 +263,20 @@ func TestPDFParserRejectsArguments(t *testing.T) {
 	}
 }
 
+func TestPublicHelpAndVersionDoNotStartTheServer(t *testing.T) {
+	var output bytes.Buffer
+	if err := runWithOutput([]string{"--help"}, &output); err != nil || !strings.Contains(output.String(), "Usage: mithra") || !strings.Contains(output.String(), "serve") || !strings.Contains(output.String(), "recover-owner") || strings.Contains(output.String(), "pdf-parser") {
+		t.Fatalf("help output=%q err=%v", output.String(), err)
+	}
+	output.Reset()
+	previous := buildVersion
+	buildVersion = "v9.9.9-test"
+	t.Cleanup(func() { buildVersion = previous })
+	if err := runWithOutput([]string{"version"}, &output); err != nil || output.String() != "v9.9.9-test\n" {
+		t.Fatalf("version output=%q err=%v", output.String(), err)
+	}
+}
+
 func TestDecodeMasterKeyRequiresThirtyTwoRandomBytes(t *testing.T) {
 	encoded := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32))
 	key, err := decodeMasterKey(encoded)

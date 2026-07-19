@@ -6,8 +6,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/glnarayanan/mithra/internal/demo"
+	"github.com/glnarayanan/mithra/internal/imports"
 	"github.com/glnarayanan/mithra/internal/installer"
 )
 
@@ -31,45 +32,117 @@ var publisherKeyBase64 string
 var buildVersion = "dev"
 
 func main() {
-	if err := run(context.Background(), os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "mithra-installer:", err)
-		os.Exit(1)
-	}
+	os.Exit(execute(context.Background(), os.Args[1:], os.Stdout, os.Stderr))
 }
 
 func run(ctx context.Context, args []string) error {
-	if len(args) == 0 {
-		return errors.New("operation required: plan, install, upgrade, reconfigure, backup, restore, status, reset-demo, uninstall, or purge")
+	return runWithOutput(ctx, args, os.Stdout)
+}
+
+func execute(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	parsed, err := parseInstallerCommand(args)
+	if err != nil {
+		fmt.Fprintln(stderr, "mithra-installer:", err)
+		return 2
 	}
-	operation := installer.Operation(args[0])
-	if operation == "plan" {
-		operation = installer.Install
+	switch parsed.name {
+	case "-h", "--help", "help":
+		command := ""
+		if parsed.name == "help" {
+			if len(args) > 2 {
+				fmt.Fprintln(stderr, "mithra-installer: help accepts at most one command")
+				return 2
+			}
+			if len(args) > 1 {
+				command = args[1]
+			}
+			if command == "--help" || command == "-h" {
+				command = ""
+			}
+		} else if len(args) != 1 {
+			fmt.Fprintln(stderr, "mithra-installer: help accepts no arguments")
+			return 2
+		}
+		if err := installerHelp(command, stdout); err != nil {
+			fmt.Fprintln(stderr, "mithra-installer:", err)
+			return 2
+		}
+		return 0
+	case "version":
+		if len(args) == 2 && (args[1] == "--help" || args[1] == "-h") {
+			_ = installerHelp("version", stdout)
+			return 0
+		}
+		if len(args) != 1 {
+			fmt.Fprintln(stderr, "mithra-installer: version accepts no arguments")
+			return 2
+		}
+		fmt.Fprintln(stdout, buildVersion)
+		return 0
+	case "completion":
+		if len(args) == 2 && (args[1] == "--help" || args[1] == "-h") {
+			_ = installerHelp("completion", stdout)
+			return 0
+		}
+		if len(args) != 2 {
+			fmt.Fprintln(stderr, "mithra-installer: completion requires bash, zsh, or fish")
+			return 2
+		}
+		if err := completion(args[1], stdout); err != nil {
+			fmt.Fprintln(stderr, "mithra-installer:", err)
+			return 2
+		}
+		return 0
+	case "verify-backup":
+		if len(args) == 2 && (args[1] == "--help" || args[1] == "-h") {
+			_ = installerHelp("verify-backup", stdout)
+			return 0
+		}
+		if err := runVerifyBackup(args[1:], stdout); err != nil {
+			fmt.Fprintln(stderr, "mithra-installer:", err)
+			var usage usageError
+			if errors.As(err, &usage) {
+				return 2
+			}
+			return 1
+		}
+		return 0
+	default:
+		if strings.HasPrefix(parsed.name, "help-") {
+			_ = installerHelp(strings.TrimPrefix(parsed.name, "help-"), stdout)
+			return 0
+		}
 	}
-	flags := flag.NewFlagSet("mithra-installer", flag.ContinueOnError)
-	flags.SetOutput(os.Stderr)
-	root := flags.String("root", "/", "sandbox root (tests only; real installations use /)")
-	domain := flags.String("domain", "", "canonical hostname")
-	proxy := flags.String("proxy", "", "app-only, caddy, nginx, or apache")
-	port := flags.Int("port", 8090, "app-only loopback port")
-	emails := flags.String("allowed-emails", "", "comma-separated allowlisted adults")
-	archive := flags.String("archive", "", "backup archive")
-	confirm := flags.Bool("confirm-purge", false, "confirm the printed exact recovery targets")
-	artifactPath := flags.String("artifact", "", "verified Mithra binary candidate")
-	candidateInstallerPath := flags.String("candidate-installer", "", "verified Mithra installer candidate")
-	manifestPath := flags.String("manifest", "", "canonical signed release manifest")
-	signaturePath := flags.String("signature", "", "detached Ed25519 signature")
-	releaseVersion := flags.String("release-version", "", "requested signed release tag")
-	plunkPath := flags.String("plunk-key-file", "", "input Plunk credential file")
-	plunkFrom := flags.String("plunk-from", "", "validated Plunk sender identity")
-	ownerEmail := flags.String("owner-email", "", "seed household owner email")
-	partnerEmail := flags.String("partner-email", "", "seed household partner email")
-	masterKeyPath := flags.String("master-key-file", "", "retained master-key credential file")
-	if err := flags.Parse(args[1:]); err != nil {
+	if err := runParsed(ctx, parsed, stdout); err != nil {
+		fmt.Fprintln(stderr, "mithra-installer:", err)
+		return 1
+	}
+	return 0
+}
+
+func runWithOutput(ctx context.Context, args []string, output io.Writer) error {
+	parsed, err := parseInstallerCommand(args)
+	if err != nil {
 		return err
 	}
-	if flags.NArg() != 0 {
-		return errors.New("unexpected positional arguments")
+	if parsed.name == "-h" || parsed.name == "--help" || parsed.name == "help" || parsed.name == "version" || parsed.name == "completion" {
+		return nil
 	}
+	if parsed.name == "verify-backup" {
+		return runVerifyBackup(args[1:], output)
+	}
+	if strings.HasPrefix(parsed.name, "help-") {
+		return nil
+	}
+	return runParsed(ctx, parsed, output)
+}
+
+func runParsed(ctx context.Context, parsed parsedInstallerCommand, output io.Writer) error {
+	operation := parsed.operation
+	f := parsed.flags
+	root, domain, proxy, port, emails, archive, confirm := f.root, f.domain, f.proxy, f.port, f.emails, f.archive, f.confirm
+	artifactPath, candidateInstallerPath, manifestPath, signaturePath, releaseVersion := f.artifact, f.candidateInstaller, f.manifest, f.signature, f.releaseVersion
+	plunkPath, plunkFrom, ownerEmail, partnerEmail, masterKeyPath := f.plunkPath, f.plunkFrom, f.ownerEmail, f.partnerEmail, f.masterKeyPath
 	allowed := splitEmails(*emails)
 	basePaths := installer.OwnedPaths(*root, "")
 	configuredProxy, configuredDomain, configuredPort := installedRuntime(basePaths.Config)
@@ -84,10 +157,20 @@ func run(ctx context.Context, args []string) error {
 	}
 	facts := installer.DetectHost(ctx, *root, *domain, *port)
 	paths := installer.OwnedPaths(*root, installer.ProxyMode(*proxy))
-	if operation == installer.Upgrade && len(allowed) == 0 {
+	if (operation == installer.Upgrade || operation == installer.Restore) && len(allowed) == 0 {
 		allowed = installedAllowlist(paths.Config)
 	}
-	if args[0] == "reset-demo" {
+	if parsed.planOnly && (operation == installer.Upgrade || operation == installer.Reconfigure || operation == installer.Restore) {
+		preflightPlanFacts(ctx, operation, paths, *archive, &facts)
+	}
+	if parsed.planOnly {
+		plan, err := installer.BuildPlan(installer.Options{Operation: operation, Root: *root, Domain: *domain, Proxy: installer.ProxyMode(*proxy), Port: *port, AllowedEmails: allowed, PlunkFrom: *plunkFrom, Archive: *archive, ConfirmPurge: *confirm || operation == installer.Purge}, facts)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(output).Encode(plan)
+	}
+	if parsed.name == "reset-demo" {
 		if len(allowed) == 0 {
 			allowed = installedAllowlist(paths.Config)
 		}
@@ -110,7 +193,7 @@ func run(ctx context.Context, args []string) error {
 		if restartErr := restart(); err != nil || restartErr != nil {
 			return errors.Join(err, restartErr)
 		}
-		return json.NewEncoder(os.Stdout).Encode(receipt)
+		return json.NewEncoder(output).Encode(receipt)
 	}
 	if operation == installer.Upgrade || operation == installer.Reconfigure {
 		facts.MigrationClean, facts.SQLiteClean, facts.KeyMatches, facts.BackupExists = false, false, false, false
@@ -223,18 +306,18 @@ func run(ctx context.Context, args []string) error {
 		statusPaths := installer.OwnedPaths(*root, statusProxy)
 		report := installer.InspectStatus(statusPaths, listener(string(statusProxy), *port), versionOf(statusPaths.Version))
 		if *root == "/" {
-			report.ServiceHealthy = exec.CommandContext(ctx, "systemctl", "is-active", "--quiet", "mithra.service").Run() == nil
+			report.ServiceActive = exec.CommandContext(ctx, "systemctl", "is-active", "--quiet", "mithra.service").Run() == nil
+			if report.ServiceActive {
+				report.ServiceHealthy = localPlanHealth(ctx, installer.Plan{Options: installer.Options{Root: *root, Port: *port}, Proxy: statusProxy}) == nil
+			}
 			report.BackupTimerActive = exec.CommandContext(ctx, "systemctl", "is-active", "--quiet", "mithra-backup.timer").Run() == nil
 			report.PDFParserActive = exec.CommandContext(ctx, "systemctl", "is-active", "--quiet", "mithra-pdf-parser.socket").Run() == nil
 		}
-		return json.NewEncoder(os.Stdout).Encode(report)
+		return json.NewEncoder(output).Encode(report)
 	}
 	plan, err := installer.BuildPlan(installer.Options{Operation: operation, Root: *root, Domain: *domain, Proxy: installer.ProxyMode(*proxy), Port: *port, AllowedEmails: allowed, PlunkFrom: *plunkFrom, Archive: *archive, ConfirmPurge: *confirm}, facts)
 	if err != nil {
 		return err
-	}
-	if args[0] == "plan" {
-		return json.NewEncoder(os.Stdout).Encode(plan)
 	}
 	switch operation {
 	case installer.Install, installer.Upgrade, installer.Reconfigure:
@@ -264,6 +347,44 @@ func run(ctx context.Context, args []string) error {
 		return installer.PurgeRecovery(plan)
 	default:
 		return fmt.Errorf("operation %q is not directly executable", operation)
+	}
+}
+
+// preflightPlanFacts reads existing recovery evidence only. Planning must not
+// quiesce the service or create a staging generation in the owned data tree.
+func preflightPlanFacts(ctx context.Context, operation installer.Operation, paths installer.Paths, archive string, facts *installer.HostFacts) {
+	if operation == installer.Upgrade || operation == installer.Reconfigure {
+		facts.MigrationClean, facts.SQLiteClean, facts.KeyMatches, facts.BackupExists = false, false, false, false
+		if installer.DatabasePreflight(ctx, paths.Database) == nil {
+			facts.MigrationClean, facts.SQLiteClean = true, true
+		}
+		if key, err := readMasterKey(paths.MasterKey); err == nil {
+			latest := installer.LatestBackup(paths.Backups)
+			if latest != "" && installer.VerifyBackupArchive(latest, key) == nil {
+				facts.KeyMatches, facts.BackupExists = true, true
+			}
+			clear(key)
+		}
+	}
+	if operation != installer.Restore {
+		return
+	}
+	facts.ArchiveValid, facts.JournalValid, facts.KeyMatches = false, false, false
+	key, err := readMasterKey(paths.MasterKey)
+	if err != nil {
+		return
+	}
+	defer clear(key)
+	if installer.VerifyBackupArchive(archive, key) != nil {
+		return
+	}
+	facts.ArchiveValid, facts.KeyMatches = true, true
+	journal, err := imports.NewDeletionJournal(paths.Journal, key)
+	if err != nil {
+		return
+	}
+	if _, err = journal.ReadAll(); err == nil {
+		facts.JournalValid = true
 	}
 }
 

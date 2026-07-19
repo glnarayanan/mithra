@@ -38,7 +38,7 @@ const unixSocketMode = 0o660
 const maxCredentialBytes = 16 << 10
 
 func main() {
-	if err := run(os.Args[1:]); err != nil {
+	if err := runWithOutput(os.Args[1:], os.Stdout); err != nil {
 		logStartupFailure(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -66,6 +66,24 @@ func logStartupFailure(output io.Writer, err error) {
 }
 
 func run(args []string) error {
+	return runWithOutput(args, io.Discard)
+}
+
+func runWithOutput(args []string, output io.Writer) error {
+	if len(args) > 0 && (args[0] == "help" || args[0] == "--help" || args[0] == "-h") {
+		if len(args) != 1 {
+			return errors.New("help does not accept arguments")
+		}
+		fmt.Fprintln(output, "Usage: mithra [serve] [OPTIONS]\n\nCommands:\n  serve          run the Mithra application (the default)\n  recover-owner  recover an allowlisted household owner\n  help           show this help\n  version        print the Mithra version")
+		return nil
+	}
+	if len(args) > 0 && args[0] == "version" {
+		if len(args) != 1 {
+			return errors.New("version does not accept arguments")
+		}
+		fmt.Fprintln(output, buildVersion)
+		return nil
+	}
 	if len(args) > 0 && args[0] == "pdf-parser" {
 		if len(args) != 1 {
 			return errors.New("pdf-parser does not accept arguments")
