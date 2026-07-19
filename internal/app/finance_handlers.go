@@ -54,8 +54,8 @@ type FinanceObligationView struct {
 }
 
 type FinanceIssueView struct {
-	ID, Label, Kind, Reason, Date, Amount, EvidenceURL string
-	Version                                            int64
+	ID, Label, Kind, Reason, Date, EndDate, Amount, EvidenceURL string
+	Version                                                     int64
 }
 
 type FinanceRecordView struct {
@@ -138,7 +138,11 @@ func (a *App) correctFinanceRecord(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/finance?correction=failed", http.StatusSeeOther)
 		return
 	}
-	_, err = a.finance.Correct(r.Context(), scope, kind, id, version, finance.Draft{Visibility: current.Visibility, Label: current.Label, Category: current.Category, Date: boundedField(r, "date", 10), EndDate: current.EndDate, Status: current.Status, AmountText: boundedField(r, "amount", 128), CurrencyContext: "", Provenance: finance.Provenance{SourceID: current.SourceID, SourceFamily: current.SourceFamily, SourceVersion: current.SourceVersion, LocatorKind: current.LocatorKind, LocatorValue: current.LocatorValue, GeneratedBy: "user", Model: current.Model, PromptVersion: current.PromptVersion, SchemaVersion: current.SchemaVersion}})
+	endDate := current.EndDate
+	if kind == finance.Budget {
+		endDate = boundedField(r, "end_date", 10)
+	}
+	_, err = a.finance.Correct(r.Context(), scope, kind, id, version, finance.Draft{Visibility: current.Visibility, Label: current.Label, Category: current.Category, Date: boundedField(r, "date", 10), EndDate: endDate, Status: current.Status, AmountText: boundedField(r, "amount", 128), CurrencyContext: "", Provenance: finance.Provenance{SourceID: current.SourceID, SourceFamily: current.SourceFamily, SourceVersion: current.SourceVersion, LocatorKind: current.LocatorKind, LocatorValue: current.LocatorValue, GeneratedBy: "user", Model: current.Model, PromptVersion: current.PromptVersion, SchemaVersion: current.SchemaVersion}})
 	if err != nil {
 		http.Redirect(w, r, "/finance?correction=failed", http.StatusSeeOther)
 		return
@@ -201,7 +205,11 @@ func financeView(summary finance.Summary, filter finance.ScopeFilter, csrf strin
 		if _, err := time.Parse("2006-01-02", date); err != nil {
 			date = ""
 		}
-		view.Issues = append(view.Issues, FinanceIssueView{ID: record.ID, Label: issue.Label, Kind: string(issue.Kind), Reason: issue.Reason, Date: date, Amount: record.OriginalAmount, Version: record.Version, EvidenceURL: sourceURL(issue.SourceID)})
+		endDate := record.EndDate
+		if _, err := time.Parse("2006-01-02", endDate); err != nil {
+			endDate = ""
+		}
+		view.Issues = append(view.Issues, FinanceIssueView{ID: record.ID, Label: issue.Label, Kind: string(issue.Kind), Reason: issue.Reason, Date: date, EndDate: endDate, Amount: record.OriginalAmount, Version: record.Version, EvidenceURL: sourceURL(issue.SourceID)})
 	}
 	for _, record := range summary.Records {
 		amount := "Excluded"

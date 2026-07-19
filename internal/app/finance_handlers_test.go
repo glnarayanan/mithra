@@ -81,6 +81,9 @@ func TestFinanceLensKeepsErrorsGenericAndEscaped(t *testing.T) {
 	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), `<script>alert`) || !strings.Contains(response.Body.String(), "&lt;script&gt;") {
 		t.Fatalf("error finance = %d %q", response.Code, response.Body.String())
 	}
+	if strings.Contains(response.Body.String(), "No finance records yet") {
+		t.Fatalf("fatal error also rendered empty state: %q", response.Body.String())
+	}
 }
 
 func TestFinanceIssueCanBeCorrectedFromTheLens(t *testing.T) {
@@ -107,6 +110,33 @@ func TestFinanceIssueCanBeCorrectedFromTheLens(t *testing.T) {
 	var date, reason, sourceID string
 	if err := application.db.QueryRow(`SELECT spent_on,incomplete_reason,source_id FROM finance_spending WHERE active=1 AND supersedes_id=?`, record.ID).Scan(&date, &reason, &sourceID); err != nil || date != "2026-07-20" || reason != "" || sourceID != source.ID {
 		t.Fatalf("corrected record date=%q reason=%q source=%q err=%v", date, reason, sourceID, err)
+	}
+}
+
+func TestBudgetEndDateCanBeCorrectedFromTheLens(t *testing.T) {
+	application, mailer := newAuthTestApp(t, "owner@example.com")
+	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
+	owner := ownerScope(t, application, session)
+	source, err := application.sources.Store(context.Background(), owner, []byte("budget"), storage.Metadata{Family: "text", Version: 1, Visibility: policy.Personal, LocatorKind: "source", LocatorValue: "capture"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := application.finance.Create(context.Background(), owner, finance.Draft{Kind: finance.Budget, Visibility: policy.Personal, Label: "Household budget", Category: "Household", Date: "2026-07-01", EndDate: "end of July", AmountText: "1000", Provenance: finance.Provenance{SourceID: source.ID, SourceFamily: source.Family, SourceVersion: source.Version, LocatorKind: "source", LocatorValue: source.LocatorValue}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := serve(application, authenticatedFinanceRequest(session, "/finance"))
+	if !strings.Contains(page.Body.String(), `name="end_date"`) || strings.Contains(page.Body.String(), `value="end of July"`) {
+		t.Fatalf("budget correction form missing a safe end date input: %q", page.Body.String())
+	}
+	values := url.Values{"csrf": {session.csrf.Value}, "record_id": {record.ID}, "version": {"1"}, "kind": {"budget"}, "date": {"2026-07-01"}, "end_date": {"2026-07-31"}, "amount": {"1000"}}
+	corrected := serve(application, authForm(http.MethodPost, "/finance/correct", values, []*http.Cookie{session.session, session.csrf}))
+	if corrected.Code != http.StatusSeeOther || corrected.Header().Get("Location") != "/finance?corrected=1" {
+		t.Fatalf("budget correction response = %d %q", corrected.Code, corrected.Body.String())
+	}
+	var endDate, reason string
+	if err := application.db.QueryRow(`SELECT ends_on,incomplete_reason FROM finance_budgets WHERE active=1 AND supersedes_id=?`, record.ID).Scan(&endDate, &reason); err != nil || endDate != "2026-07-31" || reason != "" {
+		t.Fatalf("corrected budget end=%q reason=%q err=%v", endDate, reason, err)
 	}
 }
 
