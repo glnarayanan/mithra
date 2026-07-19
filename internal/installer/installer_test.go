@@ -583,12 +583,34 @@ func TestBackupRestoreAuthenticatesGenerationReconcilesDeletionAndClearsAccess(t
 	if _, err := os.Stat(filepath.Join(target.Sources, source.StorageKey+".enc")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("deleted ciphertext err=%v", err)
 	}
-	var committed, pendingState string
+	var committed, pendingState, pendingSourceState, preservedSourceState string
 	if err := restored.QueryRow(`SELECT state FROM document_imports WHERE id=?`, strings.Repeat("c", 32)).Scan(&committed); err != nil || committed != "committed" {
 		t.Fatalf("committed import state=%q err=%v", committed, err)
 	}
 	if err := restored.QueryRow(`SELECT state FROM document_imports WHERE id=?`, strings.Repeat("d", 32)).Scan(&pendingState); err != nil || pendingState != "discarded" {
 		t.Fatalf("pending import state=%q err=%v", pendingState, err)
+	}
+	if err := restored.QueryRow(`SELECT state FROM sources WHERE id=?`, pending.ID).Scan(&pendingSourceState); err != nil || pendingSourceState != "deleted" {
+		t.Fatalf("pending source state=%q err=%v", pendingSourceState, err)
+	}
+	if _, err := os.Stat(filepath.Join(target.Sources, pending.StorageKey+".enc")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("discarded ciphertext err=%v", err)
+	}
+	if _, err := restored.Exec(`UPDATE users SET status='active' WHERE id='owner'`); err != nil {
+		t.Fatal(err)
+	}
+	restoredStore, err := storage.New(restored, target.Sources, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := restoredStore.Read(ctx, policy.ActorScope{ActorID: "owner", HouseholdID: "home", Role: "owner"}, pending.ID); !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("discarded source read err=%v", err)
+	}
+	if err := restored.QueryRow(`SELECT state FROM sources WHERE id=?`, preserved.ID).Scan(&preservedSourceState); err != nil || preservedSourceState != "live" {
+		t.Fatalf("committed source state=%q err=%v", preservedSourceState, err)
+	}
+	if plaintext, _, err := restoredStore.Read(ctx, policy.ActorScope{ActorID: "owner", HouseholdID: "home", Role: "owner"}, preserved.ID); err != nil || string(plaintext) != "keep this import" {
+		t.Fatalf("committed source read=%q err=%v", plaintext, err)
 	}
 	if info, err := os.Stat(target.Database); err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("restored database mode=%v err=%v", info.Mode(), err)

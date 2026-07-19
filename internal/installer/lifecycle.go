@@ -802,6 +802,35 @@ func sanitizeRestore(ctx context.Context, stage string, intents []imports.Deleti
 	if err != nil {
 		return err
 	}
+	type sourceScope struct{ householdID, ownerID, sourceID string }
+	var incompleteSources []sourceScope
+	rows, err := tx.QueryContext(ctx, `SELECT i.household_id,i.owner_user_id,i.source_id FROM document_imports i JOIN sources s ON s.id=i.source_id WHERE i.state IN ('review','awaiting_visual_consent','visual_processing') AND s.state='live'`)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	for rows.Next() {
+		var householdID, ownerID, sourceID string
+		if err := rows.Scan(&householdID, &ownerID, &sourceID); err != nil {
+			rows.Close()
+			tx.Rollback()
+			return err
+		}
+		incompleteSources = append(incompleteSources, sourceScope{householdID, ownerID, sourceID})
+	}
+	if err := errors.Join(rows.Close(), rows.Err()); err != nil {
+		tx.Rollback()
+		return err
+	}
+	var discardedSources []storage.Source
+	for _, scope := range incompleteSources {
+		source, err := sources.TombstoneInTx(ctx, tx, scope.householdID, scope.ownerID, scope.sourceID)
+		if err != nil {
+			tx.Rollback()
+			return err
+		}
+		discardedSources = append(discardedSources, source)
+	}
 	for _, statement := range []string{
 		`UPDATE users SET password_hash='',status='pending'`,
 		`DELETE FROM household_openai_settings`, `DELETE FROM browser_sessions`, `DELETE FROM password_reset_tokens`, `DELETE FROM invitations`, `DELETE FROM auth_throttles`,
@@ -816,6 +845,11 @@ func sanitizeRestore(ctx context.Context, stage string, intents []imports.Deleti
 	}
 	if err := tx.Commit(); err != nil {
 		return err
+	}
+	for _, source := range discardedSources {
+		if err := sources.RemoveCiphertext(source); err != nil {
+			return err
+		}
 	}
 	if err := auth.New(db, auth.Config{}).SynchronizeAllowlist(ctx, allowlist); err != nil {
 		return err
