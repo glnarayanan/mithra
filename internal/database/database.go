@@ -216,7 +216,17 @@ func sqliteDSN(path string) string {
 	if path == ":memory:" {
 		return path + sqliteParameters(path)
 	}
-	uri := url.URL{Scheme: "file", Path: filepath.ToSlash(path)}
+	// file:// URIs require an absolute path component. Relative inputs such as
+	// ".local/mithra.sqlite3" become "file://.local/..." under url.URL.String(),
+	// so go-sqlite3 treats ".local" as the URI authority and rejects the DSN.
+	// Resolve to an absolute path first (local/dev and production both work).
+	resolved := path
+	if !filepath.IsAbs(path) {
+		if abs, err := filepath.Abs(path); err == nil {
+			resolved = abs
+		}
+	}
+	uri := url.URL{Scheme: "file", Path: filepath.ToSlash(resolved)}
 	uri.RawQuery = sqliteParameters("")[1:]
 	return uri.String()
 }

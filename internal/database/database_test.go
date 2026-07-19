@@ -188,6 +188,28 @@ func TestOpenRejectsFileURIWithoutCreatingItsTarget(t *testing.T) {
 	}
 }
 
+// Relative paths like MITHRA_DB=.local/mithra.sqlite3 must open for local/dev.
+// net/url file:// construction used to treat the first segment as URI authority.
+func TestOpenRelativeDotLocalPath(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+
+	ctx := context.Background()
+	path := filepath.Join(".local", "mithra.sqlite3")
+	db, err := database.Open(ctx, path)
+	if err != nil {
+		t.Fatalf("open relative .local database: %v", err)
+	}
+	defer db.Close()
+
+	if err := database.CheckReady(ctx, db); err != nil {
+		t.Fatalf("relative .local database is not ready: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("relative database file missing after open: %v", err)
+	}
+}
+
 func TestFailedOpenRestrictsExistingSidecars(t *testing.T) {
 	t.Parallel()
 
