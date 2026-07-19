@@ -64,8 +64,9 @@ arguments, logs, backups, or the ownership manifest. Reconfigure replaces the
 Plunk credential atomically and preserves the independently retained master
 key and all household data. Upgrade and reconfigure require a recognized
 migration history, clean SQLite, matching key evidence, and a verified
-pre-mutation backup. Files are staged before activation and restored if service
-or health validation fails; schema down-migrations are never attempted.
+pre-mutation backup. Files are staged before activation. The installer waits up
+to 30 seconds each for local and public HTTPS health before restoring the
+previous release; schema down-migrations are never attempted.
 Startup failures expose only a stable `stage` code through
 `journalctl -u mithra.service`; secrets, paths, addresses, and provider errors
 remain redacted.

@@ -156,14 +156,18 @@ func run(ctx context.Context, args []string) error {
 					return err
 				}
 			}
-			if err := localPlanHealth(ctx, plan); err != nil {
+			if err := waitForHealth(ctx, func(checkCtx context.Context) error {
+				return localPlanHealth(checkCtx, plan)
+			}); err != nil {
 				if *root == "/" {
 					_ = exec.CommandContext(ctx, "systemctl", "stop", "mithra.service").Run()
 				}
 				return err
 			}
 			if plan.Proxy != installer.AppOnly {
-				if err := webHealth(ctx, "https://"+plan.Options.Domain+"/healthz"); err != nil {
+				if err := waitForHealth(ctx, func(checkCtx context.Context) error {
+					return webHealth(checkCtx, "https://"+plan.Options.Domain+"/healthz")
+				}); err != nil {
 					if *root == "/" {
 						_ = exec.CommandContext(ctx, "systemctl", "stop", "mithra.service").Run()
 					}
@@ -379,14 +383,18 @@ func activate(ctx context.Context, plan installer.Plan) error {
 			return fail(fmt.Errorf("%s: %w", strings.TrimSpace(string(output)), err))
 		}
 	}
-	if err := localPlanHealth(ctx, plan); err != nil {
+	if err := waitForHealth(ctx, func(checkCtx context.Context) error {
+		return localPlanHealth(checkCtx, plan)
+	}); err != nil {
 		return fail(err)
 	}
 	if err := validateAndReloadProxy(ctx, plan.Proxy, identity.membershipAdded); err != nil {
 		return fail(err)
 	}
 	if plan.Proxy != installer.AppOnly {
-		if err := webHealth(ctx, "https://"+plan.Options.Domain+"/healthz"); err != nil {
+		if err := waitForHealth(ctx, func(checkCtx context.Context) error {
+			return webHealth(checkCtx, "https://"+plan.Options.Domain+"/healthz")
+		}); err != nil {
 			return fail(err)
 		}
 	}
@@ -402,6 +410,30 @@ func activate(ctx context.Context, plan installer.Plan) error {
 
 func localHealth(ctx context.Context, port int) error {
 	return webHealth(ctx, fmt.Sprintf("http://127.0.0.1:%d/healthz", port))
+}
+
+func waitForHealth(ctx context.Context, check func(context.Context) error) error {
+	const (
+		timeout  = 30 * time.Second
+		interval = 250 * time.Millisecond
+	)
+
+	healthCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		err := check(healthCtx)
+		if err == nil {
+			return nil
+		}
+		select {
+		case <-healthCtx.Done():
+			return fmt.Errorf("health readiness timeout: %w", err)
+		case <-ticker.C:
+		}
+	}
 }
 
 func localPlanHealth(ctx context.Context, plan installer.Plan) error {

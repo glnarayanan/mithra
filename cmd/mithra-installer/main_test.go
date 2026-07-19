@@ -2,12 +2,30 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestWaitForHealthRetriesUntilReady(t *testing.T) {
+	attempts := 0
+	err := waitForHealth(context.Background(), func(context.Context) error {
+		attempts++
+		if attempts == 1 {
+			return errors.New("not ready")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("waitForHealth() error = %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("waitForHealth() attempts = %d, want 2", attempts)
+	}
+}
 
 func TestCLIRejectsMissingOperationAndNormalizesAllowlist(t *testing.T) {
 	if err := run(context.Background(), nil); err == nil || !strings.Contains(err.Error(), "operation required") {
