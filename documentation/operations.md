@@ -21,6 +21,10 @@ Configure these repository release settings before the first tag:
   bootstrap shell;
 - secret `MITHRA_RELEASE_PRIVATE_KEY_PEM_B64`: the matching private PEM.
 
+Enable immutable GitHub releases for the repository when that setting is
+available. Manifest, signature, fingerprint, and digest verification remain
+required even when release immutability is enabled.
+
 Keep the private key offline except for the GitHub secret. A tag build produces
 amd64 and arm64 binaries, a canonical manifest, its detached signature, and a
 release-specific `install.sh` with the public key pinned.
@@ -40,38 +44,18 @@ directory and never edits the global Caddyfile.
 mithra-installer plan \
   --domain mithrahq.com \
   --proxy caddy \
-  --allowed-emails owner@example.com,partner@example.com
+  --allowed-emails owner@example.com,partner@example.com \
+  --plunk-from 'Mithra <hello@mithrahq.com>'
 ```
 
 ## Install and reconfigure
 
-Download and verify the release as an unprivileged user before any `sudo`
-execution. The public-key DER SHA-256 fingerprint is
-`044843e7944e940c1dfe513f61425902fde751348bd4d7dedb4f10d8a0f720c9`.
-The sender domain must first be verified in Plunk:
-
-```bash
-release=v1.0.3
-stage=$(mktemp -d)
-base="https://github.com/glnarayanan/mithra/releases/download/$release"
-for name in RELEASE-MANIFEST RELEASE-MANIFEST.sig release-public-key.pem install.sh; do
-  curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
-    --output "$stage/$name" "$base/$name"
-done
-fingerprint=$(openssl pkey -pubin -in "$stage/release-public-key.pem" -pubout -outform DER | sha256sum | awk '{print $1}')
-test "$fingerprint" = 044843e7944e940c1dfe513f61425902fde751348bd4d7dedb4f10d8a0f720c9
-openssl pkeyutl -verify -pubin -inkey "$stage/release-public-key.pem" -rawin \
-  -in "$stage/RELEASE-MANIFEST" -sigfile "$stage/RELEASE-MANIFEST.sig"
-expected=$(awk '$1=="artifact" && $2=="install.sh" {print $4}' "$stage/RELEASE-MANIFEST")
-test "$(sha256sum "$stage/install.sh" | awk '{print $1}')" = "$expected"
-
-sudo env MITHRA_VERSION="$release" sh "$stage/install.sh" \
-  --domain mithrahq.com \
-  --proxy caddy \
-  --allowed-emails owner@example.com,partner@example.com \
-  --plunk-from 'Mithra <hello@mithrahq.com>' \
-  --plunk-key-file /root/mithrahq-plunk.key
-```
+The end-to-end command sequence, app-only and proxy-mode selection, first
+login, verification, upgrade, reconfiguration, restore, completions, and
+removal are in [self-hosting](self-hosting.md). It is the authoritative
+operator guide: download and verify the release as an unprivileged user before
+any `sudo` execution, including the pinned key fingerprint, signed manifest,
+and bootstrap-script digest. Do not use `curl | sudo sh`.
 
 The service receives the master and Plunk credentials through systemd
 `LoadCredential`; neither is placed in ordinary environment values, command

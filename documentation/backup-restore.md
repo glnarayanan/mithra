@@ -11,12 +11,16 @@ most recent successfully committed archives.
 
 ```bash
 sudo mithra-installer backup
-sudo mithra-installer status
+sudo mithra-installer verify-backup \
+  --archive /secure/mithra-20260718T120000.000000000Z.mbackup
 ```
 
 Copy successful archives and the master-key credential to separate protected
 storage. A recovery drill must use a disposable host or `--root` sandbox and
 must verify that eligible users can complete the normal password bootstrap.
+The verify command is read-only: it authenticates the archive without stopping
+the service or exposing key material. See [self-hosting](self-hosting.md) for
+the complete install and operator lifecycle.
 
 ## Restore boundary
 
