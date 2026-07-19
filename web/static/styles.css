@@ -687,6 +687,30 @@ kbd {
   margin: 0;
 }
 
+.source-preview-dialog {
+  width: min(calc(100% - 2rem), 48rem);
+}
+
+.source-preview-frame,
+.source-preview-open {
+  grid-column: 1 / -1;
+}
+
+.source-preview-frame {
+  display: block;
+  width: 100%;
+  height: min(60vh, 36rem);
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--base-50);
+}
+
+.source-preview-open {
+  width: fit-content;
+  color: var(--moss);
+  font-weight: 700;
+}
+
 .brief-introduction,
 .finance-heading,
 .health-heading,

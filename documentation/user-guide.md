@@ -18,6 +18,11 @@ Use **Help** in the application for short, contextual guidance. Press
 navigation, or press <kbd>?</kbd> to see the shortcut guide. Quick navigation
 only opens destinations; it cannot change records.
 
+Outside form fields and open dialogs, use <kbd>Shift</kbd>+<kbd>C</kbd> for
+**Capture**, <kbd>Shift</kbd>+<kbd>I</kbd> for **Import**, or the page shortcuts
+listed in the in-app guide. These shortcuts only navigate; they never submit or
+change a record.
+
 ## Shared and Only you
 
 Choose a visibility every time you use **Capture** or **Import**:

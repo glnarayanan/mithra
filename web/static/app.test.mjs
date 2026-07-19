@@ -80,3 +80,17 @@ test("quick navigation restores the focused invoker with a safe fallback", () =>
   app.restoreFocus({ isConnected: false, focus: () => { focused = "stale"; } }, fallback);
   assert.equal(focused, "fallback");
 });
+
+test("action shortcuts navigate without stealing keystrokes from editing or dialogs", () => {
+  const noModal = { querySelector: () => null };
+  const event = (key, overrides = {}) => ({ key, shiftKey: true, target: null, ...overrides });
+  const input = { tagName: "INPUT", parentElement: null };
+
+  assert.equal(app.actionShortcutPath(event("c"), noModal), "/capture");
+  assert.equal(app.actionShortcutPath(event("i"), noModal), "/imports");
+  assert.equal(app.actionShortcutPath(event("p"), noModal), "/planning");
+  assert.equal(app.actionShortcutPath(event("c", { target: input }), noModal), "");
+  assert.equal(app.actionShortcutPath(event("c", { isComposing: true }), noModal), "");
+  assert.equal(app.actionShortcutPath(event("c"), { querySelector: () => ({}) }), "");
+  assert.equal(app.actionShortcutPath(event("x"), noModal), "");
+});

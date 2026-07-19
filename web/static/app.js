@@ -35,6 +35,17 @@
     return global && global.navigator && /Mac|iPhone|iPad/.test(String(global.navigator.platform || "")) ? "⌘" : "Ctrl";
   }
 
+  var actionShortcuts = [
+    ["B", "Open Family Brief", "/"],
+    ["R", "Open Week in Review", "/review"],
+    ["C", "Capture an update", "/capture"],
+    ["I", "Import a file", "/imports"],
+    ["F", "Open Finance", "/finance"],
+    ["H", "Open Health", "/health"],
+    ["P", "Open Planning", "/planning"],
+    ["S", "Open Settings", "/settings"]
+  ];
+
   function isEditableControl(target) {
     for (var element = target; element; element = element.parentElement) {
       var tagName = String(element.tagName || "").toLowerCase();
@@ -62,6 +73,22 @@
     }
     var modal = documentRoot && typeof documentRoot.querySelector === "function" ? documentRoot.querySelector("dialog[open], [aria-modal=\"true\"]") : null;
     return !modal || modal === ownedDialog;
+  }
+
+  function actionShortcutPath(event, documentRoot) {
+    if (!event || event.defaultPrevented || event.repeat || event.isComposing || event.keyCode === 229 || !event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || isEditableControl(event.target)) {
+      return "";
+    }
+    if (documentRoot && typeof documentRoot.querySelector === "function" && documentRoot.querySelector("dialog[open], [aria-modal=\"true\"]")) {
+      return "";
+    }
+    var key = String(event.key || "").toUpperCase();
+    for (var index = 0; index < actionShortcuts.length; index += 1) {
+      if (actionShortcuts[index][0] === key) {
+        return actionShortcuts[index][2];
+      }
+    }
+    return "";
   }
 
   function restoreFocus(previousFocus, fallback) {
@@ -273,7 +300,9 @@
       ["Enter", "Open the highlighted page"],
       ["Esc", "Close a dialog"],
       ["?", "Show keyboard shortcuts"]
-    ].forEach(function (shortcut) {
+    ].concat(actionShortcuts.map(function (shortcut) {
+      return ["Shift " + shortcut[0], shortcut[1]];
+    })).forEach(function (shortcut) {
       var row = root.createElement("div");
       var description = root.createElement("dt");
       var keys = root.createElement("dd");
@@ -310,6 +339,64 @@
     });
   }
 
+  function installSourcePreview(root) {
+    if (!root.body || typeof root.createElement !== "function") {
+      return;
+    }
+    var dialog = root.createElement("dialog");
+    dialog.className = "quick-navigation-dialog source-preview-dialog";
+    dialog.setAttribute("aria-labelledby", "source-preview-title");
+    var panel = root.createElement("div");
+    panel.className = "quick-navigation-panel source-preview-panel";
+    var heading = root.createElement("h2");
+    heading.id = "source-preview-title";
+    heading.textContent = "Original source";
+    var close = root.createElement("button");
+    close.type = "button";
+    close.className = "quick-navigation-close";
+    close.textContent = "Close";
+    var frame = root.createElement("iframe");
+    frame.className = "source-preview-frame";
+    frame.title = "Original source";
+    var open = root.createElement("a");
+    open.className = "source-preview-open";
+    open.target = "_blank";
+    open.rel = "noopener";
+    open.textContent = "Open in a new tab";
+    panel.appendChild(heading);
+    panel.appendChild(close);
+    panel.appendChild(frame);
+    panel.appendChild(open);
+    dialog.appendChild(panel);
+    root.body.appendChild(dialog);
+    var previousFocus = null;
+
+    function closeDialog() {
+      if (dialog.open) {
+        dialog.close();
+      }
+    }
+    close.addEventListener("click", closeDialog);
+    dialog.addEventListener("cancel", function (event) { event.preventDefault(); closeDialog(); });
+    dialog.addEventListener("close", function () {
+      frame.removeAttribute("src");
+      restoreFocus(previousFocus, null);
+    });
+    root.addEventListener("click", function (event) {
+      var link = event.target && typeof event.target.closest === "function" ? event.target.closest('a[href^="/sources/"]') : null;
+      if (!link || event.defaultPrevented || event.button > 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || typeof dialog.showModal !== "function") {
+        return;
+      }
+      event.preventDefault();
+      previousFocus = link;
+      var path = link.getAttribute("href");
+      open.href = path;
+      frame.src = path;
+      dialog.showModal();
+      close.focus();
+    });
+  }
+
   function install(root) {
     if (!root || typeof root.querySelector !== "function") {
       return;
@@ -322,9 +409,18 @@
     }
     installQuickNavigation(root);
     installShortcutHelp(root);
+    installSourcePreview(root);
+    root.addEventListener("keydown", function (event) {
+      var path = actionShortcutPath(event, root);
+      if (path && global.location && typeof global.location.assign === "function") {
+        event.preventDefault();
+        global.location.assign(path);
+      }
+    });
   }
 
   var api = Object.freeze({
+    actionShortcutPath: actionShortcutPath,
     filterQuickNavigation: filterQuickNavigation,
     install: install,
     isEditableControl: isEditableControl,
