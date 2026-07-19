@@ -113,7 +113,7 @@ func runWithOutput(args []string, output io.Writer) error {
 	plunkKeyFile := flags.String("plunk-key-file", environmentDefault("MITHRA_PLUNK_KEY_FILE", ""), "Plunk credential file")
 	plunkFrom := flags.String("plunk-from", environmentDefault("MITHRA_PLUNK_FROM", ""), "Plunk sender identity")
 	masterKeyFile := flags.String("master-key-file", environmentDefault("MITHRA_MASTER_KEY_FILE", ""), "Mithra master-key credential file")
-	pdfParserSocket := flags.String("pdf-parser-socket", environmentDefault("MITHRA_PDF_PARSER_SOCKET", "/run/mithra/pdf-parser.sock"), "isolated PDF parser Unix socket")
+	pdfParserSocket := flags.String("pdf-parser-socket", environmentDefault("MITHRA_PDF_PARSER_SOCKET", defaultPDFParser(*databasePath)), "isolated PDF parser Unix socket")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -167,7 +167,7 @@ func runWithOutput(args []string, output io.Writer) error {
 		Mailer:          mailer,
 		MasterKey:       masterKey,
 		SourceRoot:      *sourceRoot,
-		ImportPDF:       imports.SocketPDFParser{Path: *pdfParserSocket},
+		ImportPDF:       configuredPDFParser(*pdfParserSocket),
 	})
 	if err != nil {
 		return failStartup("application", fmt.Errorf("initialize Mithra: %w", err))
@@ -208,6 +208,20 @@ func runWithOutput(args []string, output io.Writer) error {
 		}
 		return nil
 	}
+}
+
+func configuredPDFParser(socketPath string) imports.PDFParser {
+	if strings.TrimSpace(socketPath) == "local" {
+		return imports.LocalPDFParser{}
+	}
+	return imports.SocketPDFParser{Path: strings.TrimSpace(socketPath)}
+}
+
+func defaultPDFParser(databasePath string) string {
+	if !filepath.IsAbs(strings.TrimSpace(databasePath)) {
+		return "local"
+	}
+	return "/run/mithra/pdf-parser.sock"
 }
 
 func runRecoverOwner(args []string) error {

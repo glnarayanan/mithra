@@ -110,7 +110,7 @@ func TestImportBlockerRequiresUserCorrectionAndRevisionFence(t *testing.T) {
 		return captureProviderBody(`{"records":[{"family":"health","locator":{"kind":"row","value":"row:2"},"finance":null,"health":{"subject":"Alex","analyte":"HbA1c","specimen":"blood","method":"","reference_context":"","observed_on":"2026-07-02","value":"5.8","unit":"","reference_low":"","reference_high":"","reference_unit":""},"planning":null}]}`)
 	})
 	upload := serve(application, importUploadRequest(t, session, "health.csv", "text/csv", []byte("test,value,date,unit\nHbA1c,5.8,2026-07-02,\n"), "personal"))
-	if upload.Code != http.StatusOK || !strings.Contains(upload.Body.String(), "Enter the unit exactly as reported") || !strings.Contains(upload.Body.String(), `aria-invalid="true"`) {
+	if upload.Code != http.StatusOK || !strings.Contains(upload.Body.String(), "1 record needs attention") || !strings.Contains(upload.Body.String(), "Correct the highlighted fields below") || !strings.Contains(upload.Body.String(), `type="date"`) || !strings.Contains(upload.Body.String(), `aria-invalid="true"`) {
 		t.Fatalf("blocked review = %d %q", upload.Code, upload.Body.String())
 	}
 	var id string
@@ -139,6 +139,16 @@ func TestImportBlockerRequiresUserCorrectionAndRevisionFence(t *testing.T) {
 	var unit, generated string
 	if err := application.db.QueryRow(`SELECT unit,generated_by FROM health_observations WHERE active=1`).Scan(&unit, &generated); err != nil || unit != "%" || generated != "user" {
 		t.Fatalf("corrected record = %q %q, %v", unit, generated, err)
+	}
+}
+
+func TestUnreadablePDFExplainsTheActualFailure(t *testing.T) {
+	application, mailer := newAuthTestApp(t, "owner@example.com")
+	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
+	application.importExtractor = importcore.New(failingPDFParser{err: importcore.ErrUnreadable})
+	response := serve(application, importUploadRequest(t, session, "report.pdf", "application/pdf", []byte("%PDF-1.7\nvalid-looking-fixture"), "personal"))
+	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "could not read this PDF locally") || strings.Contains(response.Body.String(), "corrupt, unsupported") {
+		t.Fatalf("PDF failure = %d %q", response.Code, response.Body.String())
 	}
 }
 
@@ -415,6 +425,12 @@ type scannedPDFParser struct{}
 
 func (scannedPDFParser) Extract(context.Context, []byte, importcore.Limits) ([]importcore.Fragment, error) {
 	return nil, importcore.ErrScannedPDF
+}
+
+type failingPDFParser struct{ err error }
+
+func (parser failingPDFParser) Extract(context.Context, []byte, importcore.Limits) ([]importcore.Fragment, error) {
+	return nil, parser.err
 }
 
 func connectImportProvider(t *testing.T, application *App, scope policy.ActorScope, response func(*http.Request) string) {

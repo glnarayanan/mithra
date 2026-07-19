@@ -36,6 +36,7 @@ type ImportsView struct {
 type ImportReviewView struct {
 	ID, FileName, Summary string
 	Version               int64
+	BlockingRecords       int
 	Records               []ImportRecordView
 	Blockers, Warnings    []ImportIssueView
 }
@@ -44,8 +45,8 @@ type ImportRecordView struct {
 	Fields                         []ImportFieldView
 }
 type ImportFieldView struct {
-	ID, Label, Value, Error string
-	Required, Invalid       bool
+	ID, Label, Value, Error, Type string
+	Required, Invalid             bool
 }
 type ImportIssueView struct{ FieldID, Message, Locator string }
 type ImportRecentView struct {
@@ -160,7 +161,6 @@ func (a *App) uploadImport(r *http.Request, w http.ResponseWriter, scope policy.
 	defer cancel()
 	document, err := a.importExtractor.Extract(ctx, imports.Input{Name: filepath.Base(files[0].Filename), ContentType: mediaType, Bytes: content})
 	if err != nil {
-		message := "That file is corrupt, unsupported, password-protected, or exceeds Mithra's safe parsing limits. Nothing was saved or sent."
 		if errors.Is(err, imports.ErrScannedPDF) {
 			if a.imports.ExactExists(r.Context(), scope, visibility, documentDigest(content)) {
 				a.renderImports(r, w, scope, csrf, "", "Mithra already has this file with the same privacy setting. Nothing was copied or sent.")
@@ -180,6 +180,9 @@ func (a *App) uploadImport(r *http.Request, w http.ResponseWriter, scope policy.
 			a.renderVisualConsent(r, w, scope, csrf, consent, "This PDF has no locally readable text. Review the transfer details before deciding.", "")
 			return
 		}
+		code, message := importExtractionFailure(err, files[0].Filename)
+		logRequestError(a.logger, r.Context(), code)
+		w.WriteHeader(http.StatusUnprocessableEntity)
 		a.renderImports(r, w, scope, csrf, "", message)
 		return
 	}
@@ -321,14 +324,17 @@ func importReviewView(review imports.Review) ImportReviewView {
 	for i, p := range review.Proposals.Records {
 		out.Records = append(out.Records, importRecordView(i, p))
 	}
+	blockingRecords := map[int]struct{}{}
 	for _, issue := range review.Issues {
 		item := ImportIssueView{FieldID: fmt.Sprintf("%d-%s", issue.Record, issue.Field), Message: issue.Message, Locator: issue.Locator}
 		if issue.Warning {
 			out.Warnings = append(out.Warnings, item)
 		} else {
 			out.Blockers = append(out.Blockers, item)
+			blockingRecords[issue.Record] = struct{}{}
 		}
 	}
+	out.BlockingRecords = len(blockingRecords)
 	fieldIssues := make(map[string]string)
 	for _, issue := range review.Issues {
 		if !issue.Warning {
@@ -349,7 +355,14 @@ func importReviewView(review imports.Review) ImportReviewView {
 func importRecordView(index int, p imports.ProposedRecord) ImportRecordView {
 	record := ImportRecordView{Family: strings.Title(p.Family), Locator: p.Locator.Value, Change: "New record"}
 	add := func(name, label, value string, required bool) {
-		record.Fields = append(record.Fields, ImportFieldView{ID: fmt.Sprintf("%d-%s", index, name), Label: label, Value: value, Required: required})
+		fieldType := "text"
+		switch name {
+		case "date", "end_date", "observed_on", "starts_on", "ends_on":
+			fieldType = "date"
+		case "starts_at", "ends_at":
+			fieldType = "datetime-local"
+		}
+		record.Fields = append(record.Fields, ImportFieldView{ID: fmt.Sprintf("%d-%s", index, name), Label: label, Value: value, Type: fieldType, Required: required})
 	}
 	switch p.Family {
 	case "finance":
@@ -401,6 +414,24 @@ func importRecordView(index int, p imports.ProposedRecord) ImportRecordView {
 		record.Title = "Proposed record"
 	}
 	return record
+}
+
+func importExtractionFailure(err error, fileName string) (string, string) {
+	switch {
+	case errors.Is(err, imports.ErrUnsupported):
+		return "import_format_unsupported", "This file's contents do not match a supported CSV, XLSX, or PDF file. Nothing was saved or sent."
+	case errors.Is(err, imports.ErrEncryptedPDF):
+		return "import_pdf_encrypted", "This PDF is password-protected. Save an unlocked copy, then upload that copy. Nothing was saved or sent."
+	case errors.Is(err, imports.ErrOverLimit):
+		return "import_safety_limit", "This file exceeds Mithra's safe size, page, row, or text limits. Nothing was saved or sent."
+	case errors.Is(err, imports.ErrParserTimeout):
+		return "import_pdf_timeout", "Mithra could not finish reading this PDF locally in time. Nothing was saved or sent; try the file once more."
+	default:
+		if strings.EqualFold(filepath.Ext(fileName), ".pdf") {
+			return "import_pdf_unreadable", "Mithra could not read this PDF locally. The file may be damaged or use an unsupported PDF feature. Nothing was saved or sent."
+		}
+		return "import_file_unreadable", "Mithra could not read this file. It may be damaged or use an unsupported feature. Nothing was saved or sent."
+	}
 }
 func applyImportFields(r *http.Request, set *imports.ProposalSet) {
 	for i := range set.Records {
