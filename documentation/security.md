@@ -69,12 +69,13 @@ data, or an alternative authorization path.
 
 ## Email credential and logs
 
-The Plunk key is read from an absolute, regular, service-user-owned credential
-file with no group or other permissions. The file is bounded and checked after
-opening to prevent symlink or replacement substitution. The key is never an
-argument or ordinary environment value. The sender identity is non-secret
-configuration, and the client uses a fixed HTTPS endpoint with bounded time and
-response size.
+The Plunk key source is an absolute, regular, service-user-owned credential file
+with no group or other permissions. Runtime copies directly inside systemd's
+declared private credential directory use systemd's access boundary. Every file
+is bounded and checked after opening to prevent symlink or replacement
+substitution. The key is never an argument or ordinary environment value. The
+sender identity is non-secret configuration, and the client uses a fixed HTTPS
+endpoint with bounded time and response size.
 
 Runtime logs are allowlisted to request IDs and stable error codes. They omit
 emails, token URLs, queries, filenames, credential paths and values, provider

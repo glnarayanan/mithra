@@ -378,12 +378,14 @@ func readCredentialFile(path string) (string, error) {
 		return "", errors.New("credential file is invalid")
 	}
 	pathInfo, err := os.Lstat(path)
-	if err != nil || !pathInfo.Mode().IsRegular() || pathInfo.Mode()&os.ModeSymlink != 0 || pathInfo.Mode().Perm()&0o077 != 0 {
+	if err != nil || !pathInfo.Mode().IsRegular() || pathInfo.Mode()&os.ModeSymlink != 0 {
 		return "", errors.New("credential file is invalid")
 	}
-	stat, ok := pathInfo.Sys().(*syscall.Stat_t)
-	if !ok || stat.Uid != uint32(os.Geteuid()) {
-		return "", errors.New("credential file is invalid")
+	if !systemdCredentialPath(path) {
+		stat, ok := pathInfo.Sys().(*syscall.Stat_t)
+		if !ok || stat.Uid != uint32(os.Geteuid()) || pathInfo.Mode().Perm()&0o077 != 0 {
+			return "", errors.New("credential file is invalid")
+		}
 	}
 	file, err := os.Open(path)
 	if err != nil {
@@ -399,4 +401,9 @@ func readCredentialFile(path string) (string, error) {
 		return "", errors.New("credential file is invalid")
 	}
 	return strings.TrimSpace(string(value)), nil
+}
+
+func systemdCredentialPath(path string) bool {
+	directory := strings.TrimSpace(os.Getenv("CREDENTIALS_DIRECTORY"))
+	return filepath.IsAbs(directory) && filepath.Clean(directory) == directory && filepath.Dir(filepath.Clean(path)) == directory
 }

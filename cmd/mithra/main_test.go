@@ -293,6 +293,11 @@ func TestReadCredentialFileRequiresPrivateStableRegularFile(t *testing.T) {
 	if _, err := readCredentialFile(link); err == nil {
 		t.Fatal("symlink credential unexpectedly accepted")
 	}
+	os.Remove(link)
+	t.Setenv("CREDENTIALS_DIRECTORY", directory)
+	if value, err := readCredentialFile(path); err != nil || value != "sk_test_secret" {
+		t.Fatalf("systemd credential = %q, %v", value, err)
+	}
 }
 
 func TestUnixSocketCleansUpAfterHTTPServerShutdown(t *testing.T) {
