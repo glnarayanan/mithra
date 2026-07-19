@@ -134,6 +134,19 @@ a {
   color: inherit;
 }
 
+button,
+.navigation-list a,
+.empty-actions a,
+.calendar-view-switcher a {
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 100ms ease;
+}
+
+button:active,
+.empty-actions a:active,
+.calendar-view-switcher a:active {
+  transform: translateY(0.0625rem);
+}
+
 a:focus-visible,
 summary:focus-visible,
 main:focus-visible,
@@ -296,6 +309,10 @@ button:focus-visible {
   background: var(--paper);
   color: var(--ink);
   box-shadow: 0 1.5rem 4rem rgb(38 51 46 / 24%);
+}
+
+.quick-navigation-dialog[open] {
+  animation: dialog-enter 160ms ease-out;
 }
 
 .quick-navigation-dialog::backdrop {
@@ -727,6 +744,21 @@ h2 {
   background: #fff5ec;
   color: var(--ink);
   text-wrap: pretty;
+  animation: status-arrival 180ms ease-out;
+}
+
+@keyframes dialog-enter {
+  from {
+    opacity: 0;
+    transform: translateY(0.25rem) scale(0.99);
+  }
+}
+
+@keyframes status-arrival {
+  from {
+    opacity: 0;
+    transform: translateY(-0.25rem);
+  }
 }
 
 .brief-content {
@@ -1701,7 +1733,10 @@ h2 {
   *,
   *::before,
   *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
     scroll-behavior: auto;
+    transition-duration: 0.001ms !important;
   }
 }
 
