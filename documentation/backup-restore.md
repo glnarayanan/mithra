@@ -6,7 +6,7 @@ final snapshot. SQLite passes `quick_check` and a full WAL checkpoint, then a
 native SQLite snapshot is created. Every archived file has an exact size and
 SHA-256 digest. A manifest records the retained-key fingerprint and complete
 generation digest and is authenticated with a key derived from the master key.
-The key and Resend credential are never archived. The timer retains the seven
+The key and Plunk credential are never archived. The timer retains the seven
 most recent successfully committed archives.
 
 ```bash

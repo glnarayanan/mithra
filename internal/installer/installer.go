@@ -42,7 +42,7 @@ type Options struct {
 	Proxy         ProxyMode
 	Port          int
 	AllowedEmails []string
-	ResendFrom    string
+	PlunkFrom     string
 	Archive       string
 	ConfirmPurge  bool
 }
@@ -85,10 +85,10 @@ type Plan struct {
 }
 
 type Paths struct {
-	Root, Binary, Installer, Version, Config, Credentials, MasterKey, ResendKey string
-	Data, Database, Sources, Journal, Backups                                   string
-	Service, BackupService, BackupTimer, Socket, Proxy                          string
-	OwnedManifest                                                               string
+	Root, Binary, Installer, Version, Config, Credentials, MasterKey, PlunkKey string
+	Data, Database, Sources, Journal, Backups                                  string
+	Service, BackupService, BackupTimer, Socket, Proxy                         string
+	OwnedManifest                                                              string
 }
 
 func OwnedPaths(root string, proxy ProxyMode) Paths {
@@ -112,7 +112,7 @@ func OwnedPaths(root string, proxy ProxyMode) Paths {
 	}
 	return Paths{
 		Root: root, Binary: join("/usr/local/bin/mithra"), Installer: join("/usr/local/bin/mithra-installer"), Version: join("/etc/mithra/version"),
-		Config: join("/etc/mithra/mithra.env"), Credentials: join("/etc/mithra/credentials"), MasterKey: join("/etc/mithra/credentials/master.key"), ResendKey: join("/etc/mithra/credentials/resend.key"),
+		Config: join("/etc/mithra/mithra.env"), Credentials: join("/etc/mithra/credentials"), MasterKey: join("/etc/mithra/credentials/master.key"), PlunkKey: join("/etc/mithra/credentials/plunk.key"),
 		Data: join("/var/lib/mithra"), Database: join("/var/lib/mithra/mithra.sqlite3"), Sources: join("/var/lib/mithra/sources"), Journal: join("/var/lib/mithra/deletion.journal"), Backups: join("/var/backups/mithra"),
 		Service: join("/etc/systemd/system/mithra.service"), BackupService: join("/etc/systemd/system/mithra-backup.service"), BackupTimer: join("/etc/systemd/system/mithra-backup.timer"), Socket: join("/run/mithra/mithra.sock"), Proxy: proxyPath, OwnedManifest: join("/etc/mithra/owned-files.json"),
 	}
@@ -185,11 +185,11 @@ func BuildPlan(opts Options, facts HostFacts) (Plan, error) {
 				return Plan{}, fmt.Errorf("invalid allowlisted email %q", email)
 			}
 		}
-		parsed, err := mail.ParseAddress(strings.TrimSpace(opts.ResendFrom))
+		parsed, err := mail.ParseAddress(strings.TrimSpace(opts.PlunkFrom))
 		if err != nil || parsed.Address == "" {
-			return Plan{}, errors.New("a valid Resend sender identity is required")
+			return Plan{}, errors.New("a valid Plunk sender identity is required")
 		}
-		opts.ResendFrom = parsed.String()
+		opts.PlunkFrom = parsed.String()
 	}
 	if opts.Operation == Upgrade || opts.Operation == Reconfigure {
 		if !facts.MithraInstalled || !facts.DBExists || !facts.KeyExists || !facts.BackupExists || !facts.MigrationClean || !facts.SQLiteClean || !facts.KeyMatches {
@@ -216,8 +216,8 @@ func BuildPlan(opts Options, facts HostFacts) (Plan, error) {
 		plan.Actions = []string{"verify signed release", "create pre-mutation backup", "rehearse migrations", "drain service", "capture final generation", "activate atomically", "verify health or roll back"}
 		plan.Mutations = []string{paths.Binary, paths.Installer, paths.Version, paths.Service, paths.OwnedManifest}
 	case Reconfigure:
-		plan.Actions = []string{"verify current recovery evidence", "create pre-mutation backup", "stage configuration and Resend credential", "validate proxy", "activate atomically or roll back"}
-		plan.Mutations = []string{paths.Config, paths.ResendKey, paths.Service, paths.Proxy, paths.OwnedManifest}
+		plan.Actions = []string{"verify current recovery evidence", "create pre-mutation backup", "stage configuration and Plunk credential", "validate proxy", "activate atomically or roll back"}
+		plan.Mutations = []string{paths.Config, paths.PlunkKey, paths.Service, paths.Proxy, paths.OwnedManifest}
 	case Backup:
 		plan.Actions = []string{"drain mutations", "snapshot one database/source/journal generation", "authenticate manifest", "rotate successful archives"}
 		plan.Mutations = []string{paths.Backups}
@@ -225,7 +225,7 @@ func BuildPlan(opts Options, facts HostFacts) (Plan, error) {
 		plan.Actions = []string{"verify and extract into staging", "reconcile deletion journal", "clear access and provider state", "apply current allowlist", "activate atomically", "verify health or roll back"}
 		plan.Mutations = []string{paths.Data}
 	case Uninstall:
-		plan.Actions = []string{"stop service", "remove owned runtime and Resend credential", "preserve recovery state"}
+		plan.Actions = []string{"stop service", "remove owned runtime and Plunk credential", "preserve recovery state"}
 		plan.Mutations = ownedRuntime(paths)
 	case Purge:
 		if !opts.ConfirmPurge {
@@ -262,7 +262,7 @@ func validOperation(op Operation) bool {
 }
 
 func ownedRuntime(p Paths) []string {
-	return []string{p.Binary, p.Installer, p.Version, p.Config, p.ResendKey, p.Service, p.BackupService, p.BackupTimer, p.Proxy, p.OwnedManifest}
+	return []string{p.Binary, p.Installer, p.Version, p.Config, p.PlunkKey, p.Service, p.BackupService, p.BackupTimer, p.Proxy, p.OwnedManifest}
 }
 
 func isOwnedPath(path string, p Paths) bool {

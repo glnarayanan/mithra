@@ -38,7 +38,7 @@ directory and never edits the global Caddyfile.
 
 ```bash
 mithra-installer plan \
-  --domain family.example.com \
+  --domain mithrahq.com \
   --proxy caddy \
   --allowed-emails owner@example.com,partner@example.com
 ```
@@ -46,21 +46,22 @@ mithra-installer plan \
 ## Install and reconfigure
 
 Download the release `install.sh`, inspect it, set an exact tag, and provide the
-Resend credential through an existing `0600` file:
+Plunk credential through an existing `0600` file. The sender domain must first
+be verified in Plunk:
 
 ```bash
 MITHRA_VERSION=v1.0.0 sh install.sh \
-  --domain family.example.com \
+  --domain mithrahq.com \
   --proxy caddy \
   --allowed-emails owner@example.com,partner@example.com \
-  --resend-from 'Mithra <mithra@example.com>' \
-  --resend-key-file /root/mithra-resend.key
+  --plunk-from 'Mithra <hello@mithrahq.com>' \
+  --plunk-key-file /root/mithrahq-plunk.key
 ```
 
-The service receives the master and Resend credentials through systemd
+The service receives the master and Plunk credentials through systemd
 `LoadCredential`; neither is placed in ordinary environment values, command
 arguments, logs, backups, or the ownership manifest. Reconfigure replaces the
-Resend credential atomically and preserves the independently retained master
+Plunk credential atomically and preserves the independently retained master
 key and all household data. Upgrade and reconfigure require a recognized
 migration history, clean SQLite, matching key evidence, and a verified
 pre-mutation backup. Files are staged before activation and restored if service
@@ -77,7 +78,7 @@ listener or socket, latest backup, timer, credential presence without values,
 and whether data remains preserved.
 
 `mithra-installer uninstall` removes only runtime binaries, service/timer,
-non-secret configuration, the Resend credential, and Mithra's proxy fragment.
+non-secret configuration, the Plunk credential, and Mithra's proxy fragment.
 It preserves the database, encrypted sources, deletion journal, backups, and
 master key. `purge` prints and requires confirmation of the exact Mithra data,
 backup, and master-key targets. It does not use a wildcard and cannot target an

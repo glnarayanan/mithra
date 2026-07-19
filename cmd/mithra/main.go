@@ -68,8 +68,8 @@ func run(args []string) error {
 	sourceRoot := flags.String("source-dir", environmentDefault("MITHRA_SOURCE_DIR", "data/sources"), "encrypted source directory")
 	allowedRaw := flags.String("allowed-emails", environmentDefault("ALLOWED_EMAILS", ""), "comma-separated allowed adult emails")
 	originRaw := flags.String("origin", environmentDefault("MITHRA_CANONICAL_ORIGIN", ""), "canonical browser origin")
-	resendKeyFile := flags.String("resend-key-file", environmentDefault("MITHRA_RESEND_KEY_FILE", ""), "Resend credential file")
-	resendFrom := flags.String("resend-from", environmentDefault("MITHRA_RESEND_FROM", ""), "Resend sender identity")
+	plunkKeyFile := flags.String("plunk-key-file", environmentDefault("MITHRA_PLUNK_KEY_FILE", ""), "Plunk credential file")
+	plunkFrom := flags.String("plunk-from", environmentDefault("MITHRA_PLUNK_FROM", ""), "Plunk sender identity")
 	masterKeyFile := flags.String("master-key-file", environmentDefault("MITHRA_MASTER_KEY_FILE", ""), "Mithra master-key credential file")
 	pdfParserSocket := flags.String("pdf-parser-socket", environmentDefault("MITHRA_PDF_PARSER_SOCKET", "/run/mithra/pdf-parser.sock"), "isolated PDF parser Unix socket")
 	if err := flags.Parse(args); err != nil {
@@ -100,13 +100,13 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	credential, err := readCredentialFile(*resendKeyFile)
+	credential, err := readCredentialFile(*plunkKeyFile)
 	if err != nil {
 		return err
 	}
-	mailer, err := providers.NewResend(providers.ResendConfig{APIKey: credential, From: strings.TrimSpace(*resendFrom)})
+	mailer, err := providers.NewPlunk(providers.PlunkConfig{APIKey: credential, From: strings.TrimSpace(*plunkFrom)})
 	if err != nil {
-		return errors.New("Resend configuration is invalid")
+		return errors.New("Plunk configuration is invalid")
 	}
 	masterCredential, err := readCredentialFile(*masterKeyFile)
 	if err != nil {
@@ -358,28 +358,28 @@ func secureCookiesForOrigin(raw string) (bool, error) {
 
 func readCredentialFile(path string) (string, error) {
 	if !filepath.IsAbs(strings.TrimSpace(path)) {
-		return "", errors.New("Resend credential file is invalid")
+		return "", errors.New("credential file is invalid")
 	}
 	pathInfo, err := os.Lstat(path)
 	if err != nil || !pathInfo.Mode().IsRegular() || pathInfo.Mode()&os.ModeSymlink != 0 || pathInfo.Mode().Perm()&0o077 != 0 {
-		return "", errors.New("Resend credential file is invalid")
+		return "", errors.New("credential file is invalid")
 	}
 	stat, ok := pathInfo.Sys().(*syscall.Stat_t)
 	if !ok || stat.Uid != uint32(os.Geteuid()) {
-		return "", errors.New("Resend credential file is invalid")
+		return "", errors.New("credential file is invalid")
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return "", errors.New("Resend credential file is invalid")
+		return "", errors.New("credential file is invalid")
 	}
 	defer file.Close()
 	openedInfo, err := file.Stat()
 	if err != nil || !os.SameFile(pathInfo, openedInfo) {
-		return "", errors.New("Resend credential file is invalid")
+		return "", errors.New("credential file is invalid")
 	}
 	value, err := io.ReadAll(io.LimitReader(file, maxCredentialBytes+1))
 	if err != nil || len(value) > maxCredentialBytes || strings.TrimSpace(string(value)) == "" {
-		return "", errors.New("Resend credential file is invalid")
+		return "", errors.New("credential file is invalid")
 	}
 	return strings.TrimSpace(string(value)), nil
 }

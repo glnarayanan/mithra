@@ -19,7 +19,7 @@ visual-PDF fallback is confirmed.
 
 ## Run locally
 
-Copy `.env.example` to `.env`, replace its placeholders, and create the Resend
+Copy `.env.example` to `.env`, replace its placeholders, and create the Plunk
 and master-key credential files as absolute, service-user-owned `0600` files.
 The master-key file contains one base64url-encoded 32-byte random key and must be
 retained independently for recovery. Mithra does not parse `.env`; load it

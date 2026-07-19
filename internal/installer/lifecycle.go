@@ -50,9 +50,9 @@ type OwnedFile struct {
 }
 
 type StatusReport struct {
-	Installed, Database, DataPreserved, BackupTimer, BackupTimerActive, ServiceHealthy, MasterKey, ResendCredential bool
-	Version, Listener, LastBackup, SocketMode                                                                       string
-	SocketUID, SocketGID                                                                                            uint32
+	Installed, Database, DataPreserved, BackupTimer, BackupTimerActive, ServiceHealthy, MasterKey, PlunkCredential bool
+	Version, Listener, LastBackup, SocketMode                                                                      string
+	SocketUID, SocketGID                                                                                           uint32
 }
 
 func DatabasePreflight(ctx context.Context, path string) error {
@@ -105,11 +105,11 @@ func VerifyBackupArchive(archive string, masterKey []byte) error {
 }
 
 type ReleaseInstall struct {
-	ArtifactName, InstallerName, ResendCredential string
-	Artifact, Installer                           []byte
-	Manifest, Signature                           []byte
-	PublisherKey                                  ed25519.PublicKey
-	Validate                                      func() error
+	ArtifactName, InstallerName, PlunkCredential string
+	Artifact, Installer                          []byte
+	Manifest, Signature                          []byte
+	PublisherKey                                 ed25519.PublicKey
+	Validate                                     func() error
 }
 
 // InstallRelease verifies publisher trust before creating or replacing any
@@ -140,12 +140,12 @@ func InstallRelease(plan Plan, release ReleaseInstall) error {
 		files = append(files,
 			OwnedFile{Path: paths.Binary, Mode: 0o755, Content: release.Artifact}, OwnedFile{Path: paths.Installer, Mode: 0o755, Content: release.Installer},
 			OwnedFile{Path: paths.Version, Mode: 0o644, Content: []byte(releaseManifest.Version + "\n")},
-			OwnedFile{Path: paths.Config, Mode: 0o640, Content: []byte(RuntimeConfig(plan))}, OwnedFile{Path: paths.ResendKey, Mode: 0o600, Content: []byte(strings.TrimSpace(release.ResendCredential))},
+			OwnedFile{Path: paths.Config, Mode: 0o640, Content: []byte(RuntimeConfig(plan))}, OwnedFile{Path: paths.PlunkKey, Mode: 0o600, Content: []byte(strings.TrimSpace(release.PlunkCredential))},
 			OwnedFile{Path: paths.Service, Mode: 0o644, Content: []byte(ServiceUnit())}, OwnedFile{Path: paths.BackupService, Mode: 0o644, Content: []byte(BackupServiceUnit())}, OwnedFile{Path: paths.BackupTimer, Mode: 0o644, Content: []byte(BackupTimerUnit())})
 	case Upgrade:
 		files = append(files, OwnedFile{Path: paths.Binary, Mode: 0o755, Content: release.Artifact}, OwnedFile{Path: paths.Installer, Mode: 0o755, Content: release.Installer}, OwnedFile{Path: paths.Version, Mode: 0o644, Content: []byte(releaseManifest.Version + "\n")}, OwnedFile{Path: paths.Service, Mode: 0o644, Content: []byte(ServiceUnit())})
 	case Reconfigure:
-		files = append(files, OwnedFile{Path: paths.Config, Mode: 0o640, Content: []byte(RuntimeConfig(plan))}, OwnedFile{Path: paths.ResendKey, Mode: 0o600, Content: []byte(strings.TrimSpace(release.ResendCredential))}, OwnedFile{Path: paths.Service, Mode: 0o644, Content: []byte(ServiceUnit())})
+		files = append(files, OwnedFile{Path: paths.Config, Mode: 0o640, Content: []byte(RuntimeConfig(plan))}, OwnedFile{Path: paths.PlunkKey, Mode: 0o600, Content: []byte(strings.TrimSpace(release.PlunkCredential))}, OwnedFile{Path: paths.Service, Mode: 0o644, Content: []byte(ServiceUnit())})
 	}
 	if paths.Proxy != "" && (plan.Options.Operation == Install || plan.Options.Operation == Reconfigure) {
 		files = append(files, OwnedFile{Path: paths.Proxy, Mode: 0o644, Content: []byte(ProxyConfig(plan))})
@@ -159,8 +159,8 @@ func InstallRelease(plan Plan, release ReleaseInstall) error {
 		clear(key)
 		files = append(files, OwnedFile{Path: paths.MasterKey, Mode: 0o600, Content: []byte(encoded)})
 	}
-	if len(plan.Options.AllowedEmails) == 0 || ((plan.Options.Operation == Install || plan.Options.Operation == Reconfigure) && strings.TrimSpace(release.ResendCredential) == "") {
-		return errors.New("current allowlist and operation-required Resend credential are required")
+	if len(plan.Options.AllowedEmails) == 0 || ((plan.Options.Operation == Install || plan.Options.Operation == Reconfigure) && !strings.HasPrefix(strings.TrimSpace(release.PlunkCredential), "sk_")) {
+		return errors.New("current allowlist and operation-required Plunk credential are required")
 	}
 	return ApplyOwnedFiles(plan, files, release.Validate)
 }
@@ -484,7 +484,7 @@ func PurgeRecovery(plan Plan) error {
 }
 
 func InspectStatus(paths Paths, listener, version string) StatusReport {
-	report := StatusReport{Installed: exists(paths.Binary), Database: exists(paths.Database), DataPreserved: exists(paths.Data), BackupTimer: exists(paths.BackupTimer), MasterKey: exists(paths.MasterKey), ResendCredential: exists(paths.ResendKey), Listener: listener, Version: version}
+	report := StatusReport{Installed: exists(paths.Binary), Database: exists(paths.Database), DataPreserved: exists(paths.Data), BackupTimer: exists(paths.BackupTimer), MasterKey: exists(paths.MasterKey), PlunkCredential: exists(paths.PlunkKey), Listener: listener, Version: version}
 	if info, err := os.Lstat(paths.Socket); err == nil && info.Mode()&os.ModeSocket != 0 {
 		report.SocketMode = info.Mode().Perm().String()
 		if stat, ok := info.Sys().(*syscall.Stat_t); ok {

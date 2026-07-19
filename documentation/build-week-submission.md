@@ -53,7 +53,7 @@ runtime models are `gpt-5.4-mini` and `gpt-4o-mini-transcribe`.
 
 ## Required final fields and access
 
-- [ ] Hosted HTTPS URL remains free and available through the end of judging.
+- [ ] `https://mithrahq.com` remains free and available through the end of judging.
 - [ ] Private testing instructions contain two judge accounts and the four
   workflows in `demo-script.md`; credentials appear nowhere public.
 - [ ] Repository URL is public with an appropriate license, or the private repo

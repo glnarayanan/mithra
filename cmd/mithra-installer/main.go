@@ -52,8 +52,8 @@ func run(ctx context.Context, args []string) error {
 	artifactPath := flags.String("artifact", "", "verified Mithra binary candidate")
 	manifestPath := flags.String("manifest", "", "canonical signed release manifest")
 	signaturePath := flags.String("signature", "", "detached Ed25519 signature")
-	resendPath := flags.String("resend-key-file", "", "input Resend credential file")
-	resendFrom := flags.String("resend-from", "", "validated Resend sender identity")
+	plunkPath := flags.String("plunk-key-file", "", "input Plunk credential file")
+	plunkFrom := flags.String("plunk-from", "", "validated Plunk sender identity")
 	ownerEmail := flags.String("owner-email", "", "seed household owner email")
 	partnerEmail := flags.String("partner-email", "", "seed household partner email")
 	masterKeyPath := flags.String("master-key-file", "", "retained master-key credential file")
@@ -200,7 +200,7 @@ func run(ctx context.Context, args []string) error {
 		}
 		return json.NewEncoder(os.Stdout).Encode(report)
 	}
-	plan, err := installer.BuildPlan(installer.Options{Operation: operation, Root: *root, Domain: *domain, Proxy: installer.ProxyMode(*proxy), Port: *port, AllowedEmails: allowed, ResendFrom: *resendFrom, Archive: *archive, ConfirmPurge: *confirm}, facts)
+	plan, err := installer.BuildPlan(installer.Options{Operation: operation, Root: *root, Domain: *domain, Proxy: installer.ProxyMode(*proxy), Port: *port, AllowedEmails: allowed, PlunkFrom: *plunkFrom, Archive: *archive, ConfirmPurge: *confirm}, facts)
 	if err != nil {
 		return err
 	}
@@ -209,7 +209,7 @@ func run(ctx context.Context, args []string) error {
 	}
 	switch operation {
 	case installer.Install, installer.Upgrade, installer.Reconfigure:
-		return installRelease(ctx, plan, *artifactPath, *manifestPath, *signaturePath, *resendPath)
+		return installRelease(ctx, plan, *artifactPath, *manifestPath, *signaturePath, *plunkPath)
 	case installer.Uninstall:
 		if *root == "/" {
 			if output, stopErr := exec.CommandContext(ctx, "systemctl", "disable", "--now", "mithra.service", "mithra-backup.timer").CombinedOutput(); stopErr != nil {
@@ -235,9 +235,9 @@ func run(ctx context.Context, args []string) error {
 	}
 }
 
-func installRelease(ctx context.Context, plan installer.Plan, artifactPath, manifestPath, signaturePath, resendPath string) error {
-	if artifactPath == "" || manifestPath == "" || signaturePath == "" || ((plan.Options.Operation == installer.Install || plan.Options.Operation == installer.Reconfigure) && resendPath == "") {
-		return errors.New("artifact, manifest, signature, and operation-required resend-key-file are required")
+func installRelease(ctx context.Context, plan installer.Plan, artifactPath, manifestPath, signaturePath, plunkPath string) error {
+	if artifactPath == "" || manifestPath == "" || signaturePath == "" || ((plan.Options.Operation == installer.Install || plan.Options.Operation == installer.Reconfigure) && plunkPath == "") {
+		return errors.New("artifact, manifest, signature, and operation-required plunk-key-file are required")
 	}
 	key, err := installer.DecodePublisherKey(publisherKeyBase64)
 	if err != nil {
@@ -255,9 +255,9 @@ func installRelease(ctx context.Context, plan installer.Plan, artifactPath, mani
 	if err != nil {
 		return err
 	}
-	var resend []byte
-	if resendPath != "" {
-		resend, err = readBounded(resendPath, 8<<10)
+	var plunk []byte
+	if plunkPath != "" {
+		plunk, err = readBounded(plunkPath, 8<<10)
 		if err != nil {
 			return err
 		}
@@ -302,7 +302,7 @@ func installRelease(ctx context.Context, plan installer.Plan, artifactPath, mani
 			freshDirectories[directory] = pathExists(directory)
 		}
 	}
-	if err := installer.InstallRelease(plan, installer.ReleaseInstall{ArtifactName: filepath.Base(artifactPath), InstallerName: filepath.Base(self), Artifact: artifact, Installer: installerBinary, Manifest: manifest, Signature: signature, PublisherKey: key, ResendCredential: string(resend), Validate: validate}); err != nil {
+	if err := installer.InstallRelease(plan, installer.ReleaseInstall{ArtifactName: filepath.Base(artifactPath), InstallerName: filepath.Base(self), Artifact: artifact, Installer: installerBinary, Manifest: manifest, Signature: signature, PublisherKey: key, PlunkCredential: string(plunk), Validate: validate}); err != nil {
 		if rollbackArchive != "" {
 			_ = exec.CommandContext(ctx, "systemctl", "stop", "mithra.service").Run()
 			rollbackErr := installer.RestoreGeneration(paths, rollbackArchive, masterKey, func() error {

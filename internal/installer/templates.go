@@ -14,7 +14,7 @@ func RuntimeConfig(plan Plan) string {
 		"ALLOWED_EMAILS=" + strings.Join(emails, ","),
 		"MITHRA_DB=/var/lib/mithra/mithra.sqlite3",
 		"MITHRA_SOURCE_DIR=/var/lib/mithra/sources",
-		"MITHRA_RESEND_FROM=" + strconv.Quote(plan.Options.ResendFrom),
+		"MITHRA_PLUNK_FROM=" + strconv.Quote(plan.Options.PlunkFrom),
 	}
 	if plan.Proxy == AppOnly {
 		lines = append(lines, "MITHRA_ADDR="+plan.Listener)
@@ -36,9 +36,9 @@ User=mithra
 Group=mithra
 EnvironmentFile=/etc/mithra/mithra.env
 LoadCredential=master.key:/etc/mithra/credentials/master.key
-LoadCredential=resend.key:/etc/mithra/credentials/resend.key
+LoadCredential=plunk.key:/etc/mithra/credentials/plunk.key
 Environment=MITHRA_MASTER_KEY_FILE=%d/master.key
-Environment=MITHRA_RESEND_KEY_FILE=%d/resend.key
+Environment=MITHRA_PLUNK_KEY_FILE=%d/plunk.key
 ExecStart=/usr/local/bin/mithra
 RuntimeDirectory=mithra
 RuntimeDirectoryMode=0750

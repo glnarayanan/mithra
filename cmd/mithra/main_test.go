@@ -267,21 +267,21 @@ func TestDecodeMasterKeyRequiresThirtyTwoRandomBytes(t *testing.T) {
 
 func TestReadCredentialFileRequiresPrivateStableRegularFile(t *testing.T) {
 	directory := t.TempDir()
-	path := filepath.Join(directory, "resend")
-	if err := os.WriteFile(path, []byte("  re_test_secret\n"), 0o600); err != nil {
+	path := filepath.Join(directory, "plunk")
+	if err := os.WriteFile(path, []byte("  sk_test_secret\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	value, err := readCredentialFile(path)
-	if err != nil || value != "re_test_secret" {
+	if err != nil || value != "sk_test_secret" {
 		t.Fatalf("read private credential = %q, %v", value, err)
 	}
 	if err := os.Chmod(path, 0o640); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readCredentialFile(path); err == nil || strings.Contains(err.Error(), path) || strings.Contains(err.Error(), "re_test_secret") {
+	if _, err := readCredentialFile(path); err == nil || strings.Contains(err.Error(), path) || strings.Contains(err.Error(), "sk_test_secret") {
 		t.Fatalf("permissive credential error = %v", err)
 	}
-	link := filepath.Join(directory, "resend-link")
+	link := filepath.Join(directory, "plunk-link")
 	if err := os.Symlink(path, link); err != nil {
 		t.Fatal(err)
 	}

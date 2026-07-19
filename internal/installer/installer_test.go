@@ -28,7 +28,7 @@ func TestBuildPlanCoversProxyAndOperationPreconditionsWithoutArivuMutation(t *te
 	facts := healthyFacts()
 	facts.ArivuPaths = []string{filepath.Join(root, "etc/arivu"), filepath.Join(root, "var/lib/arivu")}
 	for _, mode := range []ProxyMode{AppOnly, Caddy, Nginx, Apache} {
-		plan, err := BuildPlan(Options{Operation: Install, Root: root, Domain: "home.example", Proxy: mode, Port: 18090, AllowedEmails: []string{"owner@example.com"}, ResendFrom: "Mithra <mail@example.com>"}, facts)
+		plan, err := BuildPlan(Options{Operation: Install, Root: root, Domain: "home.example", Proxy: mode, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}, facts)
 		if err != nil {
 			t.Fatalf("%s plan: %v", mode, err)
 		}
@@ -101,7 +101,7 @@ func TestAtomicOwnedApplyRollsBackAndLeavesArivuByteStable(t *testing.T) {
 	}
 	before, _ := os.ReadFile(arivu)
 	facts := healthyFacts()
-	plan, err := BuildPlan(Options{Operation: Install, Root: root, Proxy: AppOnly, Port: 18090, AllowedEmails: []string{"owner@example.com"}, ResendFrom: "Mithra <mail@example.com>"}, facts)
+	plan, err := BuildPlan(Options{Operation: Install, Root: root, Proxy: AppOnly, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}, facts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestAtomicOwnedApplyRejectsSymlinkedParent(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(root, "etc")); err != nil {
 		t.Fatal(err)
 	}
-	plan, err := BuildPlan(Options{Operation: Install, Root: root, Proxy: AppOnly, Port: 18090, AllowedEmails: []string{"owner@example.com"}, ResendFrom: "Mithra <mail@example.com>"}, healthyFacts())
+	plan, err := BuildPlan(Options{Operation: Install, Root: root, Proxy: AppOnly, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}, healthyFacts())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestArivuBaselineDetectsImmutableArtifactChange(t *testing.T) {
 func TestCaddyRequiresPreexistingOwnedImport(t *testing.T) {
 	facts := healthyFacts()
 	facts.CaddyImportsOwnedDir = false
-	_, err := BuildPlan(Options{Operation: Install, Root: t.TempDir(), Domain: "home.example", Proxy: Caddy, Port: 18090, AllowedEmails: []string{"owner@example.com"}, ResendFrom: "Mithra <mail@example.com>"}, facts)
+	_, err := BuildPlan(Options{Operation: Install, Root: t.TempDir(), Domain: "home.example", Proxy: Caddy, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}, facts)
 	if err == nil || !strings.Contains(err.Error(), "already import") {
 		t.Fatalf("Caddy import prerequisite = %v", err)
 	}
@@ -193,12 +193,17 @@ func TestInstallReconfigureUninstallAndConfirmedPurgePreserveExactBoundaries(t *
 	}
 	signature := ed25519.Sign(privateKey, raw)
 	facts := healthyFacts()
-	options := Options{Operation: Install, Root: root, Proxy: AppOnly, Port: 18090, AllowedEmails: []string{"owner@example.com"}, ResendFrom: "Mithra <mail@example.com>"}
+	options := Options{Operation: Install, Root: root, Proxy: AppOnly, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}
 	plan, err := BuildPlan(options, facts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	release := ReleaseInstall{ArtifactName: "mithra-linux-amd64", InstallerName: "mithra-installer-linux-amd64", Artifact: appBinary, Installer: installerBinary, Manifest: raw, Signature: signature, PublisherKey: publicKey, ResendCredential: "resend-first"}
+	release := ReleaseInstall{ArtifactName: "mithra-linux-amd64", InstallerName: "mithra-installer-linux-amd64", Artifact: appBinary, Installer: installerBinary, Manifest: raw, Signature: signature, PublisherKey: publicKey, PlunkCredential: "sk_plunk-first"}
+	invalidCredential := release
+	invalidCredential.PlunkCredential = "pk_public"
+	if err := InstallRelease(plan, invalidCredential); err == nil || !strings.Contains(err.Error(), "Plunk credential") {
+		t.Fatalf("public Plunk key accepted: %v", err)
+	}
 	if err := InstallRelease(plan, release); err != nil {
 		t.Fatal(err)
 	}
@@ -218,19 +223,19 @@ func TestInstallReconfigureUninstallAndConfirmedPurgePreserveExactBoundaries(t *
 		t.Fatal(err)
 	}
 	facts.MithraInstalled, facts.DBExists, facts.KeyExists, facts.BackupExists = true, true, true, true
-	reconfigure, err := BuildPlan(Options{Operation: Reconfigure, Root: root, Proxy: AppOnly, Port: 18090, AllowedEmails: []string{"owner@example.com"}, ResendFrom: "Mithra <new@example.com>"}, facts)
+	reconfigure, err := BuildPlan(Options{Operation: Reconfigure, Root: root, Proxy: AppOnly, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <new@example.com>"}, facts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	release.ResendCredential = "resend-rotated"
+	release.PlunkCredential = "sk_plunk-rotated"
 	if err := InstallRelease(reconfigure, release); err != nil {
 		t.Fatal(err)
 	}
 	masterAfter, _ := os.ReadFile(paths.MasterKey)
 	dataAfter, _ := os.ReadFile(dataMarker)
-	resendAfter, _ := os.ReadFile(paths.ResendKey)
-	if string(masterAfter) != string(masterBefore) || string(dataAfter) != "preserve" || string(resendAfter) != "resend-rotated" {
-		t.Fatalf("reconfigure changed recovery state master=%t data=%q resend=%q", string(masterAfter) != string(masterBefore), dataAfter, resendAfter)
+	plunkAfter, _ := os.ReadFile(paths.PlunkKey)
+	if string(masterAfter) != string(masterBefore) || string(dataAfter) != "preserve" || string(plunkAfter) != "sk_plunk-rotated" {
+		t.Fatalf("reconfigure changed recovery state master=%t data=%q plunk=%q", string(masterAfter) != string(masterBefore), dataAfter, plunkAfter)
 	}
 	uninstall, err := BuildPlan(Options{Operation: Uninstall, Root: root, Proxy: AppOnly}, facts)
 	if err != nil {
@@ -240,8 +245,8 @@ func TestInstallReconfigureUninstallAndConfirmedPurgePreserveExactBoundaries(t *
 		t.Fatal(err)
 	}
 	facts.MithraInstalled = false
-	if exists(paths.Binary) || exists(paths.ResendKey) || !exists(paths.MasterKey) || !exists(dataMarker) {
-		t.Fatalf("uninstall boundary binary=%t resend=%t key=%t data=%t", exists(paths.Binary), exists(paths.ResendKey), exists(paths.MasterKey), exists(dataMarker))
+	if exists(paths.Binary) || exists(paths.PlunkKey) || !exists(paths.MasterKey) || !exists(dataMarker) {
+		t.Fatalf("uninstall boundary binary=%t plunk=%t key=%t data=%t", exists(paths.Binary), exists(paths.PlunkKey), exists(paths.MasterKey), exists(dataMarker))
 	}
 	purge, err := BuildPlan(Options{Operation: Purge, Root: root, Proxy: AppOnly, ConfirmPurge: true}, facts)
 	if err != nil {

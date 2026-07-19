@@ -69,7 +69,7 @@ data, or an alternative authorization path.
 
 ## Email credential and logs
 
-The Resend key is read from an absolute, regular, service-user-owned credential
+The Plunk key is read from an absolute, regular, service-user-owned credential
 file with no group or other permissions. The file is bounded and checked after
 opening to prevent symlink or replacement substitution. The key is never an
 argument or ordinary environment value. The sender identity is non-secret
