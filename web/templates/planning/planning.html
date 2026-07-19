@@ -4,7 +4,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#f5efe2">
+    <meta name="theme-color" content="#062d52">
     <meta name="referrer" content="same-origin">
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/assets/styles.css">
@@ -16,7 +16,7 @@
     <a class="skip-link" href="#main-content">Skip to main content</a>
     {{template "app-shell" .}}
     <main id="main-content" tabindex="-1" class="planning-main">
-      <section class="planning-heading"><div class="page-shell planning-heading-row"><div><p class="eyebrow">Planning lens</p><h1>A bird’s-eye view.</h1><p class="introduction-copy">Goals, milestones, and household dates stay connected without becoming a generic task list. Calendar exports open for your review and never sync in the background.</p></div>{{if .Timezone}}<p class="planning-timezone">Dates shown in <strong>{{.Timezone}}</strong>.</p>{{else}}<p class="planning-timezone"><a href="/settings#timezone">Confirm a household timezone</a> before exporting timed events.</p>{{end}}</div></section>
+      <section class="planning-heading"><div class="page-shell planning-heading-row"><div><p class="eyebrow">Dates and goals</p><h1>Calendar &amp; plans</h1><p class="introduction-copy">See household dates, plans, and milestones together.</p></div>{{if .Timezone}}<p class="planning-timezone">Times shown in <strong>{{.Timezone}}</strong>.</p>{{else}}<p class="planning-timezone"><a href="/settings#timezone">Set your household timezone</a> before exporting timed events.</p>{{end}}</div></section>
       <div class="page-shell planning-content">
         {{if .Status}}<p class="status-message" role="status" aria-live="polite">{{.Status}}</p>{{end}}
         {{if .Error}}<div class="finance-error" role="alert"><p>{{.Error}}</p></div>{{end}}
@@ -33,9 +33,9 @@
           </div>
           {{end}}
           <div class="calendar-agenda{{if ne .View "agenda"}} calendar-mobile-agenda{{end}}" aria-label="Agenda for {{.PeriodLabel}}">{{if .Agenda}}{{range .Agenda}}<article class="agenda-event" id="event-{{.ID}}"><time datetime="{{.DateTime}}">{{.DateLabel}}{{if .TimeLabel}} · {{.TimeLabel}}{{end}}</time><div><h3>{{.Title}}</h3>{{if .Owner}}<p>Owned by {{.Owner}}</p>{{end}}{{if .Location}}<p>{{.Location}}</p>{{end}}{{if .Conflict}}<p class="calendar-conflict">{{.Conflict}}</p>{{end}}</div><div class="event-actions"><a href="{{.SourceURL}}">View source</a>{{if .Exportable}}<a href="{{.ICSURL}}">Download .ics</a><a href="{{.GoogleURL}}" target="_blank" rel="noopener">Open Google Calendar draft</a>{{else}}<span>Complete the date to export</span>{{end}}</div></article>{{end}}{{else}}<div class="empty-state"><p class="eyebrow">Nothing dated here</p><h3>No calendar events in this period</h3><p>Undated milestones remain with their plan until a date is recorded.</p></div>{{end}}</div>
-          <p class="calendar-sync-note">Exports are one-time drafts. Later Mithra changes will not update another calendar. <a href="/help#calendar-export">Help with calendar exports</a></p>
+          <p class="calendar-sync-note">Calendar exports are one-time copies. Changes in Mithra will not update them automatically. <a href="/help#calendar-export">Help with calendar exports</a></p>
         </section>
-        {{if .Plans}}<section class="plans-section" aria-labelledby="plans-title"><div class="section-heading"><div><p class="eyebrow">Owned plans</p><h2 id="plans-title">Plans and milestones</h2></div><p>Dependencies and constraints stay with the plan that gives them context.</p></div><div class="plan-grid">{{range .Plans}}<article class="plan-card"><p>{{.Goal}}{{if .GoalSourceURL}} · <a href="{{.GoalSourceURL}}">View goal source</a>{{end}}</p><h3>{{.Title}}</h3>{{if .SourceURL}}<a href="{{.SourceURL}}">View plan source</a>{{end}}{{if .Owner}}<p>Owned by {{.Owner}}</p>{{end}}{{if .Constraint}}<p class="plan-constraint">Constraint: {{.Constraint}}</p>{{end}}{{if .Milestones}}<ol>{{range .Milestones}}<li><span>{{.State}}</span><strong>{{.Title}}</strong>{{if .DueLabel}}<time datetime="{{.DueISO}}">{{.DueLabel}}</time>{{end}}{{if .Dependency}}<small>After {{.Dependency}}</small>{{end}}{{if .SourceURL}}<a href="{{.SourceURL}}">View milestone source</a>{{end}}</li>{{end}}</ol>{{end}}</article>{{end}}</div></section>{{end}}
+        {{if .Plans}}<section class="plans-section" aria-labelledby="plans-title"><div class="section-heading"><div><p class="eyebrow">Beyond the calendar</p><h2 id="plans-title">Plans and milestones</h2></div><p>See each plan’s goal, timing, and dependencies together.</p></div><div class="plan-grid">{{range .Plans}}<article class="plan-card"><p>{{.Goal}}{{if .GoalSourceURL}} · <a href="{{.GoalSourceURL}}">View goal source</a>{{end}}</p><h3>{{.Title}}</h3>{{if .SourceURL}}<a href="{{.SourceURL}}">View plan source</a>{{end}}{{if .Owner}}<p>Owned by {{.Owner}}</p>{{end}}{{if .Constraint}}<p class="plan-constraint">Constraint: {{.Constraint}}</p>{{end}}{{if .Milestones}}<ol>{{range .Milestones}}<li><span>{{.State}}</span><strong>{{.Title}}</strong>{{if .DueLabel}}<time datetime="{{.DueISO}}">{{.DueLabel}}</time>{{end}}{{if .Dependency}}<small>After {{.Dependency}}</small>{{end}}{{if .SourceURL}}<a href="{{.SourceURL}}">View milestone source</a>{{end}}</li>{{end}}</ol>{{end}}</article>{{end}}</div></section>{{end}}
       </div>
     </main>
   </body>
