@@ -14,8 +14,9 @@ The owner can invite the second allowlisted adult from **Settings**; the invite
 is email-bound and one-use.
 
 Use **Help** in the application for short, contextual guidance. Press
-Ctrl+K (or Command+K) for quick navigation. It only opens destinations; it
-cannot change records.
+<kbd>Ctrl</kbd>+<kbd>K</kbd> or <kbd>Command</kbd>+<kbd>K</kbd> for quick
+navigation, or press <kbd>?</kbd> to see the shortcut guide. Quick navigation
+only opens destinations; it cannot change records.
 
 ## Shared and Only you
 
@@ -39,7 +40,7 @@ instead. Recent clear captures may offer a short Undo window.
 Use **Import** for one CSV, Excel, or PDF file at a time. Mithra reads it
 locally first and proposes source-linked finance, health, or planning records.
 Correct every required value, date, unit, and source location before importing.
-Warnings ask for judgment; blockers prevent a commit. See
+Warnings ask for judgment; required corrections prevent an import. See
 [document imports](imports.md) for format limits, review, deletion, and the
 isolated PDF-parser boundary.
 
@@ -47,18 +48,17 @@ For a PDF without recoverable text, Mithra asks for one explicit visual-reading
 confirmation. Continuing sends that one encrypted source to OpenAI to read the
 visible pages; canceling sends no file and deletes the staged source.
 
-Deleting a source makes it and its dependent live records and pending work
-inaccessible together. It is not an archive action: Mithra will not make the
-deleted source available again. Recovery preserves deletion intent so an older
-backup cannot silently revive it.
+Deleting a source also removes its records and unfinished actions. It is not an
+archive action: Mithra will not make the deleted source available again.
+Recovery preserves that deletion so an older backup cannot silently revive it.
 
 ## Finance, Health, and Planning
 
-**Finance** shows recorded totals, changes, and obligations. It does not offer
-financial advice. **Health** shows stored observations, dates, and sources; it
-does not diagnose, interpret clinically, or recommend treatment. When units or
-contexts cannot be compared safely, Mithra keeps them separate until you enter
-a correction; it does not guess a conversion.
+**Finance** shows recorded totals, recent changes, and upcoming payments. It
+does not offer financial advice. **Health trends** keeps reported values,
+appointments, and routines together; it does not diagnose or recommend
+treatment. When results cannot be compared safely, Mithra keeps them separate
+until you enter a corrected value and unit.
 
 **Planning** keeps goals, milestones, constraints, and household dates
 connected. Confirm the household timezone in **Settings** before exporting
@@ -74,16 +74,15 @@ is a score, verdict, diagnosis, or relationship judgment.
 
 Opening a view does not call OpenAI. When available, an explicit refresh can
 improve wording from the records that are visible to that audience. Mithra
-keeps the deterministic view available when OpenAI is disconnected or cannot
+keeps a record-based summary available when OpenAI is disconnected or cannot
 answer. See [coaching](coaching.md) for the evidence and notification boundary.
 
 ## OpenAI and privacy
 
 OpenAI is optional. The household owner can connect, replace, or disconnect an
 OpenAI key in **Settings**. The saved key is encrypted and never displayed.
-Without it, the deterministic finance, health, and planning views still work;
-provider-dependent Capture, Import mapping, and refresh actions stay
-unavailable and queue no work.
+Without it, saved finance, health, and planning records still work. Capture,
+Import organisation, and AI refresh actions remain unavailable.
 
 For an action you request, Mithra sends only the material needed for that
 action, separates shared and private contexts, and requests `store: false`.
