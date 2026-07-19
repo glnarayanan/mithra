@@ -54,7 +54,11 @@ func (a *App) capture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodGet {
-		a.renderCapture(r, w, scope, csrf, "", "")
+		status := ""
+		if r.URL.Query().Get("discarded") == "1" {
+			status = "Capture discarded. No record was kept."
+		}
+		a.renderCapture(r, w, scope, csrf, status, "")
 		return
 	}
 	if !a.validSessionMutation(r, a.sessionCookie(r)) {
@@ -77,7 +81,7 @@ func (a *App) capture(w http.ResponseWriter, r *http.Request) {
 			a.renderCapture(r, w, scope, csrf, "", "That capture could not be discarded safely.")
 			return
 		}
-		a.renderCapture(r, w, scope, csrf, "Capture discarded. No record was kept.", "")
+		http.Redirect(w, r, "/capture?discarded=1", http.StatusSeeOther)
 	case "undo":
 		if err := a.captureRecords.Undo(r.Context(), scope, boundedField(r, "capture_id", 128)); err != nil {
 			a.renderCapture(r, w, scope, csrf, "", "Undo is no longer safe because the record changed or the undo window ended.")

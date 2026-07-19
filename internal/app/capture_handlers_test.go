@@ -103,8 +103,12 @@ func TestClarificationCanBeDiscardedWithoutAnswering(t *testing.T) {
 		t.Fatal(err)
 	}
 	discarded := serve(application, captureForm(session, url.Values{"action": {"cancel"}, "capture_id": {captureID}}))
-	if discarded.Code != http.StatusOK || !strings.Contains(discarded.Body.String(), "Capture discarded") {
+	if discarded.Code != http.StatusSeeOther || discarded.Header().Get("Location") != "/capture?discarded=1" {
 		t.Fatalf("discard response = %d %q", discarded.Code, discarded.Body.String())
+	}
+	confirmation := serve(application, coachingGET(discarded.Header().Get("Location"), session))
+	if confirmation.Code != http.StatusOK || !strings.Contains(confirmation.Body.String(), "Capture discarded") {
+		t.Fatalf("discard confirmation = %d %q", confirmation.Code, confirmation.Body.String())
 	}
 }
 
