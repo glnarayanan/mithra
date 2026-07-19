@@ -342,15 +342,16 @@ func methodNotAllowedFor(w http.ResponseWriter, allow string) {
 }
 
 var assetContentTypes = map[string]string{
-	"styles.css":  "text/css; charset=utf-8",
-	"app.js":      "application/javascript; charset=utf-8",
-	"finance.js":  "application/javascript; charset=utf-8",
-	"health.js":   "application/javascript; charset=utf-8",
-	"planning.js": "application/javascript; charset=utf-8",
-	"capture.js":  "application/javascript; charset=utf-8",
-	"brief.js":    "application/javascript; charset=utf-8",
-	"imports.js":  "application/javascript; charset=utf-8",
-	"favicon.svg": "image/svg+xml",
+	"styles.css":                 "text/css; charset=utf-8",
+	"app.js":                     "application/javascript; charset=utf-8",
+	"finance.js":                 "application/javascript; charset=utf-8",
+	"health.js":                  "application/javascript; charset=utf-8",
+	"planning.js":                "application/javascript; charset=utf-8",
+	"capture.js":                 "application/javascript; charset=utf-8",
+	"brief.js":                   "application/javascript; charset=utf-8",
+	"imports.js":                 "application/javascript; charset=utf-8",
+	"favicon.svg":                "image/svg+xml",
+	"fonts/inter-variable.woff2": "font/woff2",
 }
 
 func withHTTPGuards(next http.Handler, logger *log.Logger) http.Handler {

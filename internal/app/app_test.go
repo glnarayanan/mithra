@@ -277,6 +277,24 @@ func TestEmbeddedFaviconIsServedWithoutBrowserConsoleFallback(t *testing.T) {
 	}
 }
 
+func TestEmbeddedInterFontIsServedWithFontContentType(t *testing.T) {
+	t.Parallel()
+
+	application := newTestApp(t)
+	response := httptest.NewRecorder()
+	application.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/assets/fonts/inter-variable.woff2", nil))
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("font status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if contentType := response.Header().Get("Content-Type"); contentType != "font/woff2" {
+		t.Fatalf("font Content-Type = %q, want font/woff2", contentType)
+	}
+	if response.Body.Len() < 100_000 {
+		t.Fatalf("font body length = %d, want embedded variable font", response.Body.Len())
+	}
+}
+
 func TestEmbeddedAssetsRevalidateWithoutResendingTheirBody(t *testing.T) {
 	t.Parallel()
 

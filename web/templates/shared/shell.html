@@ -17,17 +17,21 @@
     <a class="brand" href="/" aria-label="Mithra home"><span class="brand-mark" aria-hidden="true">M</span><span>Mithra</span></a>
     <details class="mobile-navigation">
       <summary>Menu</summary>
-      <nav aria-label="Primary navigation">{{template "primary-navigation" .}}</nav>
-      <form method="post" action="/auth/logout" class="mobile-signout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button type="submit">Sign out</button></form>
+      <div class="mobile-menu-panel">
+        <nav aria-label="Primary navigation">{{template "primary-navigation" .}}</nav>
+        <form method="post" action="/auth/logout" class="mobile-signout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button type="submit">Sign out</button></form>
+      </div>
     </details>
   </header>
   <div class="app-toolbar" aria-label="Quick tools">
-    <div data-quick-navigation-mount></div>
-    <button type="button" class="shortcut-help-trigger" data-shortcut-help-trigger aria-keyshortcuts="?">Shortcuts <kbd aria-hidden="true">?</kbd></button>
-    <details class="account-menu">
-      <summary>Account</summary>
-      <div><a href="/settings">Settings</a><a href="/help">Help</a><form method="post" action="/auth/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button type="submit">Sign out</button></form></div>
-    </details>
+    <div class="toolbar-controls">
+      <div data-quick-navigation-mount></div>
+      <button type="button" class="shortcut-help-trigger" data-shortcut-help-trigger aria-keyshortcuts="?">Shortcuts <kbd aria-hidden="true">?</kbd></button>
+      <details class="account-menu">
+        <summary>Account</summary>
+        <div><a href="/settings">Settings</a><a href="/help">Help</a><form method="post" action="/auth/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button type="submit">Sign out</button></form></div>
+      </details>
+    </div>
   </div>
 </div>
 {{end}}
