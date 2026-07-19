@@ -78,7 +78,7 @@ func TestCSVImportSendsExtractedTextThenCommitsAtomically(t *testing.T) {
 	}
 	preparedDelete := serve(application, importForm(session, url.Values{"action": {"prepare_delete"}, "import_id": {importID}}))
 	deleteMatch := regexp.MustCompile(`name="deletion_token" value="([a-f0-9]+)"`).FindStringSubmatch(preparedDelete.Body.String())
-	if !strings.Contains(preparedDelete.Body.String(), "1 active records") || len(deleteMatch) != 2 {
+	if !strings.Contains(preparedDelete.Body.String(), "linked to 1 records") || len(deleteMatch) != 2 {
 		t.Fatalf("delete impact = %q", preparedDelete.Body.String())
 	}
 	deleted := serve(application, importForm(session, url.Values{"action": {"delete_confirm"}, "import_id": {importID}, "deletion_token": {deleteMatch[1]}}))
@@ -125,7 +125,7 @@ func TestImportBlockerRequiresUserCorrectionAndRevisionFence(t *testing.T) {
 
 	values := url.Values{"action": {"correct"}, "import_id": {id}, "version": {"1"}, "field_0-subject": {"Alex"}, "field_0-analyte": {"HbA1c"}, "field_0-observed_on": {"2026-07-02"}, "field_0-value": {"5.8"}, "field_0-unit": {"%"}}
 	corrected := serve(application, importForm(session, values))
-	if corrected.Code != http.StatusOK || !strings.Contains(corrected.Body.String(), "ready to commit") {
+	if corrected.Code != http.StatusOK || !strings.Contains(corrected.Body.String(), "ready to import") {
 		t.Fatalf("correction = %d %q", corrected.Code, corrected.Body.String())
 	}
 	committed := serve(application, importForm(session, url.Values{"action": {"commit"}, "import_id": {id}, "version": {"2"}}))

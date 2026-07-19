@@ -106,7 +106,7 @@ func TestPlanningLensRequiresSessionAndSettingsConfirmsTimezone(t *testing.T) {
 	}
 	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
 	saved := serve(application, authenticatedSettingsRequest(session, http.MethodPost, url.Values{"action": {"save_timezone"}, "timezone": {"Asia/Kolkata"}}))
-	if saved.Code != http.StatusOK || !strings.Contains(saved.Body.String(), "timezone confirmed as Asia/Kolkata") || !strings.Contains(saved.Body.String(), `value="Asia/Kolkata"`) {
+	if saved.Code != http.StatusOK || !strings.Contains(saved.Body.String(), "timezone saved as Asia/Kolkata") || !strings.Contains(saved.Body.String(), `value="Asia/Kolkata"`) {
 		t.Fatalf("saved timezone=%d %s", saved.Code, saved.Body.String())
 	}
 	bad := serve(application, authenticatedSettingsRequest(session, http.MethodPost, url.Values{"action": {"save_timezone"}, "timezone": {"Mars/Olympus"}}))

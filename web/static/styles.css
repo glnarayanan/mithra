@@ -1787,6 +1787,189 @@ h2 {
   max-width: 66ch;
 }
 
+/* Account surfaces keep operational settings readable and sign-in focused. */
+.settings-main,
+.help-main {
+  padding-bottom: clamp(3rem, 8vw, 6rem);
+}
+
+.settings-heading,
+.help-heading {
+  padding-top: clamp(2.5rem, 6vw, 4.75rem);
+}
+
+.settings-heading h1,
+.help-heading h1 {
+  max-width: none;
+  font-size: clamp(2.5rem, 6vw, 4.75rem);
+  letter-spacing: -0.055em;
+}
+
+.settings-content {
+  display: grid;
+  gap: 0;
+  padding-top: clamp(2rem, 5vw, 3.5rem);
+}
+
+.settings-content > .status-message,
+.settings-content > .form-message {
+  margin-bottom: 1.5rem;
+}
+
+.settings-section {
+  display: grid;
+  grid-template-columns: minmax(12rem, 0.7fr) minmax(18rem, 1.3fr);
+  gap: clamp(2rem, 6vw, 6rem);
+  padding: clamp(2rem, 5vw, 3.5rem) 0;
+  border-top: 0.0625rem solid var(--line);
+}
+
+.settings-section-copy p {
+  max-width: 38ch;
+  color: var(--muted-ink);
+}
+
+.settings-section-control {
+  min-width: 0;
+}
+
+.settings-section-control .member-list {
+  margin-top: 0;
+}
+
+.settings-section-control .auth-form {
+  max-width: 30rem;
+}
+
+.help-layout {
+  display: grid;
+  grid-template-columns: minmax(10rem, 0.35fr) minmax(0, 1fr);
+  gap: clamp(2rem, 7vw, 7rem);
+  padding-top: clamp(2rem, 5vw, 3.5rem);
+}
+
+.help-toc {
+  position: sticky;
+  top: 7.25rem;
+  display: grid;
+  align-self: start;
+  gap: 0.65rem;
+}
+
+.help-toc a {
+  color: var(--muted-ink);
+  text-decoration: none;
+}
+
+.help-toc a:hover {
+  color: var(--ink);
+}
+
+.help-content {
+  min-width: 0;
+}
+
+.help-content section {
+  padding: 0 0 clamp(2rem, 5vw, 3.5rem);
+  scroll-margin-top: 7rem;
+}
+
+.help-content section + section {
+  padding-top: clamp(2rem, 5vw, 3.5rem);
+  border-top: 0.0625rem solid var(--line);
+}
+
+.help-content p {
+  max-width: 68ch;
+  color: var(--muted-ink);
+}
+
+body:not(.authenticated-shell) .auth-main {
+  display: grid;
+  grid-template-columns: minmax(20rem, 0.9fr) minmax(24rem, 1.1fr);
+  width: 100%;
+  max-width: none;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+.auth-welcome {
+  display: grid;
+  align-content: space-between;
+  padding: clamp(2rem, 6vw, 5rem);
+  background: var(--navy);
+  color: white;
+}
+
+.brand-inverse,
+.brand-inverse:hover {
+  color: white;
+}
+
+.brand-inverse .brand-mark {
+  background: white;
+  color: var(--navy);
+}
+
+.auth-welcome .eyebrow,
+.auth-welcome p {
+  color: rgb(255 255 255 / 70%);
+}
+
+.auth-welcome h2 {
+  max-width: 12ch;
+  color: white;
+  font-size: clamp(2.4rem, 5vw, 4.75rem);
+  letter-spacing: -0.055em;
+}
+
+body:not(.authenticated-shell) .auth-card {
+  width: min(calc(100% - 3rem), 34rem);
+  margin: auto;
+  padding: clamp(2rem, 6vw, 4rem);
+  border: 0;
+  background: transparent;
+}
+
+body:not(.authenticated-shell) .auth-card h1 {
+  font-size: clamp(2.25rem, 5vw, 3.75rem);
+}
+
+@media (max-width: 52rem) {
+  body:not(.authenticated-shell) .auth-main {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-welcome {
+    min-height: 16rem;
+  }
+
+  .auth-welcome h2 {
+    max-width: 18ch;
+    font-size: clamp(2rem, 8vw, 3.25rem);
+  }
+}
+
+@media (max-width: 45rem) {
+  .settings-section,
+  .help-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .help-toc {
+    position: static;
+    padding-bottom: 1.5rem;
+    border-bottom: 0.0625rem solid var(--line);
+  }
+
+  .shortcut-list > div {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+}
+
 /* Capture and import use a calm two-step workspace, not a promotional hero. */
 .capture-heading,
 .imports-heading {

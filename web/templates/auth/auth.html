@@ -4,7 +4,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#f5efe2">
+    <meta name="theme-color" content="#062d52">
     <meta name="referrer" content="same-origin">
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/assets/styles.css">
@@ -12,11 +12,10 @@
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to main content</a>
-    <header class="site-header"><div class="page-shell header-content"><a class="brand" href="/auth/login" aria-label="Mithra sign in"><span class="brand-mark" aria-hidden="true">M</span><span>Mithra</span></a></div></header>
     <main id="main-content" tabindex="-1" class="auth-main">
+      <section class="auth-welcome" aria-label="Mithra"><a class="brand brand-inverse" href="/auth/login" aria-label="Mithra sign in"><span class="brand-mark" aria-hidden="true">M</span><span>Mithra</span></a><div><p class="eyebrow">A calmer household view</p><h2>Health, money, and plans—together.</h2><p>Private by default. Shared when you choose.</p></div></section>
       <section class="auth-card" aria-labelledby="page-title">
-        <p class="eyebrow">Private household space</p>
-        <h1 id="page-title">{{.Heading}}</h1>
+        <p class="eyebrow">Your household</p><h1 id="page-title">{{.Heading}}</h1>
         {{if .Copy}}<p class="introduction-copy">{{.Copy}}</p>{{end}}
         {{if .Status}}<p class="status-message" role="status" aria-live="polite">{{.Status}}</p>{{end}}
         {{if .Error}}<p class="form-message form-error" role="alert">{{.Error}}</p>{{end}}

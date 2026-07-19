@@ -4,7 +4,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#f5efe2">
+    <meta name="theme-color" content="#062d52">
     <meta name="referrer" content="same-origin">
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/assets/styles.css">
@@ -15,67 +15,15 @@
   <body class="authenticated-shell">
     <a class="skip-link" href="#main-content">Skip to main content</a>
     {{template "app-shell" .}}
-    <main id="main-content" tabindex="-1" class="auth-main">
-      <section class="auth-card" aria-labelledby="page-title">
-        <p class="eyebrow">Household settings</p>
-        <h1 id="page-title">The adults in this household</h1>
-        <ul class="member-list">{{range .Members}}<li><span class="member-email">{{.Email}}</span><span class="member-meta">{{if eq .Role "owner"}}Owner{{else}}Partner{{end}} · {{.Status}}</span></li>{{end}}</ul>
+    <main id="main-content" tabindex="-1" class="settings-main">
+      <header class="page-shell settings-heading"><p class="eyebrow">Your household</p><h1 id="page-title">Settings</h1><p class="introduction-copy">Manage household access, calendar time, and Mithra’s optional AI connection.</p></header>
+      <div class="page-shell settings-content">
         {{if .Status}}<p class="status-message" role="status" aria-live="polite">{{.Status}}</p>{{end}}
         {{if .Error}}<p class="form-message form-error" role="alert">{{.Error}}</p>{{end}}
-        {{if .Owner}}
-        <form method="post" action="/settings" class="auth-form">
-          <input type="hidden" name="csrf" value="{{.CSRF}}">
-          <input type="hidden" name="action" value="invite">
-          <label for="email">Invite your partner</label>
-          <input id="email" name="email" type="email" autocomplete="email" maxlength="254" required>
-          <button type="submit">Send invitation</button>
-        </form>
-        {{else}}<p class="introduction-copy">Only the household owner can send an invitation.</p>{{end}}
-        <div class="settings-divider" aria-hidden="true"></div>
-        <div id="timezone">
-          <p class="eyebrow">Household calendar</p>
-          <h2>Timezone</h2>
-          <p class="introduction-copy">Confirm the timezone Mithra should use for timed household events. Detection happens only in this browser and is not saved until you choose.</p>
-          {{if .Owner}}<form method="post" action="/settings" class="auth-form">
-            <input type="hidden" name="csrf" value="{{.CSRF}}">
-            <input type="hidden" name="action" value="save_timezone">
-            <label for="household-timezone">IANA timezone</label>
-            <input id="household-timezone" name="timezone" value="{{.Timezone}}" maxlength="64" autocomplete="off" data-timezone-input required aria-describedby="timezone-help">
-            <p id="timezone-help" class="field-help">Use a timezone such as Asia/Kolkata or Europe/London. <span data-timezone-detected hidden>The browser-detected value is ready for your confirmation.</span></p>
-            <button type="submit">Confirm timezone</button>
-          </form>{{else}}<p class="introduction-copy">{{if .Timezone}}Household dates use {{.Timezone}}.{{else}}The household owner has not confirmed a timezone yet.{{end}}</p>{{end}}
-        </div>
-        <div class="settings-divider" aria-hidden="true"></div>
-        <p class="eyebrow">AI coaching</p>
-        <h2>OpenAI connection</h2>
-        <p class="field-help"><a href="/help#openai">How Mithra uses OpenAI</a></p>
-        {{if .OpenAIConfigured}}
-        <p class="provider-state provider-connected"><span aria-hidden="true">●</span> Connected</p>
-        <p class="introduction-copy">AI capture and coaching can run when requested. The saved key is encrypted and never shown back.</p>
-        {{else}}
-        <p class="provider-state"><span aria-hidden="true">○</span> Not connected</p>
-        <p class="introduction-copy">Finance, health, and planning records still work without AI. Provider-dependent actions remain unavailable and queue no work.</p>
-        {{end}}
-        {{if .Owner}}
-        <form method="post" action="/settings" class="auth-form">
-          <input type="hidden" name="csrf" value="{{.CSRF}}">
-          <input type="hidden" name="action" value="save_openai">
-          <label for="api-key">{{if .OpenAIConfigured}}Replace OpenAI API key{{else}}OpenAI API key{{end}}</label>
-          <input id="api-key" name="api_key" type="password" autocomplete="off" minlength="16" maxlength="1024" required aria-describedby="api-key-help">
-          <p id="api-key-help" class="field-help">Mithra validates a replacement before changing the working connection.</p>
-          <button type="submit">{{if .OpenAIConfigured}}Validate and replace{{else}}Validate and connect{{end}}</button>
-        </form>
-        {{if .OpenAIConfigured}}
-        <form method="post" action="/settings" class="inline-form">
-          <input type="hidden" name="csrf" value="{{.CSRF}}">
-          <input type="hidden" name="action" value="remove_openai">
-          <button class="quiet-button" type="submit">Disconnect OpenAI</button>
-        </form>
-        {{end}}
-        {{else}}
-        <p class="introduction-copy">Only the household owner can connect or replace the OpenAI key.</p>
-        {{end}}
-      </section>
+        <section class="settings-section" aria-labelledby="household-title"><div class="settings-section-copy"><p class="eyebrow">People</p><h2 id="household-title">Household access</h2><p>Shared records are visible to both active adults. Only you records stay private.</p></div><div class="settings-section-control"><ul class="member-list">{{range .Members}}<li><span class="member-email">{{.Email}}</span><span class="member-meta">{{if eq .Role "owner"}}Owner{{else}}Partner{{end}} · {{.Status}}</span></li>{{end}}</ul>{{if .Owner}}<form method="post" action="/settings" class="auth-form"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="invite"><label for="email">Partner’s email</label><input id="email" name="email" type="email" autocomplete="email" maxlength="254" required><button type="submit">Send invitation</button></form>{{else}}<p class="field-help">Only the household owner can send an invitation.</p>{{end}}</div></section>
+        <section class="settings-section" id="timezone" aria-labelledby="timezone-title"><div class="settings-section-copy"><p class="eyebrow">Calendar</p><h2 id="timezone-title">Household timezone</h2><p>Mithra uses this for timed events and calendar exports.</p></div><div class="settings-section-control">{{if .Owner}}<form method="post" action="/settings" class="auth-form"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="save_timezone"><label for="household-timezone">Timezone</label><input id="household-timezone" name="timezone" value="{{.Timezone}}" maxlength="64" autocomplete="off" data-timezone-input required aria-describedby="timezone-help"><p id="timezone-help" class="field-help">For example, Asia/Kolkata or Europe/London. <span data-timezone-detected hidden>Your browser’s timezone is ready for you to confirm.</span></p><button type="submit">Save timezone</button></form>{{else}}<p>{{if .Timezone}}Household dates use {{.Timezone}}.{{else}}The household owner has not set a timezone yet.{{end}}</p>{{end}}</div></section>
+        <section class="settings-section" aria-labelledby="openai-title"><div class="settings-section-copy"><p class="eyebrow">Optional AI</p><h2 id="openai-title">OpenAI connection</h2><p><a href="/help#openai">How Mithra uses OpenAI</a></p></div><div class="settings-section-control">{{if .OpenAIConfigured}}<p class="provider-state provider-connected"><span aria-hidden="true">●</span> Connected</p><p class="field-help">Your key is encrypted and never shown again. AI runs only when you ask Mithra to capture, import, or refresh a summary.</p>{{else}}<p class="provider-state"><span aria-hidden="true">○</span> Not connected</p><p class="field-help">Your saved finance, health, and planning records remain available. AI features stay off.</p>{{end}}{{if .Owner}}<form method="post" action="/settings" class="auth-form"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="save_openai"><label for="api-key">{{if .OpenAIConfigured}}Replace OpenAI API key{{else}}OpenAI API key{{end}}</label><input id="api-key" name="api_key" type="password" autocomplete="off" minlength="16" maxlength="1024" required aria-describedby="api-key-help"><p id="api-key-help" class="field-help">Mithra checks the key before changing your connection.</p><button type="submit">{{if .OpenAIConfigured}}Check and replace{{else}}Check and connect{{end}}</button></form>{{if .OpenAIConfigured}}<form method="post" action="/settings" class="inline-form"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="remove_openai"><button class="quiet-button" type="submit">Disconnect OpenAI</button></form>{{end}}{{else}}<p class="field-help">Only the household owner can manage the OpenAI connection.</p>{{end}}</div></section>
+      </div>
     </main>
   </body>
 </html>

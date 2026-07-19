@@ -311,7 +311,7 @@ func (a *App) nudgeViews(ctx context.Context, scope policy.ActorScope, facts []c
 		if !ok {
 			continue
 		}
-		out = append(out, CoachingNudgeView{ID: n.ID, Title: fact.Content, Copy: "Mithra is waiting for a record update or a quick acknowledgement—nothing more.", LensURL: "/" + n.Family, LensLabel: strings.Title(n.Family), FollowUpEnabled: n.FollowUpEnabled})
+		out = append(out, CoachingNudgeView{ID: n.ID, Title: fact.Content, Copy: "Add an update when you have one, or mark this as reviewed.", LensURL: "/" + n.Family, LensLabel: strings.Title(n.Family), FollowUpEnabled: n.FollowUpEnabled})
 	}
 	return out
 }
