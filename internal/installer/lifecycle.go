@@ -48,6 +48,7 @@ type OwnedFile struct {
 	Path    string
 	Mode    fs.FileMode
 	Content []byte
+	Remove  bool
 }
 
 type StatusReport struct {
@@ -153,7 +154,14 @@ func InstallRelease(plan Plan, release ReleaseInstall) error {
 		}
 	}
 	paths := OwnedPaths(plan.Options.Root, plan.Proxy)
-	owned := append([]string(nil), plan.Mutations...)
+	owned := ownedRuntime(paths)
+	filtered := owned[:0]
+	for _, path := range owned {
+		if path != "" && !listContainsPath(filtered, path) {
+			filtered = append(filtered, path)
+		}
+	}
+	owned = filtered
 	sort.Strings(owned)
 	manifest, _ := json.Marshal(struct {
 		Version int      `json:"version"`
@@ -178,6 +186,9 @@ func InstallRelease(plan Plan, release ReleaseInstall) error {
 			return errors.New("proxy configuration domain is invalid")
 		}
 		files = append(files, OwnedFile{Path: paths.Proxy, Mode: 0o644, Content: []byte(proxyConfig)})
+	}
+	for _, path := range plan.Retired {
+		files = append(files, OwnedFile{Path: path, Remove: true})
 	}
 	if plan.Options.Operation == Install {
 		key := make([]byte, 32)
@@ -226,7 +237,7 @@ func ApplyOwnedFiles(plan Plan, files []OwnedFile, validate func() error) error 
 		return errors.Join(failures...)
 	}
 	for _, file := range files {
-		if !allowed[file.Path] || hasArivuSegment(file.Path) || file.Mode.Perm()&0o022 != 0 {
+		if !allowed[file.Path] || hasArivuSegment(file.Path) || (!file.Remove && file.Mode.Perm()&0o022 != 0) {
 			return errors.Join(fmt.Errorf("refusing unmanaged or unsafe file %s", file.Path), rollback())
 		}
 		entry := original{path: file.Path}
@@ -245,8 +256,17 @@ func ApplyOwnedFiles(plan Plan, files []OwnedFile, validate func() error) error 
 			return errors.Join(statErr, rollback())
 		}
 		originals = append(originals, entry)
-		if err := atomicWrite(file.Path, file.Content, file.Mode, plan.Options.Root); err != nil {
-			return errors.Join(err, rollback())
+		var writeErr error
+		if file.Remove {
+			writeErr = os.Remove(file.Path)
+			if errors.Is(writeErr, os.ErrNotExist) {
+				writeErr = nil
+			}
+		} else {
+			writeErr = atomicWrite(file.Path, file.Content, file.Mode, plan.Options.Root)
+		}
+		if writeErr != nil {
+			return errors.Join(writeErr, rollback())
 		}
 	}
 	if validate != nil {
@@ -348,8 +368,11 @@ func PreflightRestore(ctx context.Context, paths Paths, archive string, masterKe
 // caller quiesces the running service. The returned generation is private to
 // the installer and must be consumed or cleaned up.
 func PrepareRestore(ctx context.Context, paths Paths, archive string, masterKey []byte, allowedEmails []string, owner RestoreOwnership) (*PreparedRestore, error) {
-	if len(masterKey) != 32 || len(allowedEmails) == 0 {
+	if len(masterKey) != 32 {
 		return nil, errors.New("restore requires the retained key and current non-empty allowlist")
+	}
+	if err := validateAllowlist(allowedEmails); err != nil {
+		return nil, err
 	}
 	if err := validateRestoreOwnership(paths, owner); err != nil {
 		return nil, err

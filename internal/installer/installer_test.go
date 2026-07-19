@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -106,6 +107,97 @@ func TestOwnedProxyInferenceDoesNotInspectOtherProxyFiles(t *testing.T) {
 	}
 	if got := InferOwnedProxyMode(root); got != Caddy {
 		t.Fatalf("owned proxy = %q", got)
+	}
+}
+
+func TestReconfigureRetiresOnlyPreviousOwnedProxyFragment(t *testing.T) {
+	root := t.TempDir()
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, candidate := []byte("mithra-binary"), []byte("installer-binary")
+	appDigest, installerDigest := sha256.Sum256(app), sha256.Sum256(candidate)
+	manifest, err := CanonicalManifest(ReleaseManifest{Version: "v1.0.0", Artifacts: map[string]ReleaseArtifact{
+		"mithra-linux-amd64":           {SHA256: hex.EncodeToString(appDigest[:]), Size: int64(len(app))},
+		"mithra-installer-linux-amd64": {SHA256: hex.EncodeToString(installerDigest[:]), Size: int64(len(candidate))},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts := healthyFacts()
+	install, err := BuildPlan(Options{Operation: Install, Root: root, Domain: "home.example", Proxy: Caddy, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}, facts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := InstallRelease(install, ReleaseInstall{ArtifactName: "mithra-linux-amd64", InstallerName: "mithra-installer-linux-amd64", Artifact: app, Installer: candidate, Manifest: manifest, Signature: ed25519.Sign(privateKey, manifest), PublisherKey: publicKey, PlunkCredential: "sk_plunk-initial"}); err != nil {
+		t.Fatal(err)
+	}
+	facts.MithraInstalled, facts.DBExists, facts.KeyExists, facts.BackupExists = true, true, true, true
+	nginx, err := BuildPlan(Options{Operation: Reconfigure, Root: root, Domain: "home.example", Proxy: Nginx, PreviousProxy: Caddy, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}, facts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caddyPath, nginxPath := OwnedPaths(root, Caddy).Proxy, OwnedPaths(root, Nginx).Proxy
+	if !containsPath(nginx.Retired, caddyPath) || !containsPath(nginx.Mutations, nginxPath) {
+		t.Fatalf("proxy switch plan retired=%q mutations=%q", nginx.Retired, nginx.Mutations)
+	}
+	checks := 0
+	err = InstallRelease(nginx, ReleaseInstall{PlunkCredential: "sk_plunk-nginx", Validate: func() error {
+		checks++
+		if checks == 1 {
+			return errors.New("candidate proxy health failed")
+		}
+		return nil
+	}})
+	if err == nil || checks != 2 || !exists(caddyPath) || exists(nginxPath) {
+		t.Fatalf("failed proxy switch err=%v checks=%d caddy=%t nginx=%t", err, checks, exists(caddyPath), exists(nginxPath))
+	}
+	if err := InstallRelease(nginx, ReleaseInstall{PlunkCredential: "sk_plunk-nginx"}); err != nil {
+		t.Fatal(err)
+	}
+	if exists(caddyPath) || !exists(nginxPath) {
+		t.Fatalf("caddy->nginx fragments caddy=%t nginx=%t", exists(caddyPath), exists(nginxPath))
+	}
+	var owned struct {
+		Paths []string `json:"paths"`
+	}
+	raw, err := os.ReadFile(OwnedPaths(root, Nginx).OwnedManifest)
+	if err != nil || json.Unmarshal(raw, &owned) != nil {
+		t.Fatalf("nginx owned manifest raw=%q err=%v", raw, err)
+	}
+	if containsPath(owned.Paths, caddyPath) || !containsPath(owned.Paths, nginxPath) {
+		t.Fatalf("caddy->nginx owned manifest = %q", owned.Paths)
+	}
+	appOnly, err := BuildPlan(Options{Operation: Reconfigure, Root: root, Proxy: AppOnly, PreviousProxy: Nginx, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}, facts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsPath(appOnly.Retired, nginxPath) {
+		t.Fatalf("proxied->app-only did not retire nginx: %q", appOnly.Retired)
+	}
+	if err := InstallRelease(appOnly, ReleaseInstall{PlunkCredential: "sk_plunk-app-only"}); err != nil {
+		t.Fatal(err)
+	}
+	if exists(nginxPath) {
+		t.Fatal("proxied->app-only retained the previous Mithra nginx fragment")
+	}
+	raw, err = os.ReadFile(OwnedPaths(root, AppOnly).OwnedManifest)
+	if err != nil || json.Unmarshal(raw, &owned) != nil {
+		t.Fatalf("owned manifest raw=%q err=%v", raw, err)
+	}
+	if containsPath(owned.Paths, nginxPath) || containsPath(owned.Paths, "") {
+		t.Fatalf("owned manifest retained non-target path: %q", owned.Paths)
+	}
+}
+
+func TestPrepareRestoreRejectsMalformedAllowlistBeforeStaging(t *testing.T) {
+	paths := OwnedPaths(t.TempDir(), AppOnly)
+	if _, err := PrepareRestore(context.Background(), paths, "unreadable.mbackup", bytes.Repeat([]byte{1}, 32), []string{"owner@example.com", "not an email"}, RestoreOwnership{}); err == nil || !strings.Contains(err.Error(), "invalid allowlisted email") {
+		t.Fatalf("malformed allowlist result = %v", err)
+	}
+	if exists(filepath.Dir(paths.Data)) {
+		t.Fatal("restore preflight created a staging parent before allowlist validation")
 	}
 }
 

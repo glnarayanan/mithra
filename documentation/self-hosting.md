@@ -172,7 +172,9 @@ sudo mithra-installer reconfigure \
 ```
 
 Reconfigure also creates a pre-mutation backup and rolls back on activation
-failure. It preserves household data and the retained master key.
+failure. It preserves household data and the retained master key. When you
+change `--proxy`, Mithra removes only its exact previous proxy fragment inside
+the same rollback boundary and validates both affected proxy services.
 
 ## Restore
 

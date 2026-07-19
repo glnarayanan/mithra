@@ -3,7 +3,11 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -82,6 +86,114 @@ func TestInstalledRuntimeUsesPersistedProxyModeAndAppOrigin(t *testing.T) {
 	proxy, domain, port := installedRuntime(path)
 	if proxy != "app-only" || domain != "127.0.0.1:18091" || port != 18091 {
 		t.Fatalf("persisted runtime proxy=%q domain=%q port=%d", proxy, domain, port)
+	}
+}
+
+func TestLegacyInstallMatchesExactlyOneSignedRunningInstaller(t *testing.T) {
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	running := []byte("running-installer")
+	digest := sha256.Sum256(running)
+	manifest, err := installer.CanonicalManifest(installer.ReleaseManifest{Version: "v1.2.3", Artifacts: map[string]installer.ReleaseArtifact{
+		"mithra-installer-linux-amd64": {SHA256: hex.EncodeToString(digest[:]), Size: int64(len(running))},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	signature := ed25519.Sign(privateKey, manifest)
+	name, err := signedInstallerArtifact(manifest, signature, publicKey, running)
+	if err != nil || name != "mithra-installer-linux-amd64" {
+		t.Fatalf("legacy installer match name=%q err=%v", name, err)
+	}
+	if !isReleaseBuild("v1.2.3") || isReleaseBuild("dev") {
+		t.Fatal("release build detection is not strict")
+	}
+	duplicate, err := installer.CanonicalManifest(installer.ReleaseManifest{Version: "v1.2.3", Artifacts: map[string]installer.ReleaseArtifact{
+		"mithra-installer-linux-amd64": {SHA256: hex.EncodeToString(digest[:]), Size: int64(len(running))},
+		"mithra-installer-linux-arm64": {SHA256: hex.EncodeToString(digest[:]), Size: int64(len(running))},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := signedInstallerArtifact(duplicate, ed25519.Sign(privateKey, duplicate), publicKey, running); err == nil {
+		t.Fatal("ambiguous running installer match was accepted")
+	}
+}
+
+func TestLegacyInstallInvocationAuthenticatesAndInstallsRunningInstaller(t *testing.T) {
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	running, err := os.ReadFile(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	appPath := filepath.Join(root, "mithra-linux-amd64")
+	app := []byte("application-binary")
+	if err := os.WriteFile(appPath, app, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	appDigest, installerDigest := sha256.Sum256(app), sha256.Sum256(running)
+	manifest, err := installer.CanonicalManifest(installer.ReleaseManifest{Version: "v1.2.3", Artifacts: map[string]installer.ReleaseArtifact{
+		filepath.Base(appPath):                 {SHA256: hex.EncodeToString(appDigest[:]), Size: int64(len(app))},
+		"mithra-installer-test-running-binary": {SHA256: hex.EncodeToString(installerDigest[:]), Size: int64(len(running))},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(root, "RELEASE-MANIFEST")
+	signaturePath := filepath.Join(root, "RELEASE-MANIFEST.sig")
+	plunkPath := filepath.Join(root, "plunk.key")
+	if err := os.WriteFile(manifestPath, manifest, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(signaturePath, ed25519.Sign(privateKey, manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plunkPath, []byte("sk_plunk-test"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oldKey, oldVersion := publisherKeyBase64, buildVersion
+	publisherKeyBase64 = base64.RawStdEncoding.EncodeToString(publicKey)
+	buildVersion = "dev"
+	t.Cleanup(func() {
+		publisherKeyBase64, buildVersion = oldKey, oldVersion
+	})
+	plan, err := installer.BuildPlan(installer.Options{Operation: installer.Install, Root: root, Proxy: installer.AppOnly, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}, installer.HostFacts{OS: "linux", Arch: "amd64", Systemd: true, SQLite: true, Commands: map[string]string{}, AppPortAvailable: true, FreeBytes: 1 << 30})
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := installer.OwnedPaths(root, installer.AppOnly)
+	if err := os.MkdirAll(paths.Sources, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	db, err := database.Open(context.Background(), paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.Journal, []byte("test journal"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := installRelease(context.Background(), plan, appPath, "", manifestPath, signaturePath, "", plunkPath); err != nil {
+		t.Fatal(err)
+	}
+	installed, err := os.ReadFile(paths.Installer)
+	if err != nil || sha256.Sum256(installed) != installerDigest {
+		t.Fatalf("installed running installer digest mismatch err=%v", err)
+	}
+	if version, err := os.ReadFile(paths.Version); err != nil || string(version) != "v1.2.3\n" {
+		t.Fatalf("installed version=%q err=%v", version, err)
 	}
 }
 

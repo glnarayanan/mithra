@@ -146,6 +146,9 @@ func runParsed(ctx context.Context, parsed parsedInstallerCommand, output io.Wri
 	allowed := splitEmails(*emails)
 	basePaths := installer.OwnedPaths(*root, "")
 	configuredProxy, configuredDomain, configuredPort := installedRuntime(basePaths.Config)
+	if configuredProxy == "" {
+		configuredProxy = installer.InferOwnedProxyMode(*root)
+	}
 	if *proxy == "" && configuredProxy != "" {
 		*proxy = string(configuredProxy)
 	}
@@ -164,7 +167,7 @@ func runParsed(ctx context.Context, parsed parsedInstallerCommand, output io.Wri
 		preflightPlanFacts(ctx, operation, paths, *archive, &facts)
 	}
 	if parsed.planOnly {
-		plan, err := installer.BuildPlan(installer.Options{Operation: operation, Root: *root, Domain: *domain, Proxy: installer.ProxyMode(*proxy), Port: *port, AllowedEmails: allowed, PlunkFrom: *plunkFrom, Archive: *archive, ConfirmPurge: *confirm || operation == installer.Purge}, facts)
+		plan, err := installer.BuildPlan(installer.Options{Operation: operation, Root: *root, Domain: *domain, Proxy: installer.ProxyMode(*proxy), PreviousProxy: configuredProxy, Port: *port, AllowedEmails: allowed, PlunkFrom: *plunkFrom, Archive: *archive, ConfirmPurge: *confirm || operation == installer.Purge}, facts)
 		if err != nil {
 			return err
 		}
@@ -315,7 +318,7 @@ func runParsed(ctx context.Context, parsed parsedInstallerCommand, output io.Wri
 		}
 		return json.NewEncoder(output).Encode(report)
 	}
-	plan, err := installer.BuildPlan(installer.Options{Operation: operation, Root: *root, Domain: *domain, Proxy: installer.ProxyMode(*proxy), Port: *port, AllowedEmails: allowed, PlunkFrom: *plunkFrom, Archive: *archive, ConfirmPurge: *confirm}, facts)
+	plan, err := installer.BuildPlan(installer.Options{Operation: operation, Root: *root, Domain: *domain, Proxy: installer.ProxyMode(*proxy), PreviousProxy: configuredProxy, Port: *port, AllowedEmails: allowed, PlunkFrom: *plunkFrom, Archive: *archive, ConfirmPurge: *confirm}, facts)
 	if err != nil {
 		return err
 	}
@@ -396,17 +399,19 @@ func installRelease(ctx context.Context, plan installer.Plan, artifactPath, cand
 	var publisherKey ed25519.PublicKey
 	var err error
 	if plan.Options.Operation != installer.Reconfigure {
-		if artifactPath == "" || candidateInstallerPath == "" || manifestPath == "" || signaturePath == "" || requestedVersion == "" {
-			return errors.New("artifact, candidate-installer, manifest, signature, and release-version are required")
+		if artifactPath == "" || manifestPath == "" || signaturePath == "" {
+			return errors.New("artifact, manifest, and signature are required")
 		}
-		if buildVersion != "dev" && buildVersion != requestedVersion {
+		if plan.Options.Operation != installer.Install && (candidateInstallerPath == "" || requestedVersion == "") {
+			return errors.New("candidate-installer and release-version are required for upgrade")
+		}
+		if candidateInstallerPath != "" && requestedVersion == "" {
+			return errors.New("release-version is required with candidate-installer")
+		}
+		if candidateInstallerPath != "" && buildVersion != "dev" && buildVersion != requestedVersion {
 			return errors.New("candidate installer version does not match the requested tag")
 		}
 		artifact, err = readBounded(artifactPath, 256<<20)
-		if err != nil {
-			return err
-		}
-		candidateInstaller, err = readBounded(candidateInstallerPath, 256<<20)
 		if err != nil {
 			return err
 		}
@@ -426,11 +431,29 @@ func installRelease(ctx context.Context, plan installer.Plan, artifactPath, cand
 		if _, verifyErr := installer.VerifyRelease(manifest, signature, publisherKey, filepath.Base(artifactPath), artifact); verifyErr != nil {
 			return verifyErr
 		}
-		if verified, verifyErr := installer.VerifyRelease(manifest, signature, publisherKey, filepath.Base(candidateInstallerPath), candidateInstaller); verifyErr != nil {
-			return verifyErr
-		} else if verifyErr = installer.VerifyReleaseVersion(verified, requestedVersion, versionOf(installer.OwnedPaths(plan.Options.Root, plan.Proxy).Version)); verifyErr != nil {
+		candidateName := filepath.Base(candidateInstallerPath)
+		if candidateInstallerPath != "" {
+			candidateInstaller, err = readBounded(candidateInstallerPath, 256<<20)
+			if err != nil {
+				return err
+			}
+		} else {
+			candidateName, candidateInstaller, err = signedRunningInstaller(manifest, signature, publisherKey)
+			if err != nil {
+				return err
+			}
+		}
+		verified, verifyErr := installer.VerifyRelease(manifest, signature, publisherKey, candidateName, candidateInstaller)
+		if verifyErr != nil {
 			return verifyErr
 		}
+		if candidateInstallerPath == "" && isReleaseBuild(buildVersion) && verified.Version != buildVersion {
+			return errors.New("signed release version does not match the running installer build")
+		}
+		if verifyErr = installer.VerifyReleaseVersion(verified, requestedVersion, versionOf(installer.OwnedPaths(plan.Options.Root, plan.Proxy).Version)); verifyErr != nil {
+			return verifyErr
+		}
+		candidateInstallerPath = candidateName
 	}
 	var plunk []byte
 	if plunkPath != "" {
@@ -454,11 +477,9 @@ func installRelease(ctx context.Context, plan installer.Plan, artifactPath, cand
 			return err
 		}
 		defer clear(masterKey)
-		if plan.Options.Operation == installer.Upgrade {
-			rollbackOwner, err = serviceOwnership(plan.Options.Root)
-			if err != nil {
-				return err
-			}
+		rollbackOwner, err = serviceOwnership(plan.Options.Root)
+		if err != nil {
+			return err
 		}
 		recoveryRestart, err = quiesce(ctx, plan.Options.Root)
 		if err != nil {
@@ -482,11 +503,27 @@ func installRelease(ctx context.Context, plan installer.Plan, artifactPath, cand
 	if err := installer.InstallRelease(plan, installer.ReleaseInstall{ArtifactName: filepath.Base(artifactPath), InstallerName: filepath.Base(candidateInstallerPath), Artifact: artifact, Installer: candidateInstaller, Manifest: manifest, Signature: signature, PublisherKey: publisherKey, RequestedVersion: requestedVersion, InstalledVersion: versionOf(paths.Version), PlunkCredential: string(plunk), Validate: validate}); err != nil {
 		if rollbackArchive != "" {
 			_ = exec.CommandContext(ctx, "systemctl", "stop", "mithra.service").Run()
+			rollbackPlan := plan
+			if rollbackProxy, rollbackDomain, rollbackPort := installedRuntime(paths.Config); rollbackProxy != "" {
+				rollbackPlan.Proxy = rollbackProxy
+				rollbackPlan.Options.Domain = rollbackDomain
+				if rollbackPort != 0 {
+					rollbackPlan.Options.Port = rollbackPort
+				}
+			}
 			rollbackErr := installer.RestoreGenerationWithOwnership(paths, rollbackArchive, masterKey, rollbackOwner, func() error {
 				if plan.Options.Root != "/" {
 					return nil
 				}
-				return exec.CommandContext(ctx, "systemctl", "start", "mithra.service", "mithra-backup.timer").Run()
+				if err := exec.CommandContext(ctx, "systemctl", "start", "mithra.service", "mithra-backup.timer").Run(); err != nil {
+					return err
+				}
+				if err := waitForHealth(ctx, func(checkCtx context.Context) error {
+					return localPlanHealth(checkCtx, rollbackPlan)
+				}); err != nil {
+					return err
+				}
+				return installer.VerifyArivuBaseline(ctx, plan.Options.Root, plan.ArivuBaseline)
 			})
 			if rollbackErr != nil {
 				return errors.Join(err, rollbackErr)
@@ -572,7 +609,7 @@ func activate(ctx context.Context, plan installer.Plan) error {
 	}); err != nil {
 		return fail(err)
 	}
-	if err := validateAndReloadProxy(ctx, plan.Proxy, identity.membershipAdded); err != nil {
+	if err := validatePlanProxies(ctx, plan, identity.membershipAdded); err != nil {
 		return fail(err)
 	}
 	if plan.Proxy != installer.AppOnly {
@@ -851,6 +888,15 @@ func validateAndReloadProxy(ctx context.Context, proxy installer.ProxyMode, rest
 	return nil
 }
 
+func validatePlanProxies(ctx context.Context, plan installer.Plan, restart bool) error {
+	if plan.PreviousProxy != "" && plan.PreviousProxy != plan.Proxy {
+		if err := validateAndReloadProxy(ctx, plan.PreviousProxy, false); err != nil {
+			return err
+		}
+	}
+	return validateAndReloadProxy(ctx, plan.Proxy, restart)
+}
+
 func readMasterKey(path string) ([]byte, error) {
 	raw, err := readBounded(path, 1<<10)
 	if err != nil {
@@ -869,6 +915,45 @@ func readBounded(path string, limit int64) ([]byte, error) {
 		return nil, fmt.Errorf("invalid input file %s", path)
 	}
 	return os.ReadFile(path)
+}
+
+func signedRunningInstaller(manifest, signature []byte, publisherKey ed25519.PublicKey) (string, []byte, error) {
+	path, err := os.Executable()
+	if err != nil {
+		return "", nil, fmt.Errorf("locate running installer: %w", err)
+	}
+	binary, err := readBounded(path, 256<<20)
+	if err != nil {
+		return "", nil, fmt.Errorf("read running installer: %w", err)
+	}
+	name, err := signedInstallerArtifact(manifest, signature, publisherKey, binary)
+	if err != nil {
+		return "", nil, err
+	}
+	return name, binary, nil
+}
+
+func signedInstallerArtifact(manifest, signature []byte, publisherKey ed25519.PublicKey, binary []byte) (string, error) {
+	parsed, err := installer.ParseManifest(manifest)
+	if err != nil {
+		return "", err
+	}
+	var matches []string
+	for name := range parsed.Artifacts {
+		if strings.HasPrefix(name, "mithra-installer-") {
+			if _, err := installer.VerifyRelease(manifest, signature, publisherKey, name, binary); err == nil {
+				matches = append(matches, name)
+			}
+		}
+	}
+	if len(matches) != 1 {
+		return "", errors.New("running installer does not match exactly one signed installer artifact")
+	}
+	return matches[0], nil
+}
+
+func isReleaseBuild(version string) bool {
+	return installer.VerifyReleaseVersion(installer.ReleaseManifest{Version: version}, "", "") == nil
 }
 
 func splitEmails(value string) []string {

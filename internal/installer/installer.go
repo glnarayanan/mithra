@@ -40,6 +40,7 @@ type Options struct {
 	Root          string
 	Domain        string
 	Proxy         ProxyMode
+	PreviousProxy ProxyMode
 	Port          int
 	AllowedEmails []string
 	PlunkFrom     string
@@ -76,9 +77,11 @@ type ArivuBaseline struct {
 type Plan struct {
 	Options       Options
 	Proxy         ProxyMode
+	PreviousProxy ProxyMode
 	Listener      string
 	Actions       []string
 	Mutations     []string
+	Retired       []string
 	Preserved     []string
 	PurgeTarget   []string
 	ArivuBaseline ArivuBaseline
@@ -176,14 +179,8 @@ func BuildPlan(opts Options, facts HostFacts) (Plan, error) {
 		}
 	}
 	if opts.Operation == Install || opts.Operation == Reconfigure {
-		if len(opts.AllowedEmails) == 0 {
-			return Plan{}, errors.New("at least one allowlisted email is required")
-		}
-		for _, email := range opts.AllowedEmails {
-			parsed, err := mail.ParseAddress(strings.TrimSpace(email))
-			if err != nil || !strings.EqualFold(parsed.Address, strings.TrimSpace(email)) {
-				return Plan{}, fmt.Errorf("invalid allowlisted email %q", email)
-			}
+		if err := validateAllowlist(opts.AllowedEmails); err != nil {
+			return Plan{}, err
 		}
 		parsed, err := mail.ParseAddress(strings.TrimSpace(opts.PlunkFrom))
 		if err != nil || parsed.Address == "" {
@@ -202,7 +199,7 @@ func BuildPlan(opts Options, facts HostFacts) (Plan, error) {
 		}
 	}
 	paths := OwnedPaths(opts.Root, proxy)
-	plan := Plan{Options: opts, Proxy: proxy, Listener: "127.0.0.1:" + strconv.Itoa(opts.Port), ArivuBaseline: facts.ArivuBaseline}
+	plan := Plan{Options: opts, Proxy: proxy, PreviousProxy: opts.PreviousProxy, Listener: "127.0.0.1:" + strconv.Itoa(opts.Port), ArivuBaseline: facts.ArivuBaseline}
 	if proxy != AppOnly {
 		plan.Listener = paths.Socket
 	}
@@ -218,6 +215,18 @@ func BuildPlan(opts Options, facts HostFacts) (Plan, error) {
 	case Reconfigure:
 		plan.Actions = []string{"verify current recovery evidence", "create pre-mutation backup", "stage configuration and Plunk credential", "validate proxy", "activate atomically or roll back"}
 		plan.Mutations = []string{paths.Config, paths.PlunkKey, paths.Service, paths.Proxy, paths.OwnedManifest}
+		if plan.PreviousProxy != "" && plan.PreviousProxy != AppOnly && plan.PreviousProxy != proxy {
+			previous := OwnedPaths(opts.Root, plan.PreviousProxy).Proxy
+			if previous == "" {
+				return Plan{}, fmt.Errorf("unsupported previous proxy mode %q", plan.PreviousProxy)
+			}
+			required := map[ProxyMode]string{Caddy: "caddy", Nginx: "nginx", Apache: "apache2ctl"}[plan.PreviousProxy]
+			if facts.Commands[required] == "" {
+				return Plan{}, fmt.Errorf("missing prerequisite %s to retire the previous Mithra proxy", required)
+			}
+			plan.Retired = []string{previous}
+			plan.Mutations = append(plan.Mutations, previous)
+		}
 	case Backup:
 		plan.Actions = []string{"drain mutations", "snapshot one database/source/journal generation", "authenticate manifest", "rotate successful archives"}
 		plan.Mutations = []string{paths.Backups}
@@ -240,12 +249,27 @@ func BuildPlan(opts Options, facts HostFacts) (Plan, error) {
 		plan.Actions = []string{"report service, version, listener, backup timer, credential presence, and preserved-data state"}
 	}
 	for _, path := range plan.Mutations {
-		if hasArivuSegment(path) || !isOwnedPath(path, paths) {
+		if hasArivuSegment(path) || (!isOwnedPath(path, paths) && !listContainsPath(plan.Retired, path)) {
 			return Plan{}, fmt.Errorf("refusing unowned mutation path %s", path)
 		}
 	}
 	sort.Strings(plan.Mutations)
 	return plan, nil
+}
+
+// validateAllowlist rejects entries that cannot pass the same address rules
+// used by runtime allowlist synchronization before lifecycle work begins.
+func validateAllowlist(emails []string) error {
+	if len(emails) == 0 {
+		return errors.New("at least one allowlisted email is required")
+	}
+	for _, email := range emails {
+		parsed, err := mail.ParseAddress(strings.TrimSpace(email))
+		if err != nil || !strings.EqualFold(parsed.Address, strings.TrimSpace(email)) {
+			return fmt.Errorf("invalid allowlisted email %q", email)
+		}
+	}
+	return nil
 }
 
 func ProbeLoopback(port int) bool {
@@ -280,6 +304,15 @@ func isOwnedPath(path string, p Paths) bool {
 func hasArivuSegment(path string) bool {
 	for _, part := range strings.FieldsFunc(filepath.Clean(path), func(r rune) bool { return r == '/' || r == '\\' }) {
 		if strings.EqualFold(part, "arivu") || strings.EqualFold(part, "arivu.service") {
+			return true
+		}
+	}
+	return false
+}
+
+func listContainsPath(paths []string, target string) bool {
+	for _, path := range paths {
+		if path == target {
 			return true
 		}
 	}
