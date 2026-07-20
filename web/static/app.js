@@ -38,7 +38,6 @@
   var actionShortcuts = [
     ["B", "Open Family Brief", "/"],
     ["R", "Open Week in Review", "/review"],
-    ["C", "Capture an update", "/capture"],
     ["I", "Import a file", "/imports"],
     ["F", "Open Finance", "/finance"],
     ["H", "Open Health", "/health"],
@@ -75,6 +74,14 @@
     return !modal || modal === ownedDialog;
   }
 
+  function shouldOpenQuickCapture(event, documentRoot, ownedDialog) {
+    if (!event || event.defaultPrevented || event.repeat || event.isComposing || event.keyCode === 229 || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || String(event.key || "").toLowerCase() !== "q" || isEditableControl(event.target)) {
+      return false;
+    }
+    var modal = documentRoot && typeof documentRoot.querySelector === "function" ? documentRoot.querySelector("dialog[open], [aria-modal=\"true\"]") : null;
+    return !modal || modal === ownedDialog;
+  }
+
   function actionShortcutPath(event, documentRoot) {
     if (!event || event.defaultPrevented || event.repeat || event.isComposing || event.keyCode === 229 || !event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || isEditableControl(event.target)) {
       return "";
@@ -96,6 +103,38 @@
     if (target && typeof target.focus === "function") {
       target.focus();
     }
+  }
+
+  function installQuickCapture(root) {
+    var dialog = root.querySelector("#quick-capture");
+    var close = dialog && dialog.querySelector("[data-quick-capture-close]");
+    var textarea = dialog && dialog.querySelector("textarea[name=update]");
+    var triggers = root.querySelectorAll("[data-quick-capture-trigger]");
+    if (!dialog || !close || !textarea || !triggers.length || typeof dialog.showModal !== "function") {
+      return;
+    }
+    var previousFocus = triggers[0];
+    function closeDialog() {
+      if (dialog.open && typeof dialog.close === "function") dialog.close();
+    }
+    function openDialog(invoker) {
+      if (dialog.open) return;
+      previousFocus = invoker || root.activeElement || triggers[0];
+      dialog.showModal();
+      textarea.focus();
+    }
+    Array.prototype.forEach.call(triggers, function (trigger) {
+      trigger.addEventListener("click", function () { openDialog(trigger); });
+    });
+    close.addEventListener("click", closeDialog);
+    dialog.addEventListener("cancel", function (event) { event.preventDefault(); closeDialog(); });
+    dialog.addEventListener("close", function () { restoreFocus(previousFocus, triggers[0]); });
+    root.addEventListener("keydown", function (event) {
+      if (shouldOpenQuickCapture(event, root, dialog)) {
+        event.preventDefault();
+        openDialog(root.activeElement);
+      }
+    });
   }
 
   function installQuickNavigation(root) {
@@ -296,6 +335,7 @@
     list.className = "shortcut-list";
     [
       [shortcutModifierLabel() + " K", "Open Quick navigation"],
+      ["Q", "Add a quick update"],
       ["↑ / ↓", "Move through results"],
       ["Enter", "Open the highlighted page"],
       ["Esc", "Close a dialog"],
@@ -477,6 +517,7 @@
       });
     }
     installQuickNavigation(root);
+    installQuickCapture(root);
     installShortcutHelp(root);
     installSourcePreview(root);
     root.addEventListener("keydown", function (event) {
@@ -497,6 +538,7 @@
     restoreFocus: restoreFocus,
     setStatus: setStatus,
     shouldOpenQuickNavigation: shouldOpenQuickNavigation,
+    shouldOpenQuickCapture: shouldOpenQuickCapture,
     shouldOpenShortcutHelp: shouldOpenShortcutHelp
   });
 

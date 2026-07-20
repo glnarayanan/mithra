@@ -221,7 +221,7 @@ func TestBriefOnboardingLeadsConfiguredHouseholdsToFirstValue(t *testing.T) {
 	application.renderTemplate(context.Background(), response, "brief.html", BriefView{Navigation: navigationForPath("/"), AIConfigured: true})
 
 	body := response.Body.String()
-	for _, required := range []string{"Add your first update", "build your first Family Brief", `href="/capture"`, `href="/imports"`} {
+	for _, required := range []string{"Add your first update", "build your first Family Brief", `href="#capture"`, `href="/imports"`} {
 		if !strings.Contains(body, required) {
 			t.Fatalf("configured onboarding is missing %q", required)
 		}

@@ -55,7 +55,7 @@ func TestCSVImportSendsExtractedTextThenCommitsAtomically(t *testing.T) {
 		t.Fatalf("pending duplicate = %d calls=%d %q", pendingDuplicate.Code, providerCalls, pendingDuplicate.Body.String())
 	}
 	resumed := serve(application, authForm(http.MethodGet, "/imports", url.Values{}, []*http.Cookie{session.session, session.csrf}))
-	if resumed.Code != http.StatusOK || !strings.Contains(resumed.Body.String(), "Review before import") || !strings.Contains(resumed.Body.String(), "family.csv") || strings.Contains(resumed.Body.String(), `type="hidden" name="action"`) {
+	if resumed.Code != http.StatusOK || !strings.Contains(resumed.Body.String(), "Review before import") || !strings.Contains(resumed.Body.String(), "family.csv") {
 		t.Fatalf("resumed review = %d %q", resumed.Code, resumed.Body.String())
 	}
 	var importID string

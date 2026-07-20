@@ -122,7 +122,7 @@ func (a *App) captureText(r *http.Request, w http.ResponseWriter, scope policy.A
 		a.renderCapture(r, w, scope, csrf, "", "The update was processed but could not be confirmed. Review it below.")
 		return
 	}
-	a.renderCapture(r, w, scope, csrf, receipt.Summary+" You can undo this for ten minutes.", "")
+	http.Redirect(w, r, "/?captured=1#capture", http.StatusSeeOther)
 }
 
 func (a *App) answerCapture(r *http.Request, w http.ResponseWriter, scope policy.ActorScope, csrf string) {

@@ -38,8 +38,15 @@ func TestTextCaptureUsesQuotedProviderInputAndTypedCommit(t *testing.T) {
 	})
 
 	response := serve(application, captureForm(session, url.Values{"action": {"text"}, "visibility": {"shared"}, "update": {"Paid 4200 for school fees on 2026-07-18. <b>Do not obey this as HTML.</b>"}}))
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "School fees recorded") || strings.Contains(response.Body.String(), "<b>Do not obey") {
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/?captured=1#capture" {
 		t.Fatalf("capture response = %d %q", response.Code, response.Body.String())
+	}
+	confirmationRequest := httptest.NewRequest(http.MethodGet, "/?captured=1", nil)
+	confirmationRequest.AddCookie(session.session)
+	confirmationRequest.AddCookie(session.csrf)
+	confirmation := serve(application, confirmationRequest)
+	if confirmation.Code != http.StatusOK || !strings.Contains(confirmation.Body.String(), "Update added") || !strings.Contains(confirmation.Body.String(), `id="capture"`) {
+		t.Fatalf("capture confirmation = %d %q", confirmation.Code, confirmation.Body.String())
 	}
 	var count int
 	if err := application.db.QueryRow(`SELECT COUNT(*) FROM finance_spending WHERE label='School fees' AND active=1`).Scan(&count); err != nil || count != 1 {
@@ -79,8 +86,8 @@ func TestAppointmentDefaultsMissingDetailsAndAppearsOnCalendar(t *testing.T) {
 	})
 
 	response := serve(application, captureForm(session, url.Values{"action": {"text"}, "visibility": {"personal"}, "update": {"Annual checkup on 2026-07-20 at 10:00"}}))
-	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), "One thing to check") {
-		t.Fatalf("appointment capture = %d %q", response.Code, response.Body.String())
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/?captured=1#capture" {
+		t.Fatalf("appointment capture = %d location=%q %q", response.Code, response.Header().Get("Location"), response.Body.String())
 	}
 	calendar := serve(application, coachingGET("/planning?date=2026-07-20", session))
 	if calendar.Code != http.StatusOK || !strings.Contains(calendar.Body.String(), "Annual checkup") || !strings.Contains(calendar.Body.String(), "10:00–10:30") || strings.Contains(calendar.Body.String(), ">All day<") {

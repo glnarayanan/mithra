@@ -66,14 +66,16 @@
 .capture-composer, .capture-pending, .capture-recent { border: 0; border-radius: var(--radius); background: var(--paper); padding: var(--space-xl); box-shadow: var(--shadow-subtle); }
 .capture-composer { display: grid; grid-template-columns: minmax(12rem, .72fr) minmax(18rem, 1.35fr); gap: clamp(1.5rem, 4vw, 3.5rem); }
 .capture-text-form { min-width: 0; }
-.capture-text-form textarea { width: 100%; resize: vertical; min-height: 9rem; margin-top: .45rem; }
-.capture-form-footer { display: grid; grid-template-columns: auto minmax(11rem, 1fr) auto; gap: .7rem; align-items: center; margin-top: 1rem; }
-.capture-divider { grid-column: 1 / -1; display: flex; align-items: center; gap: 1rem; color: var(--muted, #6d655b); font-size: .88rem; }
-.capture-divider::before, .capture-divider::after { content: ""; height: 1px; flex: 1; background: var(--line, #d8cdbd); }
-.voice-capture { grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(11rem, 15rem) 1fr; align-items: center; gap: .75rem; padding: 1.1rem; border-radius: var(--radius); background: var(--base-50); }
-.voice-actions { display: flex; gap: .65rem; flex-wrap: wrap; }
-.voice-capture p { grid-column: 1 / -1; margin: .1rem 0 0; }
+.capture-text-form > label { display: grid; gap: .45rem; }
+.capture-text-form textarea { width: 100%; resize: vertical; min-height: 8rem; }
+.capture-form-footer { display: grid; grid-template-columns: minmax(11rem, 1fr) auto auto; gap: .7rem; align-items: end; margin-top: 1rem; }
+.capture-form-footer > label { display: grid; gap: .35rem; color: var(--muted-ink); font-size: .8125rem; font-weight: 700; }
+.capture-form-footer select { min-height: 2.75rem; padding: .55rem .75rem; }
+.voice-capture { display: flex; align-items: center; gap: .5rem; }
+.voice-capture p { max-width: 14rem; margin: 0; color: var(--muted-ink); font-size: .75rem; line-height: 1.25; }
 .voice-capture p[data-tone="error"] { color: #8a3326; }
+.capture-mic { display: inline-grid; width: 2.75rem; min-width: 2.75rem; padding: 0; place-items: center; border-radius: 999px; }
+.capture-mic svg { width: 1.15rem; height: 1.15rem; fill: none; stroke: currentcolor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
 .capture-pending { background: var(--accent-50); }
 .capture-answer-form { display: grid; gap: 1rem; max-width: 42rem; }
 .capture-answer-form input { display: block; width: 100%; margin-top: .45rem; }
@@ -90,8 +92,8 @@
 
 @media (max-width: 720px) {
   .capture-heading-row, .capture-composer { grid-template-columns: 1fr; }
-  .capture-form-footer, .voice-capture { grid-template-columns: 1fr; align-items: stretch; }
-  .voice-capture p, .capture-divider { grid-column: 1; }
+  .capture-form-footer { grid-template-columns: 1fr; align-items: stretch; }
+  .voice-capture { flex-wrap: wrap; }
   .capture-recent li { flex-direction: column; }
 }
 
@@ -573,6 +575,7 @@ h2 {
 }
 
 .quick-navigation-trigger,
+.quick-capture-trigger,
 .shortcut-help-trigger,
 .account-menu summary,
 .account-menu button {
@@ -592,6 +595,7 @@ h2 {
 }
 
 .quick-navigation-trigger:hover,
+.quick-capture-trigger:hover,
 .shortcut-help-trigger:hover,
 .account-menu summary:hover {
   background: var(--base-100);
@@ -602,10 +606,25 @@ h2 {
 }
 
 .quick-navigation-trigger,
+.quick-capture-trigger,
 .shortcut-help-trigger {
   display: inline-flex;
   align-items: center;
   gap: 0.75rem;
+}
+
+.quick-capture-dialog { width: min(38rem, calc(100% - 2rem)); }
+.quick-capture-panel { display: grid; gap: 1rem; }
+.quick-capture-panel form, .quick-capture-panel form > label { display: grid; gap: .5rem; }
+.quick-capture-panel textarea { width: 100%; min-height: 8rem; padding: .75rem; resize: vertical; }
+.quick-capture-footer { display: grid; grid-template-columns: minmax(11rem, 1fr) auto auto; gap: .75rem; align-items: end; }
+.quick-capture-footer > label { display: grid; gap: .35rem; color: var(--muted-ink); font-size: .8125rem; font-weight: 700; }
+.quick-capture-footer select { min-height: 2.75rem; padding: .55rem .75rem; }
+.mobile-capture-link { display: block; margin: .5rem; padding: .75rem; border-radius: .5rem; background: var(--accent-100); color: var(--accent-950); font-weight: 650; text-decoration: none; }
+
+@media (max-width: 720px) {
+  .quick-capture-footer { grid-template-columns: 1fr; align-items: stretch; }
+  .quick-capture-footer .voice-capture { flex-wrap: wrap; }
 }
 
 kbd {

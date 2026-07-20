@@ -319,8 +319,7 @@ func navigationForPath(path string) []NavigationItem {
 	return []NavigationItem{
 		{Path: "/", Label: "Family Brief", Group: "Overview", Current: path == "/"},
 		{Path: "/review", Label: "Week in Review", Current: path == "/review"},
-		{Path: "/capture", Label: "Capture", Group: "Add", Current: path == "/capture"},
-		{Path: "/imports", Label: "Import", Current: path == "/imports"},
+		{Path: "/imports", Label: "Import", Group: "Add", Current: path == "/imports"},
 		{Path: "/finance", Label: "Finance", Group: "Household", Current: path == "/finance"},
 		{Path: "/health", Label: "Health", Current: path == "/health"},
 		{Path: "/planning", Label: "Planning", Current: path == "/planning"},

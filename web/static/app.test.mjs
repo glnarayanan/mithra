@@ -86,11 +86,23 @@ test("action shortcuts navigate without stealing keystrokes from editing or dial
   const event = (key, overrides = {}) => ({ key, shiftKey: true, target: null, ...overrides });
   const input = { tagName: "INPUT", parentElement: null };
 
-  assert.equal(app.actionShortcutPath(event("c"), noModal), "/capture");
   assert.equal(app.actionShortcutPath(event("i"), noModal), "/imports");
   assert.equal(app.actionShortcutPath(event("p"), noModal), "/planning");
-  assert.equal(app.actionShortcutPath(event("c", { target: input }), noModal), "");
-  assert.equal(app.actionShortcutPath(event("c", { isComposing: true }), noModal), "");
-  assert.equal(app.actionShortcutPath(event("c"), { querySelector: () => ({}) }), "");
+  assert.equal(app.actionShortcutPath(event("i", { target: input }), noModal), "");
+  assert.equal(app.actionShortcutPath(event("i", { isComposing: true }), noModal), "");
+  assert.equal(app.actionShortcutPath(event("i"), { querySelector: () => ({}) }), "");
   assert.equal(app.actionShortcutPath(event("x"), noModal), "");
+});
+
+test("Q opens quick capture without stealing ordinary typing", () => {
+  const noModal = { querySelector: () => null };
+  const input = { tagName: "INPUT", parentElement: null };
+  const event = (overrides = {}) => ({ key: "q", target: null, ...overrides });
+
+  assert.equal(app.shouldOpenQuickCapture(event(), noModal, null), true);
+  assert.equal(app.shouldOpenQuickCapture(event({ key: "Q" }), noModal, null), true);
+  assert.equal(app.shouldOpenQuickCapture(event({ target: input }), noModal, null), false);
+  assert.equal(app.shouldOpenQuickCapture(event({ metaKey: true }), noModal, null), false);
+  assert.equal(app.shouldOpenQuickCapture(event({ repeat: true }), noModal, null), false);
+  assert.equal(app.shouldOpenQuickCapture(event(), { querySelector: () => ({}) }, null), false);
 });

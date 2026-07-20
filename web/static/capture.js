@@ -20,10 +20,8 @@
     target.dataset.tone = tone || "quiet";
   }
 
-  function install(root, environment) {
-    if (!root || typeof root.querySelector !== "function") return;
-    var panel = root.querySelector("[data-voice-capture]");
-    if (!panel) return;
+  function installPanel(panel, environment) {
+    if (!panel || typeof panel.querySelector !== "function") return;
     environment = environment || global;
     var navigatorObject = environment && environment.navigator;
     var MediaRecorderClass = environment && environment.MediaRecorder;
@@ -31,8 +29,9 @@
     var stop = panel.querySelector("[data-stop]");
     var cancel = panel.querySelector("[data-cancel]");
     var status = panel.querySelector("[data-voice-status]");
-    var csrf = panel.querySelector("[name=csrf]");
-    var visibility = panel.querySelector("[name=visibility]");
+    var composer = typeof panel.closest === "function" ? panel.closest("[data-capture-composer]") : null;
+    var csrf = composer ? composer.querySelector("[name=csrf]") : panel.querySelector("[name=csrf]");
+    var visibility = composer ? composer.querySelector("[name=visibility]") : panel.querySelector("[name=visibility]");
     var type = supportedType(MediaRecorderClass);
     if (!record || !stop || !cancel || !navigatorObject || !navigatorObject.mediaDevices || typeof navigatorObject.mediaDevices.getUserMedia !== "function" || !type) {
       if (record) record.disabled = true;
@@ -115,7 +114,14 @@
     cancel.addEventListener("click", discard);
   }
 
-  var api = Object.freeze({ install: install, supportedType: supportedType, withinLimits: withinLimits, setMessage: setMessage });
+  function install(root, environment) {
+    if (!root || typeof root.querySelectorAll !== "function") return;
+    Array.prototype.forEach.call(root.querySelectorAll("[data-voice-capture]"), function (panel) {
+      installPanel(panel, environment || global);
+    });
+  }
+
+  var api = Object.freeze({ install: install, installPanel: installPanel, supportedType: supportedType, withinLimits: withinLimits, setMessage: setMessage });
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (global && global.document) global.document.addEventListener("DOMContentLoaded", function () { install(global.document, global); });
 })(typeof globalThis === "undefined" ? null : globalThis);

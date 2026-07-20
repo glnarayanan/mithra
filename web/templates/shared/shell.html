@@ -19,12 +19,14 @@
       <summary>Menu</summary>
       <div class="mobile-menu-panel">
         <nav aria-label="Primary navigation">{{template "primary-navigation" .}}</nav>
+        <a class="mobile-capture-link" href="/#capture">Add update</a>
         <form method="post" action="/auth/logout" class="mobile-signout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button type="submit">Sign out</button></form>
       </div>
     </details>
   </header>
   <div class="app-toolbar" aria-label="Quick tools">
     <div class="toolbar-controls">
+      <button type="button" class="quick-capture-trigger" data-quick-capture-trigger aria-haspopup="dialog" aria-controls="quick-capture" aria-keyshortcuts="Q">Add update <kbd aria-hidden="true">Q</kbd></button>
       <div data-quick-navigation-mount></div>
       <button type="button" class="shortcut-help-trigger" data-shortcut-help-trigger aria-keyshortcuts="?">Shortcuts <kbd aria-hidden="true">?</kbd></button>
       <details class="account-menu">
@@ -33,5 +35,7 @@
       </details>
     </div>
   </div>
+  <dialog id="quick-capture" class="quick-navigation-dialog quick-capture-dialog" aria-labelledby="quick-capture-title"><div class="quick-navigation-panel quick-capture-panel"><h2 id="quick-capture-title">Add a quick update</h2><button type="button" class="quick-navigation-close" data-quick-capture-close>Close</button><form method="post" action="/capture" data-capture-composer><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="text"><label>What’s new?<textarea name="update" maxlength="12000" rows="5" placeholder="Type or dictate an update…" required></textarea></label><div class="quick-capture-footer"><label>Who can see this?<select name="visibility"><option value="personal">Only you</option><option value="shared">Shared with your partner</option></select></label><div class="voice-capture" data-voice-capture><button type="button" class="capture-mic" data-record aria-label="Dictate this update" title="Dictate this update"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm6-3a6 6 0 0 1-12 0M12 18v3M9 21h6"/></svg></button><button type="button" data-stop hidden>Stop</button><button type="button" data-cancel class="button-quiet" hidden>Discard recording</button><p data-voice-status role="status" aria-live="polite">Use the microphone to dictate up to 90 seconds.</p></div><button type="submit">Add update</button></div></form></div></dialog>
+  <script defer src="/assets/capture.js"></script>
 </div>
 {{end}}

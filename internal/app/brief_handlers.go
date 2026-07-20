@@ -24,6 +24,7 @@ type BriefView struct {
 	Lead                                                    CoachingItemView
 	Dates, Priorities, OnlyYou                              []CoachingItemView
 	Nudges                                                  []CoachingNudgeView
+	Capture                                                 CaptureView
 }
 type WeekReviewView struct {
 	Navigation                                           []NavigationItem
@@ -55,7 +56,11 @@ func (a *App) brief(w http.ResponseWriter, r *http.Request) {
 		writeHTMLHead(w)
 		return
 	}
-	a.renderBrief(r, w, scope, csrf, "")
+	status := ""
+	if r.URL.Query().Get("captured") == "1" {
+		status = "Update added. You can undo it for ten minutes from your recent captures."
+	}
+	a.renderBrief(r, w, scope, csrf, status)
 }
 
 func (a *App) weekReview(w http.ResponseWriter, r *http.Request) {
@@ -178,7 +183,7 @@ func (a *App) renderBrief(r *http.Request, w http.ResponseWriter, scope policy.A
 	}
 	configured, _ := a.providerSettings.Configured(r.Context(), scope)
 	evidence := evidenceMap(overview.SharedContext, overview.PersonalContext)
-	view := BriefView{Navigation: navigationForPath("/"), CSRF: csrf, Status: status, HasRecords: overview.HasRecords, HasShared: overview.Shared.Lead.Title != "", CanRefresh: configured && overview.HasRecords && csrf != "", AIConfigured: configured, Owner: scope.Role == "owner", Stale: overview.SharedCache.Stale, PersonalStale: overview.PersonalCache.Stale, Lead: itemView(overview.Shared.Lead, evidence), Dates: itemViews(overview.Shared.Dates, evidence), Priorities: itemViews(overview.Shared.Priorities, evidence), OnlyYou: itemViews(privateItems(overview.Personal), evidence)}
+	view := BriefView{Navigation: navigationForPath("/"), CSRF: csrf, Status: status, HasRecords: overview.HasRecords, HasShared: overview.Shared.Lead.Title != "", CanRefresh: configured && overview.HasRecords && csrf != "", AIConfigured: configured, Owner: scope.Role == "owner", Stale: overview.SharedCache.Stale, PersonalStale: overview.PersonalCache.Stale, Lead: itemView(overview.Shared.Lead, evidence), Dates: itemViews(overview.Shared.Dates, evidence), Priorities: itemViews(overview.Shared.Priorities, evidence), OnlyYou: itemViews(privateItems(overview.Personal), evidence), Capture: CaptureView{CSRF: csrf, ProviderConfigured: configured}}
 	view.Freshness = freshness(overview.SharedCache, "Up to date")
 	if view.Status == "" && view.Stale {
 		view.Status = "A newer update is available. Dates and sources are still up to date."
