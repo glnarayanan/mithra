@@ -19,6 +19,7 @@ import (
 	"github.com/glnarayanan/mithra/internal/imports"
 	"github.com/glnarayanan/mithra/internal/policy"
 	"github.com/glnarayanan/mithra/internal/providers"
+	"github.com/glnarayanan/mithra/internal/secrets"
 	"github.com/glnarayanan/mithra/internal/storage"
 )
 
@@ -482,6 +483,10 @@ func importExtractionFailure(err error, fileName string) (string, string) {
 
 func importAnalysisFailure(err error) (string, string) {
 	switch {
+	case errors.Is(err, secrets.ErrSettingsDenied):
+		return "import_ai_settings_unavailable", "Mithra could not open the saved OpenAI connection. Reconnect OpenAI in Settings, then try again."
+	case errors.Is(err, errImportEvidenceMismatch):
+		return "import_ai_evidence_mismatch", "OpenAI returned row or page references that did not match the extracted file, so Mithra rejected the review. Try again."
 	case errors.Is(err, providers.ErrInvalidCredential):
 		return "import_ai_key_rejected", "OpenAI rejected the saved API key. Reconnect OpenAI in Settings, then try again."
 	case errors.Is(err, providers.ErrRateLimited):

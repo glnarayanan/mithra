@@ -21,6 +21,7 @@ import (
 	importcore "github.com/glnarayanan/mithra/internal/imports"
 	"github.com/glnarayanan/mithra/internal/policy"
 	"github.com/glnarayanan/mithra/internal/providers"
+	"github.com/glnarayanan/mithra/internal/secrets"
 	"github.com/glnarayanan/mithra/internal/storage"
 )
 
@@ -181,6 +182,19 @@ func TestImportAnalysisFailureReturnsUsefulSafeDiagnostics(t *testing.T) {
 	}
 }
 
+func TestImportEvidenceMismatchReturnsSpecificSafeDiagnostic(t *testing.T) {
+	application, mailer := newAuthTestApp(t, "owner@example.com")
+	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
+	connectImportProvider(t, application, ownerScope(t, application, session), func(*http.Request) string {
+		return captureProviderBody(`{"records":[{"family":"finance","locator":{"kind":"page","value":"page:1"},"finance":{"kind":"spending","label":"Groceries","category":"Groceries","date":"2026-07-01","end_date":"","status":"","amount":"100"},"health":null,"planning":null}]}`)
+	})
+
+	response := serve(application, importUploadRequest(t, session, "records.csv", "text/csv", []byte("label,amount,date\nGroceries,100,2026-07-01\n"), "personal"))
+	if response.Code != http.StatusBadGateway || response.Header().Get("X-Mithra-Error-Code") != "import_ai_evidence_mismatch" || !strings.Contains(response.Body.String(), "row or page references") || strings.Contains(response.Body.String(), "AI request failed") {
+		t.Fatalf("evidence mismatch = %d headers=%v body=%q", response.Code, response.Header(), response.Body.String())
+	}
+}
+
 func TestImportAnalysisFailureMapsEveryProviderOutcome(t *testing.T) {
 	tests := []struct {
 		err     error
@@ -193,6 +207,8 @@ func TestImportAnalysisFailureMapsEveryProviderOutcome(t *testing.T) {
 		{providers.ErrRefusal, "import_ai_refused", "did not process this file"},
 		{providers.ErrIncomplete, "import_ai_incomplete", "before the review was complete"},
 		{providers.ErrInvalidResponse, "import_ai_invalid_response", "could not validate safely"},
+		{secrets.ErrSettingsDenied, "import_ai_settings_unavailable", "saved OpenAI connection"},
+		{errImportEvidenceMismatch, "import_ai_evidence_mismatch", "row or page references"},
 		{errors.New("unexpected"), "import_ai_failed", "AI request failed"},
 	}
 	for _, test := range tests {
