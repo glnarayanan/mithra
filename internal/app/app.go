@@ -238,6 +238,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("/review/refresh", a.refreshWeek)
 	mux.HandleFunc("/notifications/nudge", a.updateNudge)
 	mux.HandleFunc("/finance", a.financeLens)
+	mux.HandleFunc("/finance/correct", a.correctFinanceRecord)
 	mux.HandleFunc("/health", a.healthLens)
 	mux.HandleFunc("/health/correct", a.correctHealthObservation)
 	mux.HandleFunc("/planning", a.planningLens)
@@ -318,8 +319,7 @@ func navigationForPath(path string) []NavigationItem {
 	return []NavigationItem{
 		{Path: "/", Label: "Family Brief", Group: "Overview", Current: path == "/"},
 		{Path: "/review", Label: "Week in Review", Current: path == "/review"},
-		{Path: "/capture", Label: "Capture", Group: "Add", Current: path == "/capture"},
-		{Path: "/imports", Label: "Import", Current: path == "/imports"},
+		{Path: "/imports", Label: "Import", Group: "Add", Current: path == "/imports"},
 		{Path: "/finance", Label: "Finance", Group: "Household", Current: path == "/finance"},
 		{Path: "/health", Label: "Health", Current: path == "/health"},
 		{Path: "/planning", Label: "Planning", Current: path == "/planning"},
@@ -342,15 +342,16 @@ func methodNotAllowedFor(w http.ResponseWriter, allow string) {
 }
 
 var assetContentTypes = map[string]string{
-	"styles.css":  "text/css; charset=utf-8",
-	"app.js":      "application/javascript; charset=utf-8",
-	"finance.js":  "application/javascript; charset=utf-8",
-	"health.js":   "application/javascript; charset=utf-8",
-	"planning.js": "application/javascript; charset=utf-8",
-	"capture.js":  "application/javascript; charset=utf-8",
-	"brief.js":    "application/javascript; charset=utf-8",
-	"imports.js":  "application/javascript; charset=utf-8",
-	"favicon.svg": "image/svg+xml",
+	"styles.css":                 "text/css; charset=utf-8",
+	"app.js":                     "application/javascript; charset=utf-8",
+	"finance.js":                 "application/javascript; charset=utf-8",
+	"health.js":                  "application/javascript; charset=utf-8",
+	"planning.js":                "application/javascript; charset=utf-8",
+	"capture.js":                 "application/javascript; charset=utf-8",
+	"brief.js":                   "application/javascript; charset=utf-8",
+	"imports.js":                 "application/javascript; charset=utf-8",
+	"favicon.svg":                "image/svg+xml",
+	"fonts/inter-variable.woff2": "font/woff2",
 }
 
 func withHTTPGuards(next http.Handler, logger *log.Logger) http.Handler {
@@ -375,7 +376,7 @@ func limitRequestBody(next http.Handler) http.Handler {
 func withSecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; manifest-src 'self'; object-src 'none'; script-src 'self'; style-src 'self'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; frame-src blob:; img-src 'self' data:; manifest-src 'self'; object-src 'none'; script-src 'self'; style-src 'self'")
 		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
 		w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
 		w.Header().Set("Origin-Agent-Cluster", "?1")

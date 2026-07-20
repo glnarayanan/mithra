@@ -53,8 +53,8 @@ const (
 )
 
 type HealthProposal struct {
-	Kind                                                                                                          HealthKind
-	Subject, Label, Analyte, ObservedOn, Value, Unit, Provider, Location, ScheduledOn, Cadence, NextDueOn, Status string
+	Kind                                                                                                                       HealthKind
+	Subject, Label, Analyte, ObservedOn, Value, Unit, Provider, Location, ScheduledOn, ScheduledAt, Cadence, NextDueOn, Status string
 }
 type PlanningProposal struct {
 	Title, Description, Location, StartsOn, EndsOn, StartsAt, EndsAt, Timezone, Status string
@@ -282,6 +282,7 @@ func (s *Service) commit(ctx context.Context, actor policy.ActorScope, id string
 	if raw != "" {
 		cleanupAt = s.now().UTC().Add(15 * time.Minute).Format(time.RFC3339Nano)
 	}
+	completeProposal(&request)
 	field, question := clarification(request.Proposal)
 	now := s.now().UTC()
 	if field != "" {
@@ -532,7 +533,7 @@ func (s *Service) create(ctx context.Context, a policy.ActorScope, r TextRequest
 			out, e := s.health.CreateObservation(ctx, a, health.ObservationDraft{Visibility: r.Visibility, Subject: d.Subject, Analyte: d.Analyte, ObservedOn: d.ObservedOn, Value: d.Value, Unit: d.Unit, Provenance: prov})
 			return "health", "health_observations", out.ID, out.Version, e
 		case Appointment:
-			out, e := s.health.CreateAppointment(ctx, a, health.AppointmentDraft{Visibility: r.Visibility, Subject: d.Subject, Label: d.Label, Provider: d.Provider, Location: d.Location, ScheduledOn: d.ScheduledOn, Status: d.Status, Provenance: prov})
+			out, e := s.health.CreateAppointment(ctx, a, health.AppointmentDraft{Visibility: r.Visibility, Subject: d.Subject, Label: d.Label, Provider: d.Provider, Location: d.Location, ScheduledOn: d.ScheduledOn, ScheduledAt: d.ScheduledAt, Status: d.Status, Provenance: prov})
 			if e != nil {
 				return "health", "health_appointments", "", 0, e
 			}
@@ -590,7 +591,7 @@ func validFinance(d FinanceProposal) bool {
 	return financeTable(d.Kind) != "" && safe(d.Label, 256) && safe(d.Category, 128) && safe(d.Date, 10) && safe(d.EndDate, 10) && safe(d.Status, 16) && safe(d.AmountText, 128) && safe(d.IncompleteNote, 256) && safe(d.CurrencyContext, 16)
 }
 func validHealth(d HealthProposal) bool {
-	return (d.Kind == Observation || d.Kind == Appointment || d.Kind == Routine) && safe(d.Subject, 256) && safe(d.Label, 256) && safe(d.Analyte, 256) && safe(d.ObservedOn, 10) && safe(d.Value, 128) && safe(d.Unit, 64) && safe(d.Provider, 256) && safe(d.Location, 512) && safe(d.ScheduledOn, 10) && safe(d.Cadence, 256) && safe(d.NextDueOn, 10) && safe(d.Status, 16)
+	return (d.Kind == Observation || d.Kind == Appointment || d.Kind == Routine) && safe(d.Subject, 256) && safe(d.Label, 256) && safe(d.Analyte, 256) && safe(d.ObservedOn, 10) && safe(d.Value, 128) && safe(d.Unit, 64) && safe(d.Provider, 256) && safe(d.Location, 512) && safe(d.ScheduledOn, 10) && safe(d.ScheduledAt, 16) && safe(d.Cadence, 256) && safe(d.NextDueOn, 10) && safe(d.Status, 16)
 }
 func validPlanning(d PlanningProposal) bool {
 	return safe(d.Title, 256) && safe(d.Description, 4000) && safe(d.Location, 512) && safe(d.StartsOn, 10) && safe(d.EndsOn, 10) && safe(d.StartsAt, 16) && safe(d.EndsAt, 16) && safe(d.Timezone, 64) && safe(d.Status, 16)
@@ -613,9 +614,6 @@ func clarification(p Proposal) (string, string) {
 		if d.Kind == Observation && d.Unit == "" {
 			return "unit", "What unit was recorded?"
 		}
-		if d.Kind != Observation && d.Status == "" {
-			return "status", "What is this health record's status?"
-		}
 	}
 	if p.Planning != nil {
 		d := p.Planning
@@ -629,11 +627,34 @@ func clarification(p Proposal) (string, string) {
 			return "date", "When does this end? Use YYYY-MM-DDTHH:MM."
 		}
 		if d.Status == "" {
-			return "status", "What is this plan's status?"
+			return "status", "Is this plan planned, completed, or cancelled?"
 		}
 	}
 	return "", ""
 }
+
+func completeProposal(request *TextRequest) {
+	if request == nil || request.Proposal.Health == nil || request.Proposal.Health.Kind != Appointment {
+		return
+	}
+	draft := request.Proposal.Health
+	if strings.TrimSpace(draft.Label) == "" {
+		label := strings.TrimSpace(request.Summary)
+		if label == "" || len(label) > 256 {
+			label = "Health appointment"
+		}
+		draft.Label = label
+	}
+	switch strings.ToLower(strings.TrimSpace(draft.Status)) {
+	case "upcoming", "scheduled", "pending":
+		draft.Status = "planned"
+	case "done":
+		draft.Status = "completed"
+	case "canceled":
+		draft.Status = "cancelled"
+	}
+}
+
 func summary(r TextRequest) string {
 	if strings.TrimSpace(r.Summary) != "" {
 		return strings.TrimSpace(r.Summary)

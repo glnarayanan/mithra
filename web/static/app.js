@@ -35,6 +35,16 @@
     return global && global.navigator && /Mac|iPhone|iPad/.test(String(global.navigator.platform || "")) ? "⌘" : "Ctrl";
   }
 
+  var actionShortcuts = [
+    ["B", "Open Family Brief", "/"],
+    ["R", "Open Week in Review", "/review"],
+    ["I", "Import a file", "/imports"],
+    ["F", "Open Finance", "/finance"],
+    ["H", "Open Health", "/health"],
+    ["P", "Open Planning", "/planning"],
+    ["S", "Open Settings", "/settings"]
+  ];
+
   function isEditableControl(target) {
     for (var element = target; element; element = element.parentElement) {
       var tagName = String(element.tagName || "").toLowerCase();
@@ -64,11 +74,67 @@
     return !modal || modal === ownedDialog;
   }
 
+  function shouldOpenQuickCapture(event, documentRoot, ownedDialog) {
+    if (!event || event.defaultPrevented || event.repeat || event.isComposing || event.keyCode === 229 || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || String(event.key || "").toLowerCase() !== "q" || isEditableControl(event.target)) {
+      return false;
+    }
+    var modal = documentRoot && typeof documentRoot.querySelector === "function" ? documentRoot.querySelector("dialog[open], [aria-modal=\"true\"]") : null;
+    return !modal || modal === ownedDialog;
+  }
+
+  function actionShortcutPath(event, documentRoot) {
+    if (!event || event.defaultPrevented || event.repeat || event.isComposing || event.keyCode === 229 || !event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || isEditableControl(event.target)) {
+      return "";
+    }
+    if (documentRoot && typeof documentRoot.querySelector === "function" && documentRoot.querySelector("dialog[open], [aria-modal=\"true\"]")) {
+      return "";
+    }
+    var key = String(event.key || "").toUpperCase();
+    for (var index = 0; index < actionShortcuts.length; index += 1) {
+      if (actionShortcuts[index][0] === key) {
+        return actionShortcuts[index][2];
+      }
+    }
+    return "";
+  }
+
   function restoreFocus(previousFocus, fallback) {
     var target = previousFocus && previousFocus.isConnected !== false && typeof previousFocus.focus === "function" ? previousFocus : fallback;
     if (target && typeof target.focus === "function") {
       target.focus();
     }
+  }
+
+  function installQuickCapture(root) {
+    var dialog = root.querySelector("#quick-capture");
+    var close = dialog && dialog.querySelector("[data-quick-capture-close]");
+    var textarea = dialog && dialog.querySelector("textarea[name=update]");
+    var triggers = root.querySelectorAll("[data-quick-capture-trigger]");
+    if (!dialog || !close || !textarea || !triggers.length || typeof dialog.showModal !== "function") {
+      return;
+    }
+    var previousFocus = triggers[0];
+    function closeDialog() {
+      if (dialog.open && typeof dialog.close === "function") dialog.close();
+    }
+    function openDialog(invoker) {
+      if (dialog.open) return;
+      previousFocus = invoker || root.activeElement || triggers[0];
+      dialog.showModal();
+      textarea.focus();
+    }
+    Array.prototype.forEach.call(triggers, function (trigger) {
+      trigger.addEventListener("click", function () { openDialog(trigger); });
+    });
+    close.addEventListener("click", closeDialog);
+    dialog.addEventListener("cancel", function (event) { event.preventDefault(); closeDialog(); });
+    dialog.addEventListener("close", function () { restoreFocus(previousFocus, triggers[0]); });
+    root.addEventListener("keydown", function (event) {
+      if (shouldOpenQuickCapture(event, root, dialog)) {
+        event.preventDefault();
+        openDialog(root.activeElement);
+      }
+    });
   }
 
   function installQuickNavigation(root) {
@@ -269,11 +335,14 @@
     list.className = "shortcut-list";
     [
       [shortcutModifierLabel() + " K", "Open Quick navigation"],
+      ["Q", "Add a quick update"],
       ["↑ / ↓", "Move through results"],
       ["Enter", "Open the highlighted page"],
       ["Esc", "Close a dialog"],
       ["?", "Show keyboard shortcuts"]
-    ].forEach(function (shortcut) {
+    ].concat(actionShortcuts.map(function (shortcut) {
+      return ["Shift " + shortcut[0], shortcut[1]];
+    })).forEach(function (shortcut) {
       var row = root.createElement("div");
       var description = root.createElement("dt");
       var keys = root.createElement("dd");
@@ -310,6 +379,143 @@
     });
   }
 
+  function installSourcePreview(root) {
+    if (!root.body || typeof root.createElement !== "function") {
+      return;
+    }
+    var dialog = root.createElement("dialog");
+    dialog.className = "quick-navigation-dialog source-preview-dialog";
+    dialog.setAttribute("aria-labelledby", "source-preview-title");
+    var panel = root.createElement("div");
+    panel.className = "quick-navigation-panel source-preview-panel";
+    var heading = root.createElement("h2");
+    heading.id = "source-preview-title";
+    heading.textContent = "Original source";
+    var close = root.createElement("button");
+    close.type = "button";
+    close.className = "quick-navigation-close";
+    close.textContent = "Close";
+    var content = root.createElement("div");
+    content.className = "source-preview-content";
+    content.setAttribute("aria-live", "polite");
+    var open = root.createElement("a");
+    open.className = "source-preview-open";
+    open.target = "_blank";
+    open.rel = "noopener";
+    open.textContent = "Open in a new tab";
+    panel.appendChild(heading);
+    panel.appendChild(close);
+    panel.appendChild(content);
+    panel.appendChild(open);
+    dialog.appendChild(panel);
+    root.body.appendChild(dialog);
+    var previousFocus = null;
+    var previewURL = "";
+    var loadID = 0;
+
+    function clearPreview() {
+      while (content.firstChild) {
+        content.removeChild(content.firstChild);
+      }
+      if (previewURL && global.URL && typeof global.URL.revokeObjectURL === "function") {
+        global.URL.revokeObjectURL(previewURL);
+      }
+      previewURL = "";
+    }
+
+    function showMessage(message) {
+      clearPreview();
+      var paragraph = root.createElement("p");
+      paragraph.className = "source-preview-message";
+      paragraph.textContent = message;
+      content.appendChild(paragraph);
+    }
+
+    function loadSource(path, requestedID) {
+      if (!global || typeof global.fetch !== "function") {
+        showMessage("This original cannot be previewed here. Open it in a new tab.");
+        return;
+      }
+      global.fetch(path).then(function (response) {
+        if (!response.ok) {
+          throw new Error("source unavailable");
+        }
+        var contentType = String(response.headers.get("Content-Type") || "").toLowerCase();
+        if (contentType.indexOf("text/plain") === 0 || contentType.indexOf("text/csv") === 0) {
+          return response.text().then(function (text) { return { kind: "text", value: text }; });
+        }
+        if (contentType.indexOf("application/pdf") === 0 && global.URL && typeof global.URL.createObjectURL === "function") {
+          return response.blob().then(function (blob) { return { kind: "pdf", value: blob }; });
+        }
+        return { kind: "unsupported" };
+      }).then(function (preview) {
+        if (requestedID !== loadID || !dialog.open) {
+          return;
+        }
+        clearPreview();
+        if (preview.kind === "text") {
+          var text = root.createElement("pre");
+          text.className = "source-preview-text";
+          text.textContent = preview.value;
+          content.appendChild(text);
+          return;
+        }
+        if (preview.kind === "pdf") {
+          previewURL = global.URL.createObjectURL(preview.value);
+          var frame = root.createElement("iframe");
+          frame.className = "source-preview-frame";
+          frame.title = "Original PDF";
+          frame.src = previewURL;
+          content.appendChild(frame);
+          return;
+        }
+        showMessage("This file type cannot be previewed here. Open it in a new tab.");
+      }).catch(function () {
+        if (requestedID === loadID && dialog.open) {
+          showMessage("The original could not be loaded. Open it in a new tab.");
+        }
+      });
+    }
+
+    function closeDialog() {
+      if (dialog.open) {
+        dialog.close();
+      }
+    }
+    close.addEventListener("click", closeDialog);
+    dialog.addEventListener("cancel", function (event) { event.preventDefault(); closeDialog(); });
+    dialog.addEventListener("close", function () {
+      loadID += 1;
+      clearPreview();
+      restoreFocus(previousFocus, null);
+    });
+    root.addEventListener("click", function (event) {
+      var link = event.target && typeof event.target.closest === "function" ? event.target.closest('a[href^="/sources/"]') : null;
+      if (!link || event.defaultPrevented || event.button > 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || typeof dialog.showModal !== "function") {
+        return;
+      }
+      event.preventDefault();
+      previousFocus = link;
+      var path = link.getAttribute("href");
+      open.href = path;
+      loadID += 1;
+      showMessage("Loading original…");
+      dialog.showModal();
+      close.focus();
+      loadSource(path, loadID);
+    });
+  }
+
+  function reportPageErrors(root, consoleObject) {
+    if (!root || typeof root.querySelectorAll !== "function" || !consoleObject || typeof consoleObject.error !== "function") return;
+    Array.prototype.forEach.call(root.querySelectorAll("[data-app-error][data-error-code]"), function (element) {
+      consoleObject.error("Mithra request failed", {
+        code: String(element.getAttribute("data-error-code") || "unknown"),
+        reference: String(element.getAttribute("data-error-reference") || "unavailable")
+      });
+    });
+  }
+
   function install(root) {
     if (!root || typeof root.querySelector !== "function") {
       return;
@@ -321,17 +527,30 @@
       });
     }
     installQuickNavigation(root);
+    installQuickCapture(root);
     installShortcutHelp(root);
+    installSourcePreview(root);
+    reportPageErrors(root, global && global.console);
+    root.addEventListener("keydown", function (event) {
+      var path = actionShortcutPath(event, root);
+      if (path && global.location && typeof global.location.assign === "function") {
+        event.preventDefault();
+        global.location.assign(path);
+      }
+    });
   }
 
   var api = Object.freeze({
+    actionShortcutPath: actionShortcutPath,
     filterQuickNavigation: filterQuickNavigation,
     install: install,
     isEditableControl: isEditableControl,
     navigationDestinations: navigationDestinations,
     restoreFocus: restoreFocus,
+    reportPageErrors: reportPageErrors,
     setStatus: setStatus,
     shouldOpenQuickNavigation: shouldOpenQuickNavigation,
+    shouldOpenQuickCapture: shouldOpenQuickCapture,
     shouldOpenShortcutHelp: shouldOpenShortcutHelp
   });
 

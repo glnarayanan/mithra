@@ -15,6 +15,7 @@ import (
 
 	"github.com/glnarayanan/mithra/internal/database"
 	"github.com/glnarayanan/mithra/internal/household"
+	"github.com/glnarayanan/mithra/internal/imports"
 )
 
 func TestValidateLoopbackAddressAcceptsOnlyLiteralLoopbackAddresses(t *testing.T) {
@@ -260,6 +261,18 @@ func TestRuntimeIdentityConfiguration(t *testing.T) {
 func TestPDFParserRejectsArguments(t *testing.T) {
 	if err := run([]string{"pdf-parser", "unexpected"}); err == nil || !strings.Contains(err.Error(), "does not accept arguments") {
 		t.Fatalf("pdf parser arguments = %v", err)
+	}
+}
+
+func TestPDFParserUsesLocalExtractionOnlyWhenExplicitlyConfigured(t *testing.T) {
+	if _, ok := configuredPDFParser("local").(imports.LocalPDFParser); !ok {
+		t.Fatal("local parser mode did not select in-process extraction")
+	}
+	if _, ok := configuredPDFParser("/run/mithra/pdf-parser.sock").(imports.SocketPDFParser); !ok {
+		t.Fatal("configured parser socket did not select isolated extraction")
+	}
+	if got := environmentDefault("MITHRA_PDF_PARSER_SOCKET", defaultPDFParserSocket); got != defaultPDFParserSocket {
+		t.Fatalf("default parser socket = %q", got)
 	}
 }
 

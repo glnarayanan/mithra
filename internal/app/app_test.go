@@ -221,7 +221,7 @@ func TestBriefOnboardingLeadsConfiguredHouseholdsToFirstValue(t *testing.T) {
 	application.renderTemplate(context.Background(), response, "brief.html", BriefView{Navigation: navigationForPath("/"), AIConfigured: true})
 
 	body := response.Body.String()
-	for _, required := range []string{"Add your first update", "build your first Family Brief", `href="/capture"`, `href="/imports"`} {
+	for _, required := range []string{"Add your first update", "build your first Family Brief", `href="#capture"`, `href="/imports"`} {
 		if !strings.Contains(body, required) {
 			t.Fatalf("configured onboarding is missing %q", required)
 		}
@@ -274,6 +274,24 @@ func TestEmbeddedFaviconIsServedWithoutBrowserConsoleFallback(t *testing.T) {
 	application.Handler().ServeHTTP(fallback, httptest.NewRequest(http.MethodGet, "/favicon.ico", nil))
 	if fallback.Code != http.StatusOK || fallback.Header().Get("Content-Type") != "image/svg+xml" {
 		t.Fatalf("favicon fallback = %d %q", fallback.Code, fallback.Header().Get("Content-Type"))
+	}
+}
+
+func TestEmbeddedInterFontIsServedWithFontContentType(t *testing.T) {
+	t.Parallel()
+
+	application := newTestApp(t)
+	response := httptest.NewRecorder()
+	application.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/assets/fonts/inter-variable.woff2", nil))
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("font status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if contentType := response.Header().Get("Content-Type"); contentType != "font/woff2" {
+		t.Fatalf("font Content-Type = %q, want font/woff2", contentType)
+	}
+	if response.Body.Len() < 100_000 {
+		t.Fatalf("font body length = %d, want embedded variable font", response.Body.Len())
 	}
 }
 

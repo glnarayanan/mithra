@@ -18,6 +18,11 @@ Use **Help** in the application for short, contextual guidance. Press
 navigation, or press <kbd>?</kbd> to see the shortcut guide. Quick navigation
 only opens destinations; it cannot change records.
 
+Outside form fields and open dialogs, use <kbd>Shift</kbd>+<kbd>C</kbd> for
+**Capture**, <kbd>Shift</kbd>+<kbd>I</kbd> for **Import**, or the page shortcuts
+listed in the in-app guide. These shortcuts only navigate; they never submit or
+change a record.
+
 ## Shared and Only you
 
 Choose a visibility every time you use **Capture** or **Import**:
@@ -40,7 +45,9 @@ record before anything is added.
 
 Use **Import** for one CSV, Excel, or PDF file at a time. Mithra reads it
 locally first and proposes source-linked finance, health, or planning records.
-Correct every required value, date, unit, and source location before importing.
+For finance rows, Mithra suggests a label and category from the source values;
+you can correct either, and the label may be left blank. Correct every required
+value, date, unit, and source location before importing.
 Warnings ask for judgment; required corrections prevent an import. See
 [document imports](imports.md) for format limits, review, deletion, and the
 isolated PDF-parser boundary.

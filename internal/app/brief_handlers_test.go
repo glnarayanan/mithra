@@ -133,7 +133,7 @@ func TestBriefOnboardingUsesProviderStateAndHouseholdRole(t *testing.T) {
 		t.Fatal(err)
 	}
 	configured := serve(application, coachingGET("/", partnerSession))
-	for _, required := range []string{"Add your first update", `href="/capture"`, `href="/imports"`} {
+	for _, required := range []string{"Add your first update", `href="#capture"`, `href="/imports"`} {
 		if configured.Code != http.StatusOK || !strings.Contains(configured.Body.String(), required) {
 			t.Fatalf("configured onboarding missing %q: %d %q", required, configured.Code, configured.Body.String())
 		}

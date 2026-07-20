@@ -20,10 +20,8 @@
     target.dataset.tone = tone || "quiet";
   }
 
-  function install(root, environment) {
-    if (!root || typeof root.querySelector !== "function") return;
-    var panel = root.querySelector("[data-voice-capture]");
-    if (!panel) return;
+  function installPanel(panel, environment) {
+    if (!panel || typeof panel.querySelector !== "function") return;
     environment = environment || global;
     var navigatorObject = environment && environment.navigator;
     var MediaRecorderClass = environment && environment.MediaRecorder;
@@ -31,8 +29,10 @@
     var stop = panel.querySelector("[data-stop]");
     var cancel = panel.querySelector("[data-cancel]");
     var status = panel.querySelector("[data-voice-status]");
-    var csrf = panel.querySelector("[name=csrf]");
-    var visibility = panel.querySelector("[name=visibility]");
+    var composer = typeof panel.closest === "function" ? panel.closest("[data-capture-composer]") : null;
+    var dialog = typeof panel.closest === "function" ? panel.closest("dialog") : null;
+    var csrf = composer ? composer.querySelector("[name=csrf]") : panel.querySelector("[name=csrf]");
+    var visibility = composer ? composer.querySelector("[name=visibility]") : panel.querySelector("[name=visibility]");
     var type = supportedType(MediaRecorderClass);
     if (!record || !stop || !cancel || !navigatorObject || !navigatorObject.mediaDevices || typeof navigatorObject.mediaDevices.getUserMedia !== "function" || !type) {
       if (record) record.disabled = true;
@@ -45,6 +45,7 @@
     var chunks = [];
     var startedAt = 0;
     var timer = 0;
+    var generation = 0;
 
     function finishStream() {
       if (timer) environment.clearTimeout(timer);
@@ -57,6 +58,7 @@
     }
 
     function discard() {
+      generation += 1;
       chunks = [];
       if (recorder && recorder.state !== "inactive") recorder.stop();
       recorder = null;
@@ -85,19 +87,28 @@
     }
 
     record.addEventListener("click", async function () {
+      var attempt = generation + 1;
+      generation = attempt;
       record.disabled = true;
       setMessage(status, "Waiting for microphone permission…", "working");
       try {
-        stream = await navigatorObject.mediaDevices.getUserMedia({ audio: true });
+        var candidate = await navigatorObject.mediaDevices.getUserMedia({ audio: true });
+        if (attempt !== generation || dialog && !dialog.open) {
+          candidate.getTracks().forEach(function (track) { track.stop(); });
+          if (attempt === generation) record.disabled = false;
+          return;
+        }
+        stream = candidate;
         chunks = [];
         recorder = new MediaRecorderClass(stream, { mimeType: type });
         recorder.addEventListener("dataavailable", function (event) { if (event.data && event.data.size) chunks.push(event.data); });
         recorder.addEventListener("stop", function () {
           var duration = (Date.now() - startedAt) / 1000;
           var blob = new environment.Blob(chunks, { type: type });
+          var shouldUpload = attempt === generation;
           chunks = [];
           finishStream();
-          if (recorder) upload(blob, duration);
+          if (shouldUpload) upload(blob, duration);
           recorder = null;
         });
         recorder.start(1000);
@@ -107,15 +118,28 @@
         setMessage(status, "Recording. Stop within 90 seconds when you are done.", "working");
         timer = environment.setTimeout(function () { if (recorder && recorder.state !== "inactive") recorder.stop(); }, maximumDurationSeconds * 1000);
       } catch (_) {
+        if (attempt !== generation) return;
         finishStream();
         setMessage(status, "Microphone access was not granted. Nothing was saved or sent.", "error");
       }
     });
     stop.addEventListener("click", function () { if (recorder && recorder.state !== "inactive") recorder.stop(); });
     cancel.addEventListener("click", discard);
+    if (dialog && typeof dialog.addEventListener === "function") {
+      dialog.addEventListener("close", function () {
+        if (record.disabled || recorder || stream) discard();
+      });
+    }
   }
 
-  var api = Object.freeze({ install: install, supportedType: supportedType, withinLimits: withinLimits, setMessage: setMessage });
+  function install(root, environment) {
+    if (!root || typeof root.querySelectorAll !== "function") return;
+    Array.prototype.forEach.call(root.querySelectorAll("[data-voice-capture]"), function (panel) {
+      installPanel(panel, environment || global);
+    });
+  }
+
+  var api = Object.freeze({ install: install, installPanel: installPanel, supportedType: supportedType, withinLimits: withinLimits, setMessage: setMessage });
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (global && global.document) global.document.addEventListener("DOMContentLoaded", function () { install(global.document, global); });
 })(typeof globalThis === "undefined" ? null : globalThis);

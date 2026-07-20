@@ -18,6 +18,8 @@ import (
 
 	"github.com/glnarayanan/mithra/internal/imports"
 	"github.com/glnarayanan/mithra/internal/policy"
+	"github.com/glnarayanan/mithra/internal/providers"
+	"github.com/glnarayanan/mithra/internal/secrets"
 	"github.com/glnarayanan/mithra/internal/storage"
 )
 
@@ -26,6 +28,8 @@ type ImportsView struct {
 	CSRF               string
 	Status             string
 	Error              string
+	ErrorCode          string
+	ErrorReference     string
 	ProviderConfigured bool
 	Review             *ImportReviewView
 	VisualConsent      *ImportVisualConsentView
@@ -36,6 +40,7 @@ type ImportsView struct {
 type ImportReviewView struct {
 	ID, FileName, Summary string
 	Version               int64
+	BlockingRecords       int
 	Records               []ImportRecordView
 	Blockers, Warnings    []ImportIssueView
 }
@@ -44,8 +49,13 @@ type ImportRecordView struct {
 	Fields                         []ImportFieldView
 }
 type ImportFieldView struct {
-	ID, Label, Value, Error string
-	Required, Invalid       bool
+	ID, Label, Value, Error, Type string
+	Required, Invalid             bool
+	Options                       []ImportOptionView
+}
+type ImportOptionView struct {
+	Value, Label string
+	Selected     bool
 }
 type ImportIssueView struct{ FieldID, Message, Locator string }
 type ImportRecentView struct {
@@ -115,7 +125,24 @@ func (a *App) importDocuments(w http.ResponseWriter, r *http.Request) {
 	case "commit":
 		id := boundedField(r, "import_id", 64)
 		version, _ := strconv.ParseInt(r.PostForm.Get("version"), 10, 64)
-		if err := a.imports.Commit(r.Context(), scope, id, version); err != nil {
+		review, err := a.imports.Get(r.Context(), scope, id)
+		if err != nil || review.Version != version {
+			a.renderImports(r, w, scope, csrf, "", "That import review changed. Open it again before importing.")
+			return
+		}
+		if submittedImportFields(r) {
+			applyImportFields(r, &review.Proposals)
+		}
+		updated, err := a.imports.Correct(r.Context(), scope, id, version, review.Proposals)
+		if err != nil {
+			a.renderImportReview(r, w, scope, csrf, id, "", "Those corrections could not be saved safely.")
+			return
+		}
+		if blockingIssues(updated.Issues) != 0 {
+			a.renderImportReview(r, w, scope, csrf, id, "", "Some highlighted values still need your attention.")
+			return
+		}
+		if err := a.imports.Commit(r.Context(), scope, id, updated.Version); err != nil {
 			a.renderImportReview(r, w, scope, csrf, id, "", "The review changed, a required value is unresolved, or household data changed. Check the highlighted fields again.")
 			return
 		}
@@ -160,7 +187,6 @@ func (a *App) uploadImport(r *http.Request, w http.ResponseWriter, scope policy.
 	defer cancel()
 	document, err := a.importExtractor.Extract(ctx, imports.Input{Name: filepath.Base(files[0].Filename), ContentType: mediaType, Bytes: content})
 	if err != nil {
-		message := "That file is corrupt, unsupported, password-protected, or exceeds Mithra's safe parsing limits. Nothing was saved or sent."
 		if errors.Is(err, imports.ErrScannedPDF) {
 			if a.imports.ExactExists(r.Context(), scope, visibility, documentDigest(content)) {
 				a.renderImports(r, w, scope, csrf, "", "Mithra already has this file with the same privacy setting. Nothing was copied or sent.")
@@ -180,6 +206,9 @@ func (a *App) uploadImport(r *http.Request, w http.ResponseWriter, scope policy.
 			a.renderVisualConsent(r, w, scope, csrf, consent, "This PDF has no locally readable text. Review the transfer details before deciding.", "")
 			return
 		}
+		code, message := importExtractionFailure(err, files[0].Filename)
+		logRequestError(a.logger, r.Context(), code)
+		w.WriteHeader(http.StatusUnprocessableEntity)
 		a.renderImports(r, w, scope, csrf, "", message)
 		return
 	}
@@ -195,8 +224,7 @@ func (a *App) uploadImport(r *http.Request, w http.ResponseWriter, scope policy.
 	proposals, err := a.analyzeImport(r.Context(), scope, document)
 	if err != nil {
 		_ = a.sources.Delete(r.Context(), scope, source.ID)
-		logRequestError(a.logger, r.Context(), "import_analysis_failed")
-		a.renderImports(r, w, scope, csrf, "", "Mithra could not organise that file, so the uploaded copy was deleted. Check the OpenAI connection in Settings and try again.")
+		a.renderImportAnalysisFailure(r, w, scope, csrf, err)
 		return
 	}
 	review, err := a.imports.Stage(r.Context(), scope, source, filepath.Base(files[0].Filename), proposals, boundedField(r, "replaces_import_id", 64))
@@ -235,8 +263,7 @@ func (a *App) confirmVisualImport(r *http.Request, w http.ResponseWriter, scope 
 	proposals, err := a.analyzeVisualPDF(r.Context(), scope, pdf)
 	if err != nil {
 		_ = a.imports.AbortVisual(r.Context(), scope, id, version+1)
-		logRequestError(a.logger, r.Context(), "visual_pdf_analysis_failed")
-		a.renderImports(r, w, scope, csrf, "", "The visual PDF could not be processed. Its encrypted source was deleted; upload it again to retry.")
+		a.renderImportAnalysisFailure(r, w, scope, csrf, err)
 		return
 	}
 	review, err := a.imports.FinishVisual(r.Context(), scope, id, version+1, proposals)
@@ -270,14 +297,18 @@ func (a *App) correctImport(r *http.Request, w http.ResponseWriter, scope policy
 }
 
 func (a *App) renderImports(r *http.Request, w http.ResponseWriter, scope policy.ActorScope, csrf, status, problem string) {
+	view := a.importsView(r, scope, csrf, status, problem)
+	a.renderTemplate(r.Context(), w, "imports.html", view)
+}
+
+func (a *App) importsView(r *http.Request, scope policy.ActorScope, csrf, status, problem string) ImportsView {
 	configured, _ := a.providerSettings.Configured(r.Context(), scope)
 	recent, _ := a.imports.ListRecent(r.Context(), scope, 10)
 	view := ImportsView{Navigation: navigationForPath("/imports"), CSRF: csrf, Status: status, Error: problem, ProviderConfigured: configured}
 	if review, err := a.imports.CurrentReview(r.Context(), scope); err == nil {
 		item := importReviewView(review)
 		view.Review = &item
-		a.renderTemplate(r.Context(), w, "imports.html", view)
-		return
+		return view
 	}
 	if replacementID := strings.TrimSpace(r.URL.Query().Get("replace")); replacementID != "" {
 		if prior, replaceErr := a.imports.Replacement(r.Context(), scope, replacementID); replaceErr == nil {
@@ -291,6 +322,18 @@ func (a *App) renderImports(r *http.Request, w http.ResponseWriter, scope policy
 		}
 		view.Recent = append(view.Recent, ImportRecentView{ID: item.ID, FileName: item.FileName, Summary: summary, Visibility: map[policy.Visibility]string{policy.Personal: "Only you", policy.Shared: "Shared"}[item.Visibility], SourceURL: sourceURL(item.SourceID), CanReplace: item.State == "committed"})
 	}
+	return view
+}
+
+func (a *App) renderImportAnalysisFailure(r *http.Request, w http.ResponseWriter, scope policy.ActorScope, csrf string, err error) {
+	code, message := importAnalysisFailure(err)
+	reference := requestIDFromContext(r.Context())
+	logRequestError(a.logger, r.Context(), code)
+	w.Header().Set("X-Mithra-Error-Code", code)
+	w.WriteHeader(http.StatusBadGateway)
+	view := a.importsView(r, scope, csrf, "", message+" The uploaded copy was deleted. Reference: "+reference+".")
+	view.ErrorCode = code
+	view.ErrorReference = reference
 	a.renderTemplate(r.Context(), w, "imports.html", view)
 }
 func (a *App) renderImportReview(r *http.Request, w http.ResponseWriter, scope policy.ActorScope, csrf, id, status, problem string) {
@@ -321,14 +364,17 @@ func importReviewView(review imports.Review) ImportReviewView {
 	for i, p := range review.Proposals.Records {
 		out.Records = append(out.Records, importRecordView(i, p))
 	}
+	blockingRecords := map[int]struct{}{}
 	for _, issue := range review.Issues {
 		item := ImportIssueView{FieldID: fmt.Sprintf("%d-%s", issue.Record, issue.Field), Message: issue.Message, Locator: issue.Locator}
 		if issue.Warning {
 			out.Warnings = append(out.Warnings, item)
 		} else {
 			out.Blockers = append(out.Blockers, item)
+			blockingRecords[issue.Record] = struct{}{}
 		}
 	}
+	out.BlockingRecords = len(blockingRecords)
 	fieldIssues := make(map[string]string)
 	for _, issue := range review.Issues {
 		if !issue.Warning {
@@ -349,14 +395,28 @@ func importReviewView(review imports.Review) ImportReviewView {
 func importRecordView(index int, p imports.ProposedRecord) ImportRecordView {
 	record := ImportRecordView{Family: strings.Title(p.Family), Locator: p.Locator.Value, Change: "New record"}
 	add := func(name, label, value string, required bool) {
-		record.Fields = append(record.Fields, ImportFieldView{ID: fmt.Sprintf("%d-%s", index, name), Label: label, Value: value, Required: required})
+		fieldType := "text"
+		switch name {
+		case "date", "end_date", "observed_on", "starts_on", "ends_on":
+			fieldType = "date"
+		case "starts_at", "ends_at":
+			fieldType = "datetime-local"
+		}
+		field := ImportFieldView{ID: fmt.Sprintf("%d-%s", index, name), Label: label, Value: value, Type: fieldType, Required: required}
+		if name == "kind" {
+			for _, option := range []ImportOptionView{{Value: "income", Label: "Income"}, {Value: "spending", Label: "Spending"}, {Value: "asset", Label: "Asset"}, {Value: "liability", Label: "Liability"}, {Value: "budget", Label: "Budget"}, {Value: "obligation", Label: "Obligation"}} {
+				option.Selected = option.Value == value
+				field.Options = append(field.Options, option)
+			}
+		}
+		record.Fields = append(record.Fields, field)
 	}
 	switch p.Family {
 	case "finance":
 		if p.Finance != nil {
 			record.Title = p.Finance.Label
 			add("kind", "Kind", p.Finance.Kind, true)
-			add("label", "Label", p.Finance.Label, true)
+			add("label", "Label", p.Finance.Label, false)
 			add("category", "Category", p.Finance.Category, false)
 			add("date", "Date", p.Finance.Date, true)
 			if p.Finance.Kind == "budget" {
@@ -401,6 +461,47 @@ func importRecordView(index int, p imports.ProposedRecord) ImportRecordView {
 		record.Title = "Proposed record"
 	}
 	return record
+}
+
+func importExtractionFailure(err error, fileName string) (string, string) {
+	switch {
+	case errors.Is(err, imports.ErrUnsupported):
+		return "import_format_unsupported", "This file's contents do not match a supported CSV, XLSX, or PDF file. Nothing was saved or sent."
+	case errors.Is(err, imports.ErrEncryptedPDF):
+		return "import_pdf_encrypted", "This PDF is password-protected. Save an unlocked copy, then upload that copy. Nothing was saved or sent."
+	case errors.Is(err, imports.ErrOverLimit):
+		return "import_safety_limit", "This file exceeds Mithra's safe size, page, row, or text limits. Nothing was saved or sent."
+	case errors.Is(err, imports.ErrParserTimeout):
+		return "import_pdf_timeout", "Mithra could not finish reading this PDF locally in time. Nothing was saved or sent; try the file once more."
+	default:
+		if strings.EqualFold(filepath.Ext(fileName), ".pdf") {
+			return "import_pdf_unreadable", "Mithra could not read this PDF locally. The file may be damaged or use an unsupported PDF feature. Nothing was saved or sent."
+		}
+		return "import_file_unreadable", "Mithra could not read this file. It may be damaged or use an unsupported feature. Nothing was saved or sent."
+	}
+}
+
+func importAnalysisFailure(err error) (string, string) {
+	switch {
+	case errors.Is(err, secrets.ErrSettingsDenied):
+		return "import_ai_settings_unavailable", "Mithra could not open the saved OpenAI connection. Reconnect OpenAI in Settings, then try again."
+	case errors.Is(err, errImportEvidenceMismatch):
+		return "import_ai_evidence_mismatch", "OpenAI returned row or page references that did not match the extracted file, so Mithra rejected the review. Try again."
+	case errors.Is(err, providers.ErrInvalidCredential):
+		return "import_ai_key_rejected", "OpenAI rejected the saved API key. Reconnect OpenAI in Settings, then try again."
+	case errors.Is(err, providers.ErrRateLimited):
+		return "import_ai_rate_limited", "OpenAI is temporarily rate-limiting requests. Wait a minute, then try again."
+	case errors.Is(err, providers.ErrProviderUnavailable):
+		return "import_ai_unavailable", "Mithra could not reach OpenAI. Check the connection and try again."
+	case errors.Is(err, providers.ErrRefusal):
+		return "import_ai_refused", "OpenAI did not process this file. Try a different file or review its contents."
+	case errors.Is(err, providers.ErrIncomplete):
+		return "import_ai_incomplete", "OpenAI stopped before the review was complete. Try again."
+	case errors.Is(err, providers.ErrInvalidResponse):
+		return "import_ai_invalid_response", "OpenAI returned a review Mithra could not validate safely. Try again."
+	default:
+		return "import_ai_failed", "Mithra could not organise this file because the AI request failed. Try again."
+	}
 }
 func applyImportFields(r *http.Request, set *imports.ProposalSet) {
 	for i := range set.Records {
@@ -455,6 +556,14 @@ func applyImportFields(r *http.Request, set *imports.ProposalSet) {
 			p.GeneratedBy = "user"
 		}
 	}
+}
+func submittedImportFields(r *http.Request) bool {
+	for name := range r.PostForm {
+		if strings.HasPrefix(name, "field_") {
+			return true
+		}
+	}
+	return false
 }
 func blockingIssues(issues []imports.Issue) int {
 	n := 0

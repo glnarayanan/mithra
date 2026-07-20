@@ -80,3 +80,36 @@ test("quick navigation restores the focused invoker with a safe fallback", () =>
   app.restoreFocus({ isConnected: false, focus: () => { focused = "stale"; } }, fallback);
   assert.equal(focused, "fallback");
 });
+
+test("action shortcuts navigate without stealing keystrokes from editing or dialogs", () => {
+  const noModal = { querySelector: () => null };
+  const event = (key, overrides = {}) => ({ key, shiftKey: true, target: null, ...overrides });
+  const input = { tagName: "INPUT", parentElement: null };
+
+  assert.equal(app.actionShortcutPath(event("i"), noModal), "/imports");
+  assert.equal(app.actionShortcutPath(event("p"), noModal), "/planning");
+  assert.equal(app.actionShortcutPath(event("i", { target: input }), noModal), "");
+  assert.equal(app.actionShortcutPath(event("i", { isComposing: true }), noModal), "");
+  assert.equal(app.actionShortcutPath(event("i"), { querySelector: () => ({}) }), "");
+  assert.equal(app.actionShortcutPath(event("x"), noModal), "");
+});
+
+test("Q opens quick capture without stealing ordinary typing", () => {
+  const noModal = { querySelector: () => null };
+  const input = { tagName: "INPUT", parentElement: null };
+  const event = (overrides = {}) => ({ key: "q", target: null, ...overrides });
+
+  assert.equal(app.shouldOpenQuickCapture(event(), noModal, null), true);
+  assert.equal(app.shouldOpenQuickCapture(event({ key: "Q" }), noModal, null), true);
+  assert.equal(app.shouldOpenQuickCapture(event({ target: input }), noModal, null), false);
+  assert.equal(app.shouldOpenQuickCapture(event({ metaKey: true }), noModal, null), false);
+  assert.equal(app.shouldOpenQuickCapture(event({ repeat: true }), noModal, null), false);
+  assert.equal(app.shouldOpenQuickCapture(event(), { querySelector: () => ({}) }, null), false);
+});
+
+test("page errors log only safe diagnostic fields", () => {
+  const calls = [];
+  const element = { getAttribute: (name) => name === "data-error-code" ? "import_ai_rate_limited" : "request-123" };
+  app.reportPageErrors({ querySelectorAll: () => [element] }, { error: (...args) => calls.push(args) });
+  assert.deepEqual(calls, [["Mithra request failed", { code: "import_ai_rate_limited", reference: "request-123" }]]);
+});

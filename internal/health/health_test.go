@@ -164,3 +164,21 @@ func TestHealthPrivacyDatesAndSourceScope(t *testing.T) {
 		t.Fatalf("disabled summary error=%v", err)
 	}
 }
+
+func TestAppointmentTimeMustMatchItsDate(t *testing.T) {
+	f := newHealthFixture(t)
+	source := f.source(t, policy.Personal, []byte("appointment"))
+	draft := AppointmentDraft{Visibility: policy.Personal, Subject: "Owner", Label: "Check-up", ScheduledOn: "2026-07-20", ScheduledAt: "2026-07-21T10:00", Provenance: Provenance{SourceID: source.ID, SourceFamily: source.Family, SourceVersion: source.Version, LocatorKind: "source", LocatorValue: source.LocatorValue}}
+	if _, err := f.service.CreateAppointment(context.Background(), f.owner, draft); !errors.Is(err, ErrInvalidRecord) {
+		t.Fatalf("cross-date appointment error=%v", err)
+	}
+	draft.ScheduledAt = "2026-07-20 10:00"
+	if _, err := f.service.CreateAppointment(context.Background(), f.owner, draft); !errors.Is(err, ErrInvalidRecord) {
+		t.Fatalf("malformed appointment error=%v", err)
+	}
+	draft.ScheduledAt = "2026-07-20T10:00"
+	appointment, err := f.service.CreateAppointment(context.Background(), f.owner, draft)
+	if err != nil || appointment.ScheduledAt != draft.ScheduledAt {
+		t.Fatalf("valid appointment=%#v error=%v", appointment, err)
+	}
+}

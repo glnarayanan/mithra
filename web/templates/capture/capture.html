@@ -1,15 +1,21 @@
+{{define "capture-composer"}}
+<section class="capture-composer" aria-labelledby="capture-composer-title" id="capture">
+  <div><p class="eyebrow">Quick update</p><h2 id="capture-composer-title">What’s new?</h2><p>Type or dictate it naturally. If one essential detail is missing, Mithra will ask.</p></div>
+  <form method="post" action="/capture" class="capture-text-form" data-capture-composer><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="text"><label>Your update<textarea name="update" maxlength="12000" rows="5" placeholder="For example: Dentist appointment on Friday at 10 am." required></textarea></label><div class="capture-form-footer"><label>Who can see this?<select name="visibility"><option value="personal">Only you</option><option value="shared">Shared with your partner</option></select></label><div class="voice-capture" data-voice-capture><button type="button" class="capture-mic" data-record aria-label="Dictate this update" title="Dictate this update"{{if not .ProviderConfigured}} disabled{{end}}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm6-3a6 6 0 0 1-12 0M12 18v3M9 21h6"/></svg></button><button type="button" data-stop hidden>Stop</button><button type="button" data-cancel class="button-quiet" hidden>Discard recording</button><p data-voice-status role="status" aria-live="polite">Use the microphone to dictate up to 90 seconds.</p></div><button type="submit"{{if not .ProviderConfigured}} disabled aria-describedby="capture-provider-note"{{end}}>Add update</button></div>{{if not .ProviderConfigured}}<p id="capture-provider-note"><a href="/settings">Connect OpenAI in Settings</a> to process an update.</p>{{end}}</form>
+</section>
+{{end}}
+
 {{define "capture.html"}}
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#062d52">
+    <meta name="theme-color" content="#202022">
     <meta name="referrer" content="same-origin">
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/assets/styles.css">
     <script defer src="/assets/app.js"></script>
-    <script defer src="/assets/capture.js"></script>
     <title>Capture · Mithra</title>
   </head>
   <body class="authenticated-shell">
@@ -23,16 +29,11 @@
         {{if .Pending}}
         <section class="capture-pending" aria-labelledby="capture-pending-title">
           <p class="eyebrow">One thing to check</p><h2 id="capture-pending-title">{{.Pending.Title}}</h2><p>{{.Pending.Summary}}</p>{{if .Pending.SourceURL}}<p><a href="{{.Pending.SourceURL}}">Review the captured words</a></p>{{end}}
-          {{if .Pending.Clarification}}<form method="post" action="/capture" class="capture-answer-form"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="answer"><input type="hidden" name="capture_id" value="{{.Pending.ID}}"><label>{{.Pending.Clarification}}<input name="answer" maxlength="256" required autofocus></label><div><button type="submit">Use this detail</button><button type="submit" name="action" value="cancel" class="button-quiet">Discard capture</button></div></form>
+          {{if .Pending.Clarification}}<form method="post" action="/capture" class="capture-answer-form"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="capture_id" value="{{.Pending.ID}}"><label>{{.Pending.Clarification}}<input name="answer" maxlength="256"{{if eq .Pending.ClarificationField "date"}} type="date"{{end}} required autofocus></label><div><button type="submit" name="action" value="answer">Use this detail</button><button type="submit" name="action" value="cancel" class="button-quiet" formnovalidate>Discard capture</button></div></form>
           {{else}}<dl class="capture-proposal">{{range .Pending.Details}}<div><dt>{{.Label}}</dt><dd>{{.Value}}</dd></div>{{end}}</dl><form method="post" action="/capture" class="capture-confirm-form"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="capture_id" value="{{.Pending.ID}}"><button type="submit" name="action" value="confirm">Keep this record</button><button type="submit" name="action" value="cancel" class="button-quiet">Discard capture</button></form>{{end}}
         </section>
         {{end}}
-        <section class="capture-composer" aria-labelledby="capture-composer-title">
-          <div><p class="eyebrow">In your own words</p><h2 id="capture-composer-title">What happened?</h2><p>Include what you know. If an important detail is missing, Mithra will ask one question.</p></div>
-          <form method="post" action="/capture" class="capture-text-form"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="text"><label for="capture-update">Your update</label><textarea id="capture-update" name="update" maxlength="12000" rows="6" placeholder="For example: Paid 4200 for school fees today." required></textarea><div class="capture-form-footer"><label for="capture-visibility">Who can see this?</label><select id="capture-visibility" name="visibility"><option value="personal">Only you</option><option value="shared">Shared with your partner</option></select><button type="submit"{{if not .ProviderConfigured}} disabled aria-describedby="capture-provider-note"{{end}}>Add update</button></div>{{if not .ProviderConfigured}}<p id="capture-provider-note"><a href="/settings">Connect OpenAI in Settings</a> to process an update.</p>{{end}}</form>
-          <div class="capture-divider" role="separator"><span>or speak it</span></div>
-          <div class="voice-capture" data-voice-capture><input type="hidden" name="csrf" value="{{.CSRF}}"><label for="voice-visibility">Who can see this?</label><select id="voice-visibility" name="visibility"><option value="personal">Only you</option><option value="shared">Shared with your partner</option></select><div class="voice-actions"><button type="button" data-record{{if not .ProviderConfigured}} disabled{{end}}>Start recording</button><button type="button" data-stop hidden>Stop and review</button><button type="button" data-cancel class="button-quiet" hidden>Discard</button></div><p data-voice-status role="status" aria-live="polite">Record up to 90 seconds. Your audio is deleted after you review the transcript.</p></div>
-        </section>
+        {{template "capture-composer" .}}
         {{if .Recent}}<section class="capture-recent" aria-labelledby="capture-recent-title"><div class="section-heading"><div><p class="eyebrow">Recent</p><h2 id="capture-recent-title">Your updates</h2></div><p>Each update stays linked to your original words.</p></div><ol>{{range .Recent}}<li><div><span>{{.Kind}}</span><strong>{{.Title}}</strong><p>{{.Summary}}</p></div><div><a href="{{.SourceURL}}">View original</a>{{if .Undoable}}<form method="post" action="/capture"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="capture_id" value="{{.ID}}"><button type="submit" name="action" value="undo" class="button-quiet">Undo update</button></form>{{end}}</div></li>{{end}}</ol></section>{{end}}
       </div>
     </main>

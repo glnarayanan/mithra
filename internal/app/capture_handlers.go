@@ -32,9 +32,9 @@ type CaptureView struct {
 }
 
 type CaptureItemView struct {
-	ID, Kind, Title, Summary, Clarification, SourceURL string
-	Details                                            []CaptureDetailView
-	Undoable                                           bool
+	ID, Kind, Title, Summary, Clarification, ClarificationField, SourceURL string
+	Details                                                                []CaptureDetailView
+	Undoable                                                               bool
 }
 
 type CaptureDetailView struct{ Label, Value string }
@@ -54,7 +54,11 @@ func (a *App) capture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodGet {
-		a.renderCapture(r, w, scope, csrf, "", "")
+		status := ""
+		if r.URL.Query().Get("discarded") == "1" {
+			status = "Capture discarded. No record was kept."
+		}
+		a.renderCapture(r, w, scope, csrf, status, "")
 		return
 	}
 	if !a.validSessionMutation(r, a.sessionCookie(r)) {
@@ -77,7 +81,7 @@ func (a *App) capture(w http.ResponseWriter, r *http.Request) {
 			a.renderCapture(r, w, scope, csrf, "", "That capture could not be discarded safely.")
 			return
 		}
-		a.renderCapture(r, w, scope, csrf, "Capture discarded. No record was kept.", "")
+		http.Redirect(w, r, "/capture?discarded=1", http.StatusSeeOther)
 	case "undo":
 		if err := a.captureRecords.Undo(r.Context(), scope, boundedField(r, "capture_id", 128)); err != nil {
 			a.renderCapture(r, w, scope, csrf, "", "Undo is no longer safe because the record changed or the undo window ended.")
@@ -118,7 +122,7 @@ func (a *App) captureText(r *http.Request, w http.ResponseWriter, scope policy.A
 		a.renderCapture(r, w, scope, csrf, "", "The update was processed but could not be confirmed. Review it below.")
 		return
 	}
-	a.renderCapture(r, w, scope, csrf, receipt.Summary+" You can undo this for ten minutes.", "")
+	http.Redirect(w, r, "/?captured=1#capture", http.StatusSeeOther)
 }
 
 func (a *App) answerCapture(r *http.Request, w http.ResponseWriter, scope policy.ActorScope, csrf string) {
@@ -288,7 +292,7 @@ func captureItemView(receipt capture.Capture, now time.Time) CaptureItemView {
 	if title == "" {
 		title = "Captured update"
 	}
-	item := CaptureItemView{ID: receipt.ID, Kind: kind, Title: title, Summary: receipt.Summary, Clarification: receipt.ClarificationQuestion, Undoable: receipt.State == "confirmed" && receipt.RecordID != "" && receipt.UndoUntil.After(now)}
+	item := CaptureItemView{ID: receipt.ID, Kind: kind, Title: title, Summary: receipt.Summary, Clarification: receipt.ClarificationQuestion, ClarificationField: receipt.ClarificationField, Undoable: receipt.State == "confirmed" && receipt.RecordID != "" && receipt.UndoUntil.After(now)}
 	if receipt.SourceID != "" {
 		item.SourceURL = sourceURL(receipt.SourceID)
 	}

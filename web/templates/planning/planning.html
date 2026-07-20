@@ -4,7 +4,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#062d52">
+    <meta name="theme-color" content="#202022">
     <meta name="referrer" content="same-origin">
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/assets/styles.css">
@@ -29,7 +29,7 @@
           {{if ne .View "agenda"}}
           <div class="calendar-wide-view">
             <div class="calendar-weekdays" aria-hidden="true">{{range .WeekdayLabels}}<span>{{.}}</span>{{end}}</div>
-            <div class="calendar-grid" role="grid" aria-label="{{.PeriodLabel}}" data-calendar-grid>{{range .CalendarDays}}<section class="calendar-day{{if not .InPeriod}} calendar-day-muted{{end}}{{if .IsToday}} calendar-day-today{{end}}" role="gridcell"><a class="calendar-day-number" data-calendar-day href="{{.FocusURL}}" aria-label="{{.AccessibleDate}}">{{.DayNumber}}</a>{{if .Events}}<ol class="calendar-day-events">{{range .VisibleEvents}}<li><a href="{{.AgendaURL}}"><span>{{.TimeLabel}}</span>{{.Title}}</a></li>{{end}}</ol>{{if .MoreEvents}}<details class="calendar-overflow"><summary>+ {{.MoreEvents}} more</summary><ol>{{range .OverflowEvents}}<li><a href="{{.AgendaURL}}"><span>{{.TimeLabel}}</span>{{.Title}}</a></li>{{end}}</ol></details>{{end}}{{end}}</section>{{end}}</div>
+            <div class="calendar-grid" role="grid" aria-label="{{.PeriodLabel}}" data-calendar-grid>{{range .CalendarDays}}<section class="calendar-day{{if not .InPeriod}} calendar-day-muted{{end}}{{if .IsToday}} calendar-day-today{{end}}" role="gridcell"><a class="calendar-day-number" data-calendar-day href="{{.FocusURL}}" aria-label="{{.AccessibleDate}}">{{.DayNumber}}</a>{{if .Events}}<ol class="calendar-day-events">{{range .Events}}<li><a href="{{.AgendaURL}}">{{if .TimeLabel}}<span>{{.TimeLabel}}</span>{{end}}<strong>{{.Title}}</strong></a></li>{{end}}</ol>{{end}}</section>{{end}}</div>
           </div>
           {{end}}
           <div class="calendar-agenda{{if ne .View "agenda"}} calendar-mobile-agenda{{end}}" aria-label="Agenda for {{.PeriodLabel}}">{{if .Agenda}}{{range .Agenda}}<article class="agenda-event" id="event-{{.ID}}"><time datetime="{{.DateTime}}">{{.DateLabel}}{{if .TimeLabel}} · {{.TimeLabel}}{{end}}</time><div><h3>{{.Title}}</h3>{{if .Owner}}<p>For {{.Owner}}</p>{{end}}{{if .Location}}<p>{{.Location}}</p>{{end}}{{if .Conflict}}<p class="calendar-conflict">{{.Conflict}}</p>{{end}}</div><div class="event-actions"><a href="{{.SourceURL}}">View original</a>{{if .Exportable}}<a href="{{.ICSURL}}">Download .ics</a><a href="{{.GoogleURL}}" target="_blank" rel="noopener">Open Google Calendar draft</a>{{else}}<span>Add a complete date to export</span>{{end}}</div></article>{{end}}{{else}}<div class="empty-state"><p class="eyebrow">Nothing dated here</p><h3>No calendar events in this period</h3><p>Undated milestones remain with their plan until a date is recorded.</p></div>{{end}}</div>

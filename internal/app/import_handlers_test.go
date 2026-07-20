@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -19,6 +20,8 @@ import (
 
 	importcore "github.com/glnarayanan/mithra/internal/imports"
 	"github.com/glnarayanan/mithra/internal/policy"
+	"github.com/glnarayanan/mithra/internal/providers"
+	"github.com/glnarayanan/mithra/internal/secrets"
 	"github.com/glnarayanan/mithra/internal/storage"
 )
 
@@ -55,7 +58,7 @@ func TestCSVImportSendsExtractedTextThenCommitsAtomically(t *testing.T) {
 		t.Fatalf("pending duplicate = %d calls=%d %q", pendingDuplicate.Code, providerCalls, pendingDuplicate.Body.String())
 	}
 	resumed := serve(application, authForm(http.MethodGet, "/imports", url.Values{}, []*http.Cookie{session.session, session.csrf}))
-	if resumed.Code != http.StatusOK || !strings.Contains(resumed.Body.String(), "Review before import") || !strings.Contains(resumed.Body.String(), "family.csv") || strings.Contains(resumed.Body.String(), `type="hidden" name="action"`) {
+	if resumed.Code != http.StatusOK || !strings.Contains(resumed.Body.String(), "Review before import") || !strings.Contains(resumed.Body.String(), "family.csv") {
 		t.Fatalf("resumed review = %d %q", resumed.Code, resumed.Body.String())
 	}
 	var importID string
@@ -110,7 +113,7 @@ func TestImportBlockerRequiresUserCorrectionAndRevisionFence(t *testing.T) {
 		return captureProviderBody(`{"records":[{"family":"health","locator":{"kind":"row","value":"row:2"},"finance":null,"health":{"subject":"Alex","analyte":"HbA1c","specimen":"blood","method":"","reference_context":"","observed_on":"2026-07-02","value":"5.8","unit":"","reference_low":"","reference_high":"","reference_unit":""},"planning":null}]}`)
 	})
 	upload := serve(application, importUploadRequest(t, session, "health.csv", "text/csv", []byte("test,value,date,unit\nHbA1c,5.8,2026-07-02,\n"), "personal"))
-	if upload.Code != http.StatusOK || !strings.Contains(upload.Body.String(), "Enter the unit exactly as reported") || !strings.Contains(upload.Body.String(), `aria-invalid="true"`) {
+	if upload.Code != http.StatusOK || !strings.Contains(upload.Body.String(), "1 record needs attention") || !strings.Contains(upload.Body.String(), "Correct the highlighted fields below") || !strings.Contains(upload.Body.String(), `type="date"`) || !strings.Contains(upload.Body.String(), `aria-invalid="true"`) {
 		t.Fatalf("blocked review = %d %q", upload.Code, upload.Body.String())
 	}
 	var id string
@@ -118,7 +121,7 @@ func TestImportBlockerRequiresUserCorrectionAndRevisionFence(t *testing.T) {
 		t.Fatal(err)
 	}
 	blocked := serve(application, importForm(session, url.Values{"action": {"commit"}, "import_id": {id}, "version": {"1"}}))
-	if !strings.Contains(blocked.Body.String(), "required value is unresolved") {
+	if !strings.Contains(blocked.Body.String(), "highlighted values still need") {
 		t.Fatalf("blocked commit = %q", blocked.Body.String())
 	}
 	var observations int
@@ -127,18 +130,137 @@ func TestImportBlockerRequiresUserCorrectionAndRevisionFence(t *testing.T) {
 		t.Fatalf("partial observations = %d", observations)
 	}
 
-	values := url.Values{"action": {"correct"}, "import_id": {id}, "version": {"1"}, "field_0-subject": {"Alex"}, "field_0-analyte": {"HbA1c"}, "field_0-observed_on": {"2026-07-02"}, "field_0-value": {"5.8"}, "field_0-unit": {"%"}}
+	values := url.Values{"action": {"commit"}, "import_id": {id}, "version": {"2"}, "field_0-subject": {"Alex"}, "field_0-analyte": {"HbA1c"}, "field_0-observed_on": {"2026-07-02"}, "field_0-value": {"5.8"}, "field_0-unit": {"%"}}
 	corrected := serve(application, importForm(session, values))
-	if corrected.Code != http.StatusOK || !strings.Contains(corrected.Body.String(), "ready to import") {
+	if corrected.Code != http.StatusOK || !strings.Contains(corrected.Body.String(), "Import complete") {
 		t.Fatalf("correction = %d %q", corrected.Code, corrected.Body.String())
-	}
-	committed := serve(application, importForm(session, url.Values{"action": {"commit"}, "import_id": {id}, "version": {"2"}}))
-	if !strings.Contains(committed.Body.String(), "Import complete") {
-		t.Fatalf("corrected commit = %q", committed.Body.String())
 	}
 	var unit, generated string
 	if err := application.db.QueryRow(`SELECT unit,generated_by FROM health_observations WHERE active=1`).Scan(&unit, &generated); err != nil || unit != "%" || generated != "user" {
 		t.Fatalf("corrected record = %q %q, %v", unit, generated, err)
+	}
+}
+
+func TestFinanceImportAcceptsDatePickerAndCategoryCorrectionInOneStep(t *testing.T) {
+	application, mailer := newAuthTestApp(t, "owner@example.com")
+	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
+	connectImportProvider(t, application, ownerScope(t, application, session), func(request *http.Request) string {
+		var payload map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		instructions, _ := payload["instructions"].(string)
+		if !strings.Contains(instructions, "concise label") || !strings.Contains(instructions, "classify its category") {
+			t.Fatalf("import instructions do not ask OpenAI to label and categorise records: %q", instructions)
+		}
+		return captureProviderBody(`{"records":[{"family":"finance","locator":{"kind":"row","value":"row:2"},"finance":{"kind":"spending","label":"","category":"Expenses","date":"07/07/2026","end_date":"","status":"","amount":"21000"},"health":null,"planning":null}]}`)
+	})
+	upload := serve(application, importUploadRequest(t, session, "repayments.csv", "text/csv", []byte("label,amount,date\nHome Loan EMI,21000,07/07/2026\n"), "personal"))
+	if upload.Code != http.StatusOK || !strings.Contains(upload.Body.String(), "Choose a valid date.") || !strings.Contains(upload.Body.String(), `<select id="field-0-kind"`) || !strings.Contains(upload.Body.String(), `value="Home Loan EMI"`) || !strings.Contains(upload.Body.String(), `value="Loan repayment"`) || regexp.MustCompile(`id="field-0-label"[^>]* required`).MatchString(upload.Body.String()) || strings.Contains(upload.Body.String(), "Check corrections") {
+		t.Fatalf("finance review = %d %q", upload.Code, upload.Body.String())
+	}
+	var id string
+	if err := application.db.QueryRow(`SELECT id FROM document_imports WHERE state='review'`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	values := url.Values{"action": {"commit"}, "import_id": {id}, "version": {"1"}, "field_0-kind": {"spending"}, "field_0-label": {""}, "field_0-category": {"Loan repayment"}, "field_0-date": {"2026-07-07"}, "field_0-amount": {"21000"}}
+	committed := serve(application, importForm(session, values))
+	if committed.Code != http.StatusOK || !strings.Contains(committed.Body.String(), "Import complete") {
+		t.Fatalf("finance commit = %d %q", committed.Code, committed.Body.String())
+	}
+	var label, category, date string
+	if err := application.db.QueryRow(`SELECT label,category,spent_on FROM finance_spending WHERE active=1`).Scan(&label, &category, &date); err != nil || label != "Loan repayment" || category != "Loan repayment" || date != "2026-07-07" {
+		t.Fatalf("finance record = label=%q category=%q date=%q err=%v", label, category, date, err)
+	}
+}
+
+func TestFinanceImportCompletesObviousCategoriesFromEvidence(t *testing.T) {
+	document := importcore.Document{Fragments: []importcore.Fragment{
+		{Locator: importcore.Locator{Kind: "row", Value: "row:2"}, Text: "Emergency savings | 45000"},
+		{Locator: importcore.Locator{Kind: "row", Value: "row:3"}, Text: "Tax Payment | 20000"},
+		{Locator: importcore.Locator{Kind: "row", Value: "row:4"}, Text: "Groceries | 5000"},
+	}}
+	proposals := importcore.ProposalSet{Records: []importcore.ProposedRecord{
+		{Family: "finance", Locator: document.Fragments[0].Locator, Finance: &importcore.FinanceProposal{Kind: "spending", Category: "Expenses"}},
+		{Family: "finance", Locator: document.Fragments[1].Locator, Finance: &importcore.FinanceProposal{Kind: "spending", Category: "Expenses"}},
+		{Family: "finance", Locator: document.Fragments[2].Locator, Finance: &importcore.FinanceProposal{Kind: "spending", Category: "Groceries"}},
+	}}
+
+	completeFinanceProposals(document, &proposals)
+
+	wants := []struct{ kind, label, category string }{
+		{"asset", "Emergency savings", "Savings"},
+		{"spending", "Tax Payment", "Tax payment"},
+		{"spending", "Groceries", "Groceries"},
+	}
+	for index, want := range wants {
+		got := proposals.Records[index].Finance
+		if got.Kind != want.kind || got.Label != want.label || got.Category != want.category {
+			t.Errorf("record %d = kind=%q label=%q category=%q, want %#v", index, got.Kind, got.Label, got.Category, want)
+		}
+	}
+}
+
+func TestImportAnalysisFailureReturnsUsefulSafeDiagnostics(t *testing.T) {
+	application, mailer := newAuthTestApp(t, "owner@example.com")
+	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
+	scope := ownerScope(t, application, session)
+	if err := application.providerSettings.ReplaceOpenAI(context.Background(), scope, "sk-import-test-secret", func(context.Context, string) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	application.openAIClient = &http.Client{Transport: appRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusTooManyRequests, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"error":{"message":"provider detail must not be reflected"}}`)), Request: request}, nil
+	})}
+	response := serve(application, importUploadRequest(t, session, "records.csv", "text/csv", []byte("label,amount,date\nGroceries,100,2026-07-01\n"), "personal"))
+	if response.Code != http.StatusBadGateway || response.Header().Get("X-Mithra-Error-Code") != "import_ai_rate_limited" || !strings.Contains(response.Body.String(), "rate-limiting requests") || !strings.Contains(response.Body.String(), "Reference:") || strings.Contains(response.Body.String(), "provider detail") {
+		t.Fatalf("analysis failure = %d headers=%v body=%q", response.Code, response.Header(), response.Body.String())
+	}
+}
+
+func TestImportEvidenceMismatchReturnsSpecificSafeDiagnostic(t *testing.T) {
+	application, mailer := newAuthTestApp(t, "owner@example.com")
+	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
+	connectImportProvider(t, application, ownerScope(t, application, session), func(*http.Request) string {
+		return captureProviderBody(`{"records":[{"family":"finance","locator":{"kind":"page","value":"page:1"},"finance":{"kind":"spending","label":"Groceries","category":"Groceries","date":"2026-07-01","end_date":"","status":"","amount":"100"},"health":null,"planning":null}]}`)
+	})
+
+	response := serve(application, importUploadRequest(t, session, "records.csv", "text/csv", []byte("label,amount,date\nGroceries,100,2026-07-01\n"), "personal"))
+	if response.Code != http.StatusBadGateway || response.Header().Get("X-Mithra-Error-Code") != "import_ai_evidence_mismatch" || !strings.Contains(response.Body.String(), "row or page references") || strings.Contains(response.Body.String(), "AI request failed") {
+		t.Fatalf("evidence mismatch = %d headers=%v body=%q", response.Code, response.Header(), response.Body.String())
+	}
+}
+
+func TestImportAnalysisFailureMapsEveryProviderOutcome(t *testing.T) {
+	tests := []struct {
+		err     error
+		code    string
+		message string
+	}{
+		{providers.ErrInvalidCredential, "import_ai_key_rejected", "rejected the saved API key"},
+		{providers.ErrRateLimited, "import_ai_rate_limited", "rate-limiting requests"},
+		{providers.ErrProviderUnavailable, "import_ai_unavailable", "could not reach OpenAI"},
+		{providers.ErrRefusal, "import_ai_refused", "did not process this file"},
+		{providers.ErrIncomplete, "import_ai_incomplete", "before the review was complete"},
+		{providers.ErrInvalidResponse, "import_ai_invalid_response", "could not validate safely"},
+		{secrets.ErrSettingsDenied, "import_ai_settings_unavailable", "saved OpenAI connection"},
+		{errImportEvidenceMismatch, "import_ai_evidence_mismatch", "row or page references"},
+		{errors.New("unexpected"), "import_ai_failed", "AI request failed"},
+	}
+	for _, test := range tests {
+		code, message := importAnalysisFailure(test.err)
+		if code != test.code || !strings.Contains(message, test.message) {
+			t.Errorf("failure %v = %q %q", test.err, code, message)
+		}
+	}
+}
+
+func TestUnreadablePDFExplainsTheActualFailure(t *testing.T) {
+	application, mailer := newAuthTestApp(t, "owner@example.com")
+	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
+	application.importExtractor = importcore.New(failingPDFParser{err: importcore.ErrUnreadable})
+	response := serve(application, importUploadRequest(t, session, "report.pdf", "application/pdf", []byte("%PDF-1.7\nvalid-looking-fixture"), "personal"))
+	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "could not read this PDF locally") || strings.Contains(response.Body.String(), "corrupt, unsupported") {
+		t.Fatalf("PDF failure = %d %q", response.Code, response.Body.String())
 	}
 }
 
@@ -415,6 +537,12 @@ type scannedPDFParser struct{}
 
 func (scannedPDFParser) Extract(context.Context, []byte, importcore.Limits) ([]importcore.Fragment, error) {
 	return nil, importcore.ErrScannedPDF
+}
+
+type failingPDFParser struct{ err error }
+
+func (parser failingPDFParser) Extract(context.Context, []byte, importcore.Limits) ([]importcore.Fragment, error) {
+	return nil, parser.err
 }
 
 func connectImportProvider(t *testing.T, application *App, scope policy.ActorScope, response func(*http.Request) string) {

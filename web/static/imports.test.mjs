@@ -19,3 +19,18 @@ test("setMessage treats file names as text", () => {
   assert.equal(target.textContent, "<img onerror=alert(1)>");
   assert.equal(target.dataset.tone, "error");
 });
+
+test("changing a corrected field clears its stale server error", () => {
+  const attributes = { "aria-invalid": "true", "aria-describedby": "error-0-date" };
+  const error = { hidden: false };
+  const field = {
+    getAttribute: (name) => attributes[name] || null,
+    removeAttribute: (name) => { delete attributes[name]; },
+  };
+
+  imports.clearFieldError(field, { getElementById: () => error });
+
+  assert.equal(error.hidden, true);
+  assert.equal(field.getAttribute("aria-invalid"), null);
+  assert.equal(field.getAttribute("aria-describedby"), null);
+});
