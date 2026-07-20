@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 
 	importcore "github.com/glnarayanan/mithra/internal/imports"
 	"github.com/glnarayanan/mithra/internal/policy"
+	"github.com/glnarayanan/mithra/internal/providers"
 	"github.com/glnarayanan/mithra/internal/storage"
 )
 
@@ -176,6 +178,28 @@ func TestImportAnalysisFailureReturnsUsefulSafeDiagnostics(t *testing.T) {
 	response := serve(application, importUploadRequest(t, session, "records.csv", "text/csv", []byte("label,amount,date\nGroceries,100,2026-07-01\n"), "personal"))
 	if response.Code != http.StatusBadGateway || response.Header().Get("X-Mithra-Error-Code") != "import_ai_rate_limited" || !strings.Contains(response.Body.String(), "rate-limiting requests") || !strings.Contains(response.Body.String(), "Reference:") || strings.Contains(response.Body.String(), "provider detail") {
 		t.Fatalf("analysis failure = %d headers=%v body=%q", response.Code, response.Header(), response.Body.String())
+	}
+}
+
+func TestImportAnalysisFailureMapsEveryProviderOutcome(t *testing.T) {
+	tests := []struct {
+		err     error
+		code    string
+		message string
+	}{
+		{providers.ErrInvalidCredential, "import_ai_key_rejected", "rejected the saved API key"},
+		{providers.ErrRateLimited, "import_ai_rate_limited", "rate-limiting requests"},
+		{providers.ErrProviderUnavailable, "import_ai_unavailable", "could not reach OpenAI"},
+		{providers.ErrRefusal, "import_ai_refused", "did not process this file"},
+		{providers.ErrIncomplete, "import_ai_incomplete", "before the review was complete"},
+		{providers.ErrInvalidResponse, "import_ai_invalid_response", "could not validate safely"},
+		{errors.New("unexpected"), "import_ai_failed", "AI request failed"},
+	}
+	for _, test := range tests {
+		code, message := importAnalysisFailure(test.err)
+		if code != test.code || !strings.Contains(message, test.message) {
+			t.Errorf("failure %v = %q %q", test.err, code, message)
+		}
 	}
 }
 

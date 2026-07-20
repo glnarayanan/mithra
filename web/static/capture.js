@@ -30,6 +30,7 @@
     var cancel = panel.querySelector("[data-cancel]");
     var status = panel.querySelector("[data-voice-status]");
     var composer = typeof panel.closest === "function" ? panel.closest("[data-capture-composer]") : null;
+    var dialog = typeof panel.closest === "function" ? panel.closest("dialog") : null;
     var csrf = composer ? composer.querySelector("[name=csrf]") : panel.querySelector("[name=csrf]");
     var visibility = composer ? composer.querySelector("[name=visibility]") : panel.querySelector("[name=visibility]");
     var type = supportedType(MediaRecorderClass);
@@ -44,6 +45,7 @@
     var chunks = [];
     var startedAt = 0;
     var timer = 0;
+    var generation = 0;
 
     function finishStream() {
       if (timer) environment.clearTimeout(timer);
@@ -56,6 +58,7 @@
     }
 
     function discard() {
+      generation += 1;
       chunks = [];
       if (recorder && recorder.state !== "inactive") recorder.stop();
       recorder = null;
@@ -84,19 +87,28 @@
     }
 
     record.addEventListener("click", async function () {
+      var attempt = generation + 1;
+      generation = attempt;
       record.disabled = true;
       setMessage(status, "Waiting for microphone permission…", "working");
       try {
-        stream = await navigatorObject.mediaDevices.getUserMedia({ audio: true });
+        var candidate = await navigatorObject.mediaDevices.getUserMedia({ audio: true });
+        if (attempt !== generation || dialog && !dialog.open) {
+          candidate.getTracks().forEach(function (track) { track.stop(); });
+          if (attempt === generation) record.disabled = false;
+          return;
+        }
+        stream = candidate;
         chunks = [];
         recorder = new MediaRecorderClass(stream, { mimeType: type });
         recorder.addEventListener("dataavailable", function (event) { if (event.data && event.data.size) chunks.push(event.data); });
         recorder.addEventListener("stop", function () {
           var duration = (Date.now() - startedAt) / 1000;
           var blob = new environment.Blob(chunks, { type: type });
+          var shouldUpload = attempt === generation;
           chunks = [];
           finishStream();
-          if (recorder) upload(blob, duration);
+          if (shouldUpload) upload(blob, duration);
           recorder = null;
         });
         recorder.start(1000);
@@ -106,12 +118,18 @@
         setMessage(status, "Recording. Stop within 90 seconds when you are done.", "working");
         timer = environment.setTimeout(function () { if (recorder && recorder.state !== "inactive") recorder.stop(); }, maximumDurationSeconds * 1000);
       } catch (_) {
+        if (attempt !== generation) return;
         finishStream();
         setMessage(status, "Microphone access was not granted. Nothing was saved or sent.", "error");
       }
     });
     stop.addEventListener("click", function () { if (recorder && recorder.state !== "inactive") recorder.stop(); });
     cancel.addEventListener("click", discard);
+    if (dialog && typeof dialog.addEventListener === "function") {
+      dialog.addEventListener("close", function () {
+        if (record.disabled || recorder || stream) discard();
+      });
+    }
   }
 
   function install(root, environment) {
