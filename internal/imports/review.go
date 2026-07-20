@@ -718,9 +718,6 @@ func (p *FinanceProposal) issues(i int, locator string) []Issue {
 		return []Issue{{Record: i, Field: "family", Message: "Finance details are missing.", Locator: locator}}
 	}
 	var out []Issue
-	if strings.TrimSpace(p.Label) == "" {
-		out = append(out, Issue{Record: i, Field: "label", Message: "Enter a finance label.", Locator: locator})
-	}
 	if len(strings.TrimSpace(p.Label)) > 256 {
 		out = append(out, Issue{Record: i, Field: "label", Message: "Shorten the finance label to 256 characters.", Locator: locator})
 	}
@@ -826,7 +823,14 @@ func (p *PlanningProposal) issues(i int, locator string) []Issue {
 }
 
 func (p *FinanceProposal) draft(v policy.Visibility) finance.Draft {
-	return finance.Draft{Kind: finance.Kind(p.Kind), Visibility: v, Label: p.Label, Category: p.Category, Date: p.Date, EndDate: p.EndDate, Status: p.Status, AmountText: p.Amount}
+	label := strings.TrimSpace(p.Label)
+	if label == "" {
+		label = strings.TrimSpace(p.Category)
+	}
+	if label == "" {
+		label = map[finance.Kind]string{finance.Income: "Income", finance.Spending: "Expense", finance.Asset: "Asset", finance.Liability: "Liability", finance.Budget: "Budget", finance.Obligation: "Payment"}[finance.Kind(p.Kind)]
+	}
+	return finance.Draft{Kind: finance.Kind(p.Kind), Visibility: v, Label: label, Category: p.Category, Date: p.Date, EndDate: p.EndDate, Status: p.Status, AmountText: p.Amount}
 }
 func (p *HealthProposal) draft(v policy.Visibility) health.ObservationDraft {
 	return health.ObservationDraft{Visibility: v, Subject: p.Subject, Analyte: p.Analyte, Specimen: p.Specimen, Method: p.Method, ReferenceContext: p.ReferenceContext, ObservedOn: p.ObservedOn, Value: p.Value, Unit: p.Unit, ReferenceLow: p.ReferenceLow, ReferenceHigh: p.ReferenceHigh, ReferenceUnit: p.ReferenceUnit}

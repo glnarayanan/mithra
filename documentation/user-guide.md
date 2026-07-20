@@ -45,7 +45,9 @@ record before anything is added.
 
 Use **Import** for one CSV, Excel, or PDF file at a time. Mithra reads it
 locally first and proposes source-linked finance, health, or planning records.
-Correct every required value, date, unit, and source location before importing.
+For finance rows, Mithra suggests a label and category from the source values;
+you can correct either, and the label may be left blank. Correct every required
+value, date, unit, and source location before importing.
 Warnings ask for judgment; required corrections prevent an import. See
 [document imports](imports.md) for format limits, review, deletion, and the
 isolated PDF-parser boundary.

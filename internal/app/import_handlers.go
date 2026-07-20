@@ -416,7 +416,7 @@ func importRecordView(index int, p imports.ProposedRecord) ImportRecordView {
 		if p.Finance != nil {
 			record.Title = p.Finance.Label
 			add("kind", "Kind", p.Finance.Kind, true)
-			add("label", "Label", p.Finance.Label, true)
+			add("label", "Label", p.Finance.Label, false)
 			add("category", "Category", p.Finance.Category, false)
 			add("date", "Date", p.Finance.Date, true)
 			if p.Finance.Kind == "budget" {

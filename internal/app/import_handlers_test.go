@@ -144,25 +144,60 @@ func TestImportBlockerRequiresUserCorrectionAndRevisionFence(t *testing.T) {
 func TestFinanceImportAcceptsDatePickerAndCategoryCorrectionInOneStep(t *testing.T) {
 	application, mailer := newAuthTestApp(t, "owner@example.com")
 	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
-	connectImportProvider(t, application, ownerScope(t, application, session), func(*http.Request) string {
-		return captureProviderBody(`{"records":[{"family":"finance","locator":{"kind":"row","value":"row:2"},"finance":{"kind":"spending","label":"Emergency savings","category":"Expenses","date":"07/07/2026","end_date":"","status":"","amount":"10000"},"health":null,"planning":null}]}`)
+	connectImportProvider(t, application, ownerScope(t, application, session), func(request *http.Request) string {
+		var payload map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		instructions, _ := payload["instructions"].(string)
+		if !strings.Contains(instructions, "concise label") || !strings.Contains(instructions, "classify its category") {
+			t.Fatalf("import instructions do not ask OpenAI to label and categorise records: %q", instructions)
+		}
+		return captureProviderBody(`{"records":[{"family":"finance","locator":{"kind":"row","value":"row:2"},"finance":{"kind":"spending","label":"","category":"Expenses","date":"07/07/2026","end_date":"","status":"","amount":"21000"},"health":null,"planning":null}]}`)
 	})
-	upload := serve(application, importUploadRequest(t, session, "savings.csv", "text/csv", []byte("label,amount,date\nEmergency savings,10000,07/07/2026\n"), "personal"))
-	if upload.Code != http.StatusOK || !strings.Contains(upload.Body.String(), "Choose a valid date.") || !strings.Contains(upload.Body.String(), `<select id="field-0-kind"`) || strings.Contains(upload.Body.String(), "Check corrections") {
+	upload := serve(application, importUploadRequest(t, session, "repayments.csv", "text/csv", []byte("label,amount,date\nHome Loan EMI,21000,07/07/2026\n"), "personal"))
+	if upload.Code != http.StatusOK || !strings.Contains(upload.Body.String(), "Choose a valid date.") || !strings.Contains(upload.Body.String(), `<select id="field-0-kind"`) || !strings.Contains(upload.Body.String(), `value="Home Loan EMI"`) || !strings.Contains(upload.Body.String(), `value="Loan repayment"`) || regexp.MustCompile(`id="field-0-label"[^>]* required`).MatchString(upload.Body.String()) || strings.Contains(upload.Body.String(), "Check corrections") {
 		t.Fatalf("finance review = %d %q", upload.Code, upload.Body.String())
 	}
 	var id string
 	if err := application.db.QueryRow(`SELECT id FROM document_imports WHERE state='review'`).Scan(&id); err != nil {
 		t.Fatal(err)
 	}
-	values := url.Values{"action": {"commit"}, "import_id": {id}, "version": {"1"}, "field_0-kind": {"asset"}, "field_0-label": {"Emergency savings"}, "field_0-category": {"Savings"}, "field_0-date": {"2026-07-07"}, "field_0-amount": {"10000"}}
+	values := url.Values{"action": {"commit"}, "import_id": {id}, "version": {"1"}, "field_0-kind": {"spending"}, "field_0-label": {""}, "field_0-category": {"Loan repayment"}, "field_0-date": {"2026-07-07"}, "field_0-amount": {"21000"}}
 	committed := serve(application, importForm(session, values))
 	if committed.Code != http.StatusOK || !strings.Contains(committed.Body.String(), "Import complete") {
 		t.Fatalf("finance commit = %d %q", committed.Code, committed.Body.String())
 	}
-	var category, date string
-	if err := application.db.QueryRow(`SELECT category,observed_on FROM finance_assets WHERE active=1`).Scan(&category, &date); err != nil || category != "Savings" || date != "2026-07-07" {
-		t.Fatalf("finance record = category=%q date=%q err=%v", category, date, err)
+	var label, category, date string
+	if err := application.db.QueryRow(`SELECT label,category,spent_on FROM finance_spending WHERE active=1`).Scan(&label, &category, &date); err != nil || label != "Loan repayment" || category != "Loan repayment" || date != "2026-07-07" {
+		t.Fatalf("finance record = label=%q category=%q date=%q err=%v", label, category, date, err)
+	}
+}
+
+func TestFinanceImportCompletesObviousCategoriesFromEvidence(t *testing.T) {
+	document := importcore.Document{Fragments: []importcore.Fragment{
+		{Locator: importcore.Locator{Kind: "row", Value: "row:2"}, Text: "Emergency savings | 45000"},
+		{Locator: importcore.Locator{Kind: "row", Value: "row:3"}, Text: "Tax Payment | 20000"},
+		{Locator: importcore.Locator{Kind: "row", Value: "row:4"}, Text: "Groceries | 5000"},
+	}}
+	proposals := importcore.ProposalSet{Records: []importcore.ProposedRecord{
+		{Family: "finance", Locator: document.Fragments[0].Locator, Finance: &importcore.FinanceProposal{Kind: "spending", Category: "Expenses"}},
+		{Family: "finance", Locator: document.Fragments[1].Locator, Finance: &importcore.FinanceProposal{Kind: "spending", Category: "Expenses"}},
+		{Family: "finance", Locator: document.Fragments[2].Locator, Finance: &importcore.FinanceProposal{Kind: "spending", Category: "Groceries"}},
+	}}
+
+	completeFinanceProposals(document, &proposals)
+
+	wants := []struct{ kind, label, category string }{
+		{"asset", "Emergency savings", "Savings"},
+		{"spending", "Tax Payment", "Tax payment"},
+		{"spending", "Groceries", "Groceries"},
+	}
+	for index, want := range wants {
+		got := proposals.Records[index].Finance
+		if got.Kind != want.kind || got.Label != want.label || got.Category != want.category {
+			t.Errorf("record %d = kind=%q label=%q category=%q, want %#v", index, got.Kind, got.Label, got.Category, want)
+		}
 	}
 }
 

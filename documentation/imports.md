@@ -8,7 +8,7 @@ For ordinary files, Mithra sends OpenAI only minimized locally extracted text wi
 
 ## Review and commit
 
-AI proposes typed finance, health, and planning records. Missing or invalid numbers, dates, units, record types, or evidence are blockers; possible duplicates and inconsistencies remain warnings. User edits are persisted as user-generated values. Final import rechecks membership, source identity, visibility, source and review versions, and both data revisions, then creates all domain records and marks the import committed in one SQLite transaction. No page load invokes OpenAI.
+AI proposes typed finance, health, and planning records. Finance labels and categories are suggested from explicit source values; an empty label is not a blocker, and Mithra uses the reviewed category or record type as its internal display label when needed. Missing or invalid numbers, dates, units, record types, or evidence are blockers; possible duplicates and inconsistencies remain warnings. User edits are persisted as user-generated values. Final import rechecks membership, source identity, visibility, source and review versions, and both data revisions, then creates all domain records and marks the import committed in one SQLite transaction. No page load invokes OpenAI.
 
 Exact duplicate suppression is scoped to household, actor, visibility, and digest. Filenames never establish a version relationship. A changed file stays independent unless the user opens **Import new version** on a prior import; the final transaction then retires only that prior import's active records as it publishes the reviewed successor.
 

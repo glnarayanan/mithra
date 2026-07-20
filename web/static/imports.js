@@ -19,6 +19,16 @@
     target.dataset.tone = tone || "quiet";
   }
 
+  function clearFieldError(field, root) {
+    if (!field || typeof field.getAttribute !== "function" || typeof field.removeAttribute !== "function") return;
+    var errorID = field.getAttribute("aria-describedby");
+    if (!errorID) return;
+    field.removeAttribute("aria-invalid");
+    field.removeAttribute("aria-describedby");
+    var message = root && typeof root.getElementById === "function" ? root.getElementById(errorID) : null;
+    if (message) message.hidden = true;
+  }
+
   function install(root) {
     if (!root || typeof root.querySelector !== "function") return;
     var form = root.querySelector("[data-import-upload]");
@@ -45,9 +55,15 @@
     }
     var blocker = root.querySelector("[data-first-blocker]");
     if (blocker && typeof blocker.focus === "function") blocker.focus();
+    var review = root.querySelector("[data-import-review]");
+    if (review && typeof review.addEventListener === "function") {
+      var clearChangedError = function (event) { clearFieldError(event && event.target, root); };
+      review.addEventListener("input", clearChangedError);
+      review.addEventListener("change", clearChangedError);
+    }
   }
 
-  var api = Object.freeze({ install: install, setMessage: setMessage, validateFile: validateFile });
+  var api = Object.freeze({ clearFieldError: clearFieldError, install: install, setMessage: setMessage, validateFile: validateFile });
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (global && global.document) global.document.addEventListener("DOMContentLoaded", function () { install(global.document); });
 })(typeof globalThis === "undefined" ? null : globalThis);
