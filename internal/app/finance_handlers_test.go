@@ -113,6 +113,33 @@ func TestFinanceIssueCanBeCorrectedFromTheLens(t *testing.T) {
 	}
 }
 
+func TestFinanceCategoryCanBeCorrectedWithoutReenteringTheRecord(t *testing.T) {
+	application, mailer := newAuthTestApp(t, "owner@example.com")
+	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
+	owner := ownerScope(t, application, session)
+	source, err := application.sources.Store(context.Background(), owner, []byte("finance source"), storage.Metadata{Family: "text", Version: 1, Visibility: policy.Personal, LocatorKind: "source", LocatorValue: "capture"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := application.finance.Create(context.Background(), owner, finance.Draft{Kind: finance.Spending, Visibility: policy.Personal, Label: "Monthly loan payment", Category: "Expenses", Date: "2026-07-20", AmountText: "21000", Provenance: finance.Provenance{SourceID: source.ID, SourceFamily: source.Family, SourceVersion: source.Version, LocatorKind: "source", LocatorValue: source.LocatorValue}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := serve(application, authenticatedFinanceRequest(session, "/finance"))
+	if !strings.Contains(page.Body.String(), `class="finance-category-form"`) || !strings.Contains(page.Body.String(), `value="Expenses"`) || !strings.Contains(page.Body.String(), `value="Loan repayment"`) {
+		t.Fatalf("category editor missing: %q", page.Body.String())
+	}
+	values := url.Values{"csrf": {session.csrf.Value}, "record_id": {record.ID}, "version": {"1"}, "kind": {"spending"}, "category": {"Loan repayment"}}
+	corrected := serve(application, authForm(http.MethodPost, "/finance/correct", values, []*http.Cookie{session.session, session.csrf}))
+	if corrected.Code != http.StatusSeeOther || corrected.Header().Get("Location") != "/finance?corrected=1" {
+		t.Fatalf("category correction = %d %q", corrected.Code, corrected.Body.String())
+	}
+	var category, date, amount string
+	if err := application.db.QueryRow(`SELECT category,spent_on,amount_original FROM finance_spending WHERE active=1 AND supersedes_id=?`, record.ID).Scan(&category, &date, &amount); err != nil || category != "Loan repayment" || date != "2026-07-20" || amount != "21000" {
+		t.Fatalf("corrected category=%q date=%q amount=%q err=%v", category, date, amount, err)
+	}
+}
+
 func TestBudgetEndDateCanBeCorrectedFromTheLens(t *testing.T) {
 	application, mailer := newAuthTestApp(t, "owner@example.com")
 	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)

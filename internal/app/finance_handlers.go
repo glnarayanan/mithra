@@ -59,12 +59,15 @@ type FinanceIssueView struct {
 }
 
 type FinanceRecordView struct {
+	ID          string
 	Label       string
 	Kind        string
+	Category    string
 	Date        string
 	Amount      string
 	Scope       string
 	EvidenceURL string
+	Version     int64
 }
 
 func (a *App) financeLens(w http.ResponseWriter, r *http.Request) {
@@ -94,7 +97,7 @@ func (a *App) financeLens(w http.ResponseWriter, r *http.Request) {
 	}
 	view := financeView(summary, filter, csrf)
 	if r.URL.Query().Get("corrected") == "1" {
-		view.Status = "The corrected date and number are now active. The original source remains linked."
+		view.Status = "Your correction is now active. The original source remains linked."
 	} else if r.URL.Query().Get("correction") == "failed" {
 		view.Error = "That correction could not be saved. Reload the page and try again."
 	}
@@ -138,11 +141,25 @@ func (a *App) correctFinanceRecord(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/finance?correction=failed", http.StatusSeeOther)
 		return
 	}
+	date := current.Date
+	if _, supplied := r.PostForm["date"]; supplied {
+		date = boundedField(r, "date", 10)
+	}
+	amount := current.OriginalAmount
+	if _, supplied := r.PostForm["amount"]; supplied {
+		amount = boundedField(r, "amount", 128)
+	}
+	category := current.Category
+	if _, supplied := r.PostForm["category"]; supplied {
+		category = boundedField(r, "category", 128)
+	}
 	endDate := current.EndDate
 	if kind == finance.Budget {
-		endDate = boundedField(r, "end_date", 10)
+		if _, supplied := r.PostForm["end_date"]; supplied {
+			endDate = boundedField(r, "end_date", 10)
+		}
 	}
-	_, err = a.finance.Correct(r.Context(), scope, kind, id, version, finance.Draft{Visibility: current.Visibility, Label: current.Label, Category: current.Category, Date: boundedField(r, "date", 10), EndDate: endDate, Status: current.Status, AmountText: boundedField(r, "amount", 128), CurrencyContext: "", Provenance: finance.Provenance{SourceID: current.SourceID, SourceFamily: current.SourceFamily, SourceVersion: current.SourceVersion, LocatorKind: current.LocatorKind, LocatorValue: current.LocatorValue, GeneratedBy: "user", Model: current.Model, PromptVersion: current.PromptVersion, SchemaVersion: current.SchemaVersion}})
+	_, err = a.finance.Correct(r.Context(), scope, kind, id, version, finance.Draft{Visibility: current.Visibility, Label: current.Label, Category: category, Date: date, EndDate: endDate, Status: current.Status, AmountText: amount, CurrencyContext: "", Provenance: finance.Provenance{SourceID: current.SourceID, SourceFamily: current.SourceFamily, SourceVersion: current.SourceVersion, LocatorKind: current.LocatorKind, LocatorValue: current.LocatorValue, GeneratedBy: "user", Model: current.Model, PromptVersion: current.PromptVersion, SchemaVersion: current.SchemaVersion}})
 	if err != nil {
 		http.Redirect(w, r, "/finance?correction=failed", http.StatusSeeOther)
 		return
@@ -224,7 +241,7 @@ func financeView(summary finance.Summary, filter finance.ScopeFilter, csrf strin
 		if record.Visibility == "personal" {
 			scope = "Only you"
 		}
-		view.Records = append(view.Records, FinanceRecordView{Label: record.Label, Kind: string(record.Kind), Date: date, Amount: amount, Scope: scope, EvidenceURL: sourceURL(record.SourceID)})
+		view.Records = append(view.Records, FinanceRecordView{ID: record.ID, Label: record.Label, Kind: string(record.Kind), Category: record.Category, Date: date, Amount: amount, Scope: scope, EvidenceURL: sourceURL(record.SourceID), Version: record.Version})
 	}
 	return view
 }

@@ -35,7 +35,7 @@
         {{if .Status}}<p class="status-message" role="status" aria-live="polite">{{.Status}}</p>{{end}}
         {{if .Error}}<section class="finance-error" role="alert"><h2>Health records are temporarily unavailable</h2><p>{{.Error}}</p></section>
         {{else if not .HasRecords}}
-        <section class="empty-state" aria-labelledby="health-empty-title"><p class="eyebrow">Get started</p><h2 id="health-empty-title">No health records yet</h2><p>Import a report or capture an appointment, measurement, or routine to see it here.</p><div class="empty-actions"><a href="/capture">Capture an update</a><a href="/imports">Import a report</a></div></section>
+        <section class="empty-state" aria-labelledby="health-empty-title"><p class="eyebrow">Get started</p><h2 id="health-empty-title">No health records yet</h2><p>Import a report or add an appointment, measurement, or routine to see it here.</p><div class="empty-actions"><a href="/#capture">Add an update</a><a href="/imports">Import a report</a></div></section>
         {{else}}
         {{if .Series}}
         <section aria-labelledby="health-series-title"><div class="section-heading"><div><p class="eyebrow">Over time</p><h2 id="health-series-title">Measurements</h2></div><p>Only comparable results with matching context and units are shown together.</p></div>

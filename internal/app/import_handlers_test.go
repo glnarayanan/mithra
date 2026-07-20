@@ -118,7 +118,7 @@ func TestImportBlockerRequiresUserCorrectionAndRevisionFence(t *testing.T) {
 		t.Fatal(err)
 	}
 	blocked := serve(application, importForm(session, url.Values{"action": {"commit"}, "import_id": {id}, "version": {"1"}}))
-	if !strings.Contains(blocked.Body.String(), "required value is unresolved") {
+	if !strings.Contains(blocked.Body.String(), "highlighted values still need") {
 		t.Fatalf("blocked commit = %q", blocked.Body.String())
 	}
 	var observations int
@@ -127,18 +127,55 @@ func TestImportBlockerRequiresUserCorrectionAndRevisionFence(t *testing.T) {
 		t.Fatalf("partial observations = %d", observations)
 	}
 
-	values := url.Values{"action": {"correct"}, "import_id": {id}, "version": {"1"}, "field_0-subject": {"Alex"}, "field_0-analyte": {"HbA1c"}, "field_0-observed_on": {"2026-07-02"}, "field_0-value": {"5.8"}, "field_0-unit": {"%"}}
+	values := url.Values{"action": {"commit"}, "import_id": {id}, "version": {"2"}, "field_0-subject": {"Alex"}, "field_0-analyte": {"HbA1c"}, "field_0-observed_on": {"2026-07-02"}, "field_0-value": {"5.8"}, "field_0-unit": {"%"}}
 	corrected := serve(application, importForm(session, values))
-	if corrected.Code != http.StatusOK || !strings.Contains(corrected.Body.String(), "ready to import") {
+	if corrected.Code != http.StatusOK || !strings.Contains(corrected.Body.String(), "Import complete") {
 		t.Fatalf("correction = %d %q", corrected.Code, corrected.Body.String())
-	}
-	committed := serve(application, importForm(session, url.Values{"action": {"commit"}, "import_id": {id}, "version": {"2"}}))
-	if !strings.Contains(committed.Body.String(), "Import complete") {
-		t.Fatalf("corrected commit = %q", committed.Body.String())
 	}
 	var unit, generated string
 	if err := application.db.QueryRow(`SELECT unit,generated_by FROM health_observations WHERE active=1`).Scan(&unit, &generated); err != nil || unit != "%" || generated != "user" {
 		t.Fatalf("corrected record = %q %q, %v", unit, generated, err)
+	}
+}
+
+func TestFinanceImportAcceptsDatePickerAndCategoryCorrectionInOneStep(t *testing.T) {
+	application, mailer := newAuthTestApp(t, "owner@example.com")
+	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
+	connectImportProvider(t, application, ownerScope(t, application, session), func(*http.Request) string {
+		return captureProviderBody(`{"records":[{"family":"finance","locator":{"kind":"row","value":"row:2"},"finance":{"kind":"spending","label":"Emergency savings","category":"Expenses","date":"07/07/2026","end_date":"","status":"","amount":"10000"},"health":null,"planning":null}]}`)
+	})
+	upload := serve(application, importUploadRequest(t, session, "savings.csv", "text/csv", []byte("label,amount,date\nEmergency savings,10000,07/07/2026\n"), "personal"))
+	if upload.Code != http.StatusOK || !strings.Contains(upload.Body.String(), "Choose a valid date.") || !strings.Contains(upload.Body.String(), `<select id="field-0-kind"`) || strings.Contains(upload.Body.String(), "Check corrections") {
+		t.Fatalf("finance review = %d %q", upload.Code, upload.Body.String())
+	}
+	var id string
+	if err := application.db.QueryRow(`SELECT id FROM document_imports WHERE state='review'`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	values := url.Values{"action": {"commit"}, "import_id": {id}, "version": {"1"}, "field_0-kind": {"asset"}, "field_0-label": {"Emergency savings"}, "field_0-category": {"Savings"}, "field_0-date": {"2026-07-07"}, "field_0-amount": {"10000"}}
+	committed := serve(application, importForm(session, values))
+	if committed.Code != http.StatusOK || !strings.Contains(committed.Body.String(), "Import complete") {
+		t.Fatalf("finance commit = %d %q", committed.Code, committed.Body.String())
+	}
+	var category, date string
+	if err := application.db.QueryRow(`SELECT category,observed_on FROM finance_assets WHERE active=1`).Scan(&category, &date); err != nil || category != "Savings" || date != "2026-07-07" {
+		t.Fatalf("finance record = category=%q date=%q err=%v", category, date, err)
+	}
+}
+
+func TestImportAnalysisFailureReturnsUsefulSafeDiagnostics(t *testing.T) {
+	application, mailer := newAuthTestApp(t, "owner@example.com")
+	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
+	scope := ownerScope(t, application, session)
+	if err := application.providerSettings.ReplaceOpenAI(context.Background(), scope, "sk-import-test-secret", func(context.Context, string) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	application.openAIClient = &http.Client{Transport: appRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusTooManyRequests, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"error":{"message":"provider detail must not be reflected"}}`)), Request: request}, nil
+	})}
+	response := serve(application, importUploadRequest(t, session, "records.csv", "text/csv", []byte("label,amount,date\nGroceries,100,2026-07-01\n"), "personal"))
+	if response.Code != http.StatusBadGateway || response.Header().Get("X-Mithra-Error-Code") != "import_ai_rate_limited" || !strings.Contains(response.Body.String(), "rate-limiting requests") || !strings.Contains(response.Body.String(), "Reference:") || strings.Contains(response.Body.String(), "provider detail") {
+		t.Fatalf("analysis failure = %d headers=%v body=%q", response.Code, response.Header(), response.Body.String())
 	}
 }
 

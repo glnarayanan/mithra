@@ -41,7 +41,7 @@
         <section class="finance-error" role="alert" aria-labelledby="finance-error-title"><h2 id="finance-error-title">Finance needs attention</h2><p>{{.Error}}</p></section>
         {{end}}
         {{if and (not .HasRecords) (not .Error)}}
-        <section class="empty-state" aria-labelledby="finance-empty-title"><p class="eyebrow">Get started</p><h2 id="finance-empty-title">No finance records yet</h2><p>Capture an update or import a file to see totals, changes, and upcoming payments here.</p><div class="empty-actions"><a href="/capture">Capture an update</a><a href="/imports">Import a file</a></div></section>
+        <section class="empty-state" aria-labelledby="finance-empty-title"><p class="eyebrow">Get started</p><h2 id="finance-empty-title">No finance records yet</h2><p>Add an update or import a file to see totals, changes, and upcoming payments here.</p><div class="empty-actions"><a href="/#capture">Add an update</a><a href="/imports">Import a file</a></div></section>
         {{else if .HasRecords}}
         <section aria-labelledby="finance-summary-title">
           <div class="section-heading"><div><p class="eyebrow">Overview</p><h2 id="finance-summary-title">Your totals</h2></div><p>{{.CompleteCount}} records included{{if .IncompleteCount}} · {{.IncompleteCount}} need a value{{end}}</p></div>
@@ -84,7 +84,8 @@
 
         <section class="finance-section" aria-labelledby="finance-records-title">
           <div class="section-heading"><div><p class="eyebrow">Details</p><h2 id="finance-records-title">Finance records</h2></div><p>Open a source to check where a number came from.</p></div>
-          <div class="record-table-wrap"><table class="record-table"><thead><tr><th scope="col">Record</th><th scope="col">Type</th><th scope="col">Date</th><th scope="col">Number</th><th scope="col">Visibility</th><th scope="col">Source</th></tr></thead><tbody>{{range .Records}}<tr><th scope="row">{{.Label}}</th><td>{{.Kind}}</td><td>{{.Date}}</td><td class="number-cell">{{.Amount}}</td><td>{{.Scope}}</td><td><a href="{{.EvidenceURL}}">View</a></td></tr>{{end}}</tbody></table></div>
+          <datalist id="finance-categories"><option value="Income"></option><option value="Salary"></option><option value="Investment income"></option><option value="Housing"></option><option value="Groceries"></option><option value="Healthcare"></option><option value="Education"></option><option value="Transport"></option><option value="Utilities"></option><option value="Insurance"></option><option value="Tax payment"></option><option value="Loan repayment"></option><option value="Savings"></option><option value="Other"></option></datalist>
+          <div class="record-table-wrap"><table class="record-table"><thead><tr><th scope="col">Record</th><th scope="col">Type</th><th scope="col">Category</th><th scope="col">Date</th><th scope="col">Number</th><th scope="col">Visibility</th><th scope="col">Source</th></tr></thead><tbody>{{range .Records}}<tr><th scope="row">{{.Label}}</th><td>{{.Kind}}</td><td><form method="post" action="/finance/correct" class="finance-category-form"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="record_id" value="{{.ID}}"><input type="hidden" name="version" value="{{.Version}}"><input type="hidden" name="kind" value="{{.Kind}}"><label class="visually-hidden" for="category-{{.ID}}">Category for {{.Label}}</label><input id="category-{{.ID}}" name="category" value="{{.Category}}" list="finance-categories" maxlength="128" required><button type="submit">Save</button></form></td><td>{{.Date}}</td><td class="number-cell">{{.Amount}}</td><td>{{.Scope}}</td><td><a href="{{.EvidenceURL}}">View</a></td></tr>{{end}}</tbody></table></div>
         </section>
         {{end}}
       </div>

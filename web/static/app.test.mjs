@@ -106,3 +106,10 @@ test("Q opens quick capture without stealing ordinary typing", () => {
   assert.equal(app.shouldOpenQuickCapture(event({ repeat: true }), noModal, null), false);
   assert.equal(app.shouldOpenQuickCapture(event(), { querySelector: () => ({}) }, null), false);
 });
+
+test("page errors log only safe diagnostic fields", () => {
+  const calls = [];
+  const element = { getAttribute: (name) => name === "data-error-code" ? "import_ai_rate_limited" : "request-123" };
+  app.reportPageErrors({ querySelectorAll: () => [element] }, { error: (...args) => calls.push(args) });
+  assert.deepEqual(calls, [["Mithra request failed", { code: "import_ai_rate_limited", reference: "request-123" }]]);
+});

@@ -731,10 +731,10 @@ func (p *FinanceProposal) issues(i int, locator string) []Issue {
 		out = append(out, Issue{Record: i, Field: "amount", Message: "Enter the correct number.", Locator: locator})
 	}
 	if !isoDate(p.Date) {
-		out = append(out, Issue{Record: i, Field: "date", Message: "Enter the date as YYYY-MM-DD.", Locator: locator})
+		out = append(out, Issue{Record: i, Field: "date", Message: "Choose a valid date.", Locator: locator})
 	}
 	if finance.Kind(p.Kind) == finance.Budget && !isoDate(p.EndDate) {
-		out = append(out, Issue{Record: i, Field: "end_date", Message: "Enter the budget end date as YYYY-MM-DD.", Locator: locator})
+		out = append(out, Issue{Record: i, Field: "end_date", Message: "Choose a valid budget end date.", Locator: locator})
 	}
 	if finance.Kind(p.Kind) == finance.Obligation && p.Status != "" && p.Status != "pending" && p.Status != "paid" && p.Status != "cancelled" {
 		out = append(out, Issue{Record: i, Field: "status", Message: "Use pending, paid, or cancelled for this obligation.", Locator: locator})
@@ -764,7 +764,7 @@ func (p *HealthProposal) issues(i int, locator string) []Issue {
 		out = append(out, Issue{Record: i, Field: "analyte", Message: "Shorten the measurement label to 128 characters.", Locator: locator})
 	}
 	if !isoDate(p.ObservedOn) {
-		out = append(out, Issue{Record: i, Field: "observed_on", Message: "Enter the observation date as YYYY-MM-DD.", Locator: locator})
+		out = append(out, Issue{Record: i, Field: "observed_on", Message: "Choose a valid observation date.", Locator: locator})
 	}
 	if _, err := health.ParseValue(p.Value); err != nil {
 		out = append(out, Issue{Record: i, Field: "value", Message: "Enter the correct reported number.", Locator: locator})
@@ -800,17 +800,17 @@ func (p *PlanningProposal) issues(i int, locator string) []Issue {
 	}
 	if p.AllDay {
 		if !isoDate(p.StartsOn) {
-			out = append(out, Issue{Record: i, Field: "starts_on", Message: "Enter the event date as YYYY-MM-DD.", Locator: locator})
+			out = append(out, Issue{Record: i, Field: "starts_on", Message: "Choose a valid event date.", Locator: locator})
 		}
 		if p.EndsOn != "" && (!isoDate(p.EndsOn) || p.EndsOn < p.StartsOn) {
 			out = append(out, Issue{Record: i, Field: "ends_on", Message: "Enter an end date on or after the start date.", Locator: locator})
 		}
 	} else {
 		if !localMinute(p.StartsAt) {
-			out = append(out, Issue{Record: i, Field: "starts_at", Message: "Enter the start as YYYY-MM-DDTHH:MM.", Locator: locator})
+			out = append(out, Issue{Record: i, Field: "starts_at", Message: "Choose a valid start date and time.", Locator: locator})
 		}
 		if !localMinute(p.EndsAt) {
-			out = append(out, Issue{Record: i, Field: "ends_at", Message: "Enter the end as YYYY-MM-DDTHH:MM.", Locator: locator})
+			out = append(out, Issue{Record: i, Field: "ends_at", Message: "Choose a valid end date and time.", Locator: locator})
 		}
 		if localMinute(p.StartsAt) && localMinute(p.EndsAt) && p.EndsAt <= p.StartsAt {
 			out = append(out, Issue{Record: i, Field: "ends_at", Message: "Enter an end after the start.", Locator: locator})

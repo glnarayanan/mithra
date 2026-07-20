@@ -109,7 +109,7 @@
 .import-composer p { max-width: 56ch; color: var(--muted-ink); }
 .import-upload-form { display: grid; gap: 1rem; min-width: 0; }
 .import-upload-form label, .import-field-grid label { display: grid; gap: .35rem; color: var(--muted-ink); font-size: .875rem; font-weight: 700; }
-.import-upload-form input, .import-upload-form select, .import-field-grid input { width: 100%; min-height: 2.8rem; padding: .6rem .75rem; }
+.import-upload-form input, .import-upload-form select, .import-field-grid input, .import-field-grid select { width: 100%; min-height: 2.8rem; padding: .6rem .75rem; }
 .import-upload-form input[type="file"] { padding: .45rem; background: var(--base-50); }
 .import-upload-form input[type="file"]::file-selector-button {
   margin-right: 0.75rem;
@@ -1234,6 +1234,22 @@ button:disabled {
 
 .number-cell {
   font-variant-numeric: tabular-nums;
+}
+
+.finance-category-form {
+  display: grid;
+  grid-template-columns: minmax(8rem, 12rem) auto;
+  gap: 0.4rem;
+}
+
+.finance-category-form input,
+.finance-category-form button {
+  min-height: 2.5rem;
+  padding: 0.45rem 0.65rem;
+}
+
+.finance-category-form button {
+  font-size: 0.75rem;
 }
 
 .health-main {

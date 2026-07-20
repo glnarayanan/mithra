@@ -506,6 +506,16 @@
     });
   }
 
+  function reportPageErrors(root, consoleObject) {
+    if (!root || typeof root.querySelectorAll !== "function" || !consoleObject || typeof consoleObject.error !== "function") return;
+    Array.prototype.forEach.call(root.querySelectorAll("[data-app-error][data-error-code]"), function (element) {
+      consoleObject.error("Mithra request failed", {
+        code: String(element.getAttribute("data-error-code") || "unknown"),
+        reference: String(element.getAttribute("data-error-reference") || "unavailable")
+      });
+    });
+  }
+
   function install(root) {
     if (!root || typeof root.querySelector !== "function") {
       return;
@@ -520,6 +530,7 @@
     installQuickCapture(root);
     installShortcutHelp(root);
     installSourcePreview(root);
+    reportPageErrors(root, global && global.console);
     root.addEventListener("keydown", function (event) {
       var path = actionShortcutPath(event, root);
       if (path && global.location && typeof global.location.assign === "function") {
@@ -536,6 +547,7 @@
     isEditableControl: isEditableControl,
     navigationDestinations: navigationDestinations,
     restoreFocus: restoreFocus,
+    reportPageErrors: reportPageErrors,
     setStatus: setStatus,
     shouldOpenQuickNavigation: shouldOpenQuickNavigation,
     shouldOpenQuickCapture: shouldOpenQuickCapture,
