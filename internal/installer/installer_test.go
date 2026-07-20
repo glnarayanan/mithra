@@ -68,6 +68,25 @@ func TestBuildPlanCoversProxyAndOperationPreconditionsWithoutArivuMutation(t *te
 	}
 }
 
+func TestDatabasePreflightAcceptsAnExactOlderMigrationPrefix(t *testing.T) {
+	ctx := context.Background()
+	migrations, err := database.EmbeddedMigrations()
+	if err != nil || len(migrations) < 2 {
+		t.Fatalf("embedded migrations = %d, err=%v", len(migrations), err)
+	}
+	path := filepath.Join(t.TempDir(), "mithra.sqlite3")
+	db, err := database.OpenWithMigrations(ctx, path, migrations[:len(migrations)-1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := DatabasePreflight(ctx, path); err != nil {
+		t.Fatalf("prior release database failed upgrade preflight: %v", err)
+	}
+}
+
 func TestProxyHostnameAndRuntimeConfigurationAreStrictAndStable(t *testing.T) {
 	facts := healthyFacts()
 	for _, domain := range []string{"home.example:443", "home.example/path", "home.example\nreverse_proxy evil", "{home.example}", "home..example", "-home.example"} {

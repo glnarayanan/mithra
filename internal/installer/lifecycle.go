@@ -90,10 +90,10 @@ func DatabasePreflight(ctx context.Context, path string) error {
 		return err
 	}
 	embedded, err := mithradb.EmbeddedMigrations()
-	if err != nil || len(applied) != len(embedded) {
+	if err != nil || len(applied) > len(embedded) {
 		return errors.New("migration history is not the recognized current prefix")
 	}
-	for index := range embedded {
+	for index := range applied {
 		if applied[index].Version != embedded[index].Version || applied[index].Name != embedded[index].Name || applied[index].Checksum != embedded[index].Checksum {
 			return errors.New("migration history checksum mismatch")
 		}
