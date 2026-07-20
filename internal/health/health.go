@@ -58,6 +58,7 @@ type AppointmentDraft struct {
 	Provider    string
 	Location    string
 	ScheduledOn string
+	ScheduledAt string
 	Status      string
 	Provenance  Provenance
 }
@@ -106,10 +107,10 @@ type Observation struct {
 }
 
 type Appointment struct {
-	ID, HouseholdID, OwnerID                                string
-	Visibility                                              policy.Visibility
-	Subject, Label, Provider, Location, ScheduledOn, Status string
-	SourceID, LocatorKind, LocatorValue                     string
+	ID, HouseholdID, OwnerID                                             string
+	Visibility                                                           policy.Visibility
+	Subject, Label, Provider, Location, ScheduledOn, ScheduledAt, Status string
+	SourceID, LocatorKind, LocatorValue                                  string
 }
 
 type Routine struct {
@@ -259,7 +260,7 @@ func (s *Service) CorrectObservation(ctx context.Context, actor policy.ActorScop
 
 func (s *Service) CreateAppointment(ctx context.Context, actor policy.ActorScope, draft AppointmentDraft) (Appointment, error) {
 	draft.Visibility = policy.PersonalDefault(draft.Visibility)
-	if !actor.Valid() || strings.TrimSpace(draft.Subject) == "" || strings.TrimSpace(draft.Label) == "" || !validDate(draft.ScheduledOn) || !validProvenance(draft.Provenance) {
+	if !actor.Valid() || strings.TrimSpace(draft.Subject) == "" || strings.TrimSpace(draft.Label) == "" || !validDate(draft.ScheduledOn) || !validAppointmentTime(draft.ScheduledOn, draft.ScheduledAt) || !validProvenance(draft.Provenance) {
 		return Appointment{}, ErrInvalidRecord
 	}
 	if draft.Status == "" {
@@ -288,7 +289,7 @@ func (s *Service) CreateAppointment(ctx context.Context, actor policy.ActorScope
 	p := draft.Provenance
 	generated := defaultGenerated(p.GeneratedBy)
 	schema := defaultSchema(p.SchemaVersion)
-	_, err = tx.ExecContext(ctx, `INSERT INTO health_appointments(id,household_id,owner_user_id,visibility,source_id,source_family,source_version,subject,label,provider,location,scheduled_on,status,generated_by,model,prompt_version,schema_version,data_revision,version,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)`, id, actor.HouseholdID, actor.ActorID, draft.Visibility, p.SourceID, p.SourceFamily, p.SourceVersion, strings.TrimSpace(draft.Subject), strings.TrimSpace(draft.Label), strings.TrimSpace(draft.Provider), strings.TrimSpace(draft.Location), draft.ScheduledOn, draft.Status, generated, p.Model, p.PromptVersion, schema, revision, stamp, stamp)
+	_, err = tx.ExecContext(ctx, `INSERT INTO health_appointments(id,household_id,owner_user_id,visibility,source_id,source_family,source_version,subject,label,provider,location,scheduled_on,scheduled_at,status,generated_by,model,prompt_version,schema_version,data_revision,version,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)`, id, actor.HouseholdID, actor.ActorID, draft.Visibility, p.SourceID, p.SourceFamily, p.SourceVersion, strings.TrimSpace(draft.Subject), strings.TrimSpace(draft.Label), strings.TrimSpace(draft.Provider), strings.TrimSpace(draft.Location), draft.ScheduledOn, draft.ScheduledAt, draft.Status, generated, p.Model, p.PromptVersion, schema, revision, stamp, stamp)
 	if err != nil {
 		return Appointment{}, err
 	}
@@ -298,7 +299,7 @@ func (s *Service) CreateAppointment(ctx context.Context, actor policy.ActorScope
 	if err := tx.Commit(); err != nil {
 		return Appointment{}, err
 	}
-	return Appointment{ID: id, HouseholdID: actor.HouseholdID, OwnerID: actor.ActorID, Visibility: draft.Visibility, Subject: draft.Subject, Label: draft.Label, Provider: draft.Provider, Location: draft.Location, ScheduledOn: draft.ScheduledOn, Status: draft.Status, SourceID: p.SourceID, LocatorKind: p.LocatorKind, LocatorValue: p.LocatorValue}, nil
+	return Appointment{ID: id, HouseholdID: actor.HouseholdID, OwnerID: actor.ActorID, Visibility: draft.Visibility, Subject: draft.Subject, Label: draft.Label, Provider: draft.Provider, Location: draft.Location, ScheduledOn: draft.ScheduledOn, ScheduledAt: draft.ScheduledAt, Status: draft.Status, SourceID: p.SourceID, LocatorKind: p.LocatorKind, LocatorValue: p.LocatorValue}, nil
 }
 
 func (s *Service) CreateRoutine(ctx context.Context, actor policy.ActorScope, draft RoutineDraft) (Routine, error) {
@@ -486,6 +487,16 @@ func validDate(v string) bool {
 	_, e := time.Parse("2006-01-02", v)
 	return e == nil
 }
+func validAppointmentTime(date, value string) bool {
+	if value == "" {
+		return true
+	}
+	if len(value) != 16 || !strings.HasPrefix(value, date+"T") {
+		return false
+	}
+	_, err := time.Parse("2006-01-02T15:04", value)
+	return err == nil
+}
 func defaultGenerated(v string) string {
 	if v == "" {
 		return "application"
@@ -573,7 +584,7 @@ func scanObservation(row scanner) (Observation, error) {
 }
 
 func queryAppointments(ctx context.Context, tx *sql.Tx, where string, args []any) ([]Appointment, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT id,household_id,owner_user_id,visibility,subject,label,provider,location,scheduled_on,status,source_id,COALESCE((SELECT locator_kind FROM evidence_links e WHERE e.record_family='health' AND e.record_id=health_appointments.id LIMIT 1),''),COALESCE((SELECT locator_value FROM evidence_links e WHERE e.record_family='health' AND e.record_id=health_appointments.id LIMIT 1),'') FROM health_appointments WHERE `+where+` AND status='planned'`, args...)
+	rows, err := tx.QueryContext(ctx, `SELECT id,household_id,owner_user_id,visibility,subject,label,provider,location,scheduled_on,scheduled_at,status,source_id,COALESCE((SELECT locator_kind FROM evidence_links e WHERE e.record_family='health' AND e.record_id=health_appointments.id LIMIT 1),''),COALESCE((SELECT locator_value FROM evidence_links e WHERE e.record_family='health' AND e.record_id=health_appointments.id LIMIT 1),'') FROM health_appointments WHERE `+where+` AND status='planned'`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -582,7 +593,7 @@ func queryAppointments(ctx context.Context, tx *sql.Tx, where string, args []any
 	for rows.Next() {
 		var v string
 		var a Appointment
-		if err := rows.Scan(&a.ID, &a.HouseholdID, &a.OwnerID, &v, &a.Subject, &a.Label, &a.Provider, &a.Location, &a.ScheduledOn, &a.Status, &a.SourceID, &a.LocatorKind, &a.LocatorValue); err != nil {
+		if err := rows.Scan(&a.ID, &a.HouseholdID, &a.OwnerID, &v, &a.Subject, &a.Label, &a.Provider, &a.Location, &a.ScheduledOn, &a.ScheduledAt, &a.Status, &a.SourceID, &a.LocatorKind, &a.LocatorValue); err != nil {
 			return nil, err
 		}
 		a.Visibility = policy.Visibility(v)

@@ -75,16 +75,24 @@ func TestAppointmentDefaultsMissingDetailsAndAppearsOnCalendar(t *testing.T) {
 		t.Fatal(err)
 	}
 	connectCaptureProvider(t, application, scope, func(*http.Request) string {
-		return captureProviderBody(`{"summary":"Annual checkup","variant":"health","finance":null,"health":{"kind":"appointment","subject":"Owner","label":"","analyte":"","observed_on":"","value":"","unit":"","provider":"Dr. Rao","location":"","scheduled_on":"2026-07-20","cadence":"","next_due_on":"","status":""},"planning":null}`)
+		return captureProviderBody(`{"summary":"Annual checkup","variant":"health","finance":null,"health":{"kind":"appointment","subject":"Owner","label":"","analyte":"","observed_on":"","value":"","unit":"","provider":"Dr. Rao","location":"","scheduled_on":"2026-07-20","scheduled_at":"2026-07-20T10:00","cadence":"","next_due_on":"","status":""},"planning":null}`)
 	})
 
-	response := serve(application, captureForm(session, url.Values{"action": {"text"}, "visibility": {"personal"}, "update": {"Annual checkup with Dr. Rao on 2026-07-20"}}))
+	response := serve(application, captureForm(session, url.Values{"action": {"text"}, "visibility": {"personal"}, "update": {"Annual checkup on 2026-07-20 at 10:00"}}))
 	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), "One thing to check") {
 		t.Fatalf("appointment capture = %d %q", response.Code, response.Body.String())
 	}
 	calendar := serve(application, coachingGET("/planning?date=2026-07-20", session))
-	if calendar.Code != http.StatusOK || !strings.Contains(calendar.Body.String(), "Annual checkup") {
+	if calendar.Code != http.StatusOK || !strings.Contains(calendar.Body.String(), "Annual checkup") || !strings.Contains(calendar.Body.String(), "10:00–10:30") || strings.Contains(calendar.Body.String(), ">All day<") {
 		t.Fatalf("calendar = %d %q", calendar.Code, calendar.Body.String())
+	}
+	var appointmentID string
+	if err := application.db.QueryRow(`SELECT id FROM health_appointments WHERE scheduled_at='2026-07-20T10:00'`).Scan(&appointmentID); err != nil {
+		t.Fatal(err)
+	}
+	calendarFile := serve(application, coachingGET("/planning/events/health-appointment-"+appointmentID+".ics", session))
+	if calendarFile.Code != http.StatusOK || !strings.Contains(calendarFile.Body.String(), "DTSTART;TZID=Asia/Kolkata:20260720T100000") || !strings.Contains(calendarFile.Body.String(), "DTEND;TZID=Asia/Kolkata:20260720T103000") {
+		t.Fatalf("calendar export = %d %q", calendarFile.Code, calendarFile.Body.String())
 	}
 }
 

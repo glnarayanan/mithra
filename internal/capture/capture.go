@@ -53,8 +53,8 @@ const (
 )
 
 type HealthProposal struct {
-	Kind                                                                                                          HealthKind
-	Subject, Label, Analyte, ObservedOn, Value, Unit, Provider, Location, ScheduledOn, Cadence, NextDueOn, Status string
+	Kind                                                                                                                       HealthKind
+	Subject, Label, Analyte, ObservedOn, Value, Unit, Provider, Location, ScheduledOn, ScheduledAt, Cadence, NextDueOn, Status string
 }
 type PlanningProposal struct {
 	Title, Description, Location, StartsOn, EndsOn, StartsAt, EndsAt, Timezone, Status string
@@ -533,7 +533,7 @@ func (s *Service) create(ctx context.Context, a policy.ActorScope, r TextRequest
 			out, e := s.health.CreateObservation(ctx, a, health.ObservationDraft{Visibility: r.Visibility, Subject: d.Subject, Analyte: d.Analyte, ObservedOn: d.ObservedOn, Value: d.Value, Unit: d.Unit, Provenance: prov})
 			return "health", "health_observations", out.ID, out.Version, e
 		case Appointment:
-			out, e := s.health.CreateAppointment(ctx, a, health.AppointmentDraft{Visibility: r.Visibility, Subject: d.Subject, Label: d.Label, Provider: d.Provider, Location: d.Location, ScheduledOn: d.ScheduledOn, Status: d.Status, Provenance: prov})
+			out, e := s.health.CreateAppointment(ctx, a, health.AppointmentDraft{Visibility: r.Visibility, Subject: d.Subject, Label: d.Label, Provider: d.Provider, Location: d.Location, ScheduledOn: d.ScheduledOn, ScheduledAt: d.ScheduledAt, Status: d.Status, Provenance: prov})
 			if e != nil {
 				return "health", "health_appointments", "", 0, e
 			}
@@ -591,7 +591,7 @@ func validFinance(d FinanceProposal) bool {
 	return financeTable(d.Kind) != "" && safe(d.Label, 256) && safe(d.Category, 128) && safe(d.Date, 10) && safe(d.EndDate, 10) && safe(d.Status, 16) && safe(d.AmountText, 128) && safe(d.IncompleteNote, 256) && safe(d.CurrencyContext, 16)
 }
 func validHealth(d HealthProposal) bool {
-	return (d.Kind == Observation || d.Kind == Appointment || d.Kind == Routine) && safe(d.Subject, 256) && safe(d.Label, 256) && safe(d.Analyte, 256) && safe(d.ObservedOn, 10) && safe(d.Value, 128) && safe(d.Unit, 64) && safe(d.Provider, 256) && safe(d.Location, 512) && safe(d.ScheduledOn, 10) && safe(d.Cadence, 256) && safe(d.NextDueOn, 10) && safe(d.Status, 16)
+	return (d.Kind == Observation || d.Kind == Appointment || d.Kind == Routine) && safe(d.Subject, 256) && safe(d.Label, 256) && safe(d.Analyte, 256) && safe(d.ObservedOn, 10) && safe(d.Value, 128) && safe(d.Unit, 64) && safe(d.Provider, 256) && safe(d.Location, 512) && safe(d.ScheduledOn, 10) && safe(d.ScheduledAt, 16) && safe(d.Cadence, 256) && safe(d.NextDueOn, 10) && safe(d.Status, 16)
 }
 func validPlanning(d PlanningProposal) bool {
 	return safe(d.Title, 256) && safe(d.Description, 4000) && safe(d.Location, 512) && safe(d.StartsOn, 10) && safe(d.EndsOn, 10) && safe(d.StartsAt, 16) && safe(d.EndsAt, 16) && safe(d.Timezone, 64) && safe(d.Status, 16)

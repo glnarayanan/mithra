@@ -1460,45 +1460,40 @@ button:disabled {
   text-decoration: none;
 }
 
-.calendar-day-events,
-.calendar-overflow ol {
+.calendar-day-events {
   display: grid;
   gap: 0.25rem;
+  max-height: 6rem;
   margin: 0.35rem 0 0;
-  padding: 0;
+  padding: 0 0.2rem 0 0;
+  overflow-y: auto;
+  scrollbar-color: var(--line-strong) transparent;
+  scrollbar-width: thin;
   list-style: none;
 }
 
-.calendar-day-events a,
-.calendar-overflow a {
-  display: flex;
-  overflow: hidden;
+.calendar-day-events a {
+  display: grid;
+  gap: 0.15rem;
   min-height: 2.75rem;
-  align-items: center;
+  align-content: center;
   padding: 0.5rem;
   border-radius: 0.35rem;
   background: var(--moss-wash);
   font-size: 0.75rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  text-decoration: none;
 }
 
-.calendar-day-events span,
-.calendar-overflow span {
+.calendar-day-events span {
   display: block;
   color: var(--muted-ink);
   font-size: 0.68rem;
 }
 
-.calendar-overflow summary {
-  display: flex;
-  min-height: 2.75rem;
-  align-items: center;
-  margin-top: 0.35rem;
-  color: var(--moss);
-  cursor: pointer;
-  font-size: 0.75rem;
-  font-weight: 700;
+.calendar-day-events strong {
+  font-weight: 650;
 }
 
 .calendar-agenda {

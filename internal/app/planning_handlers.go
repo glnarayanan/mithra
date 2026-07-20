@@ -41,9 +41,6 @@ type CalendarDayView struct {
 	InPeriod       bool
 	IsToday        bool
 	Events         []PlanningEventView
-	VisibleEvents  []PlanningEventView
-	OverflowEvents []PlanningEventView
-	MoreEvents     int
 }
 
 type PlanningEventView struct {
@@ -134,7 +131,7 @@ func (a *App) planningLens(w http.ResponseWriter, r *http.Request) {
 	}
 	view := PlanningView{Navigation: navigationForPath("/planning"), CSRF: csrf, View: viewName, Timezone: zone, PeriodLabel: planningPeriodLabel(viewName, from, to), WeekdayLabels: []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}}
 	view.PreviousURL, view.TodayURL, view.NextURL, view.MonthURL, view.WeekURL, view.AgendaURL = planningURLs(viewName, focus, zone)
-	healthEvents := healthPlanningEvents(healthSummary)
+	healthEvents := healthPlanningEvents(healthSummary, zone)
 	calendarEvents := planningEventViews(append(events, planningEventsInRange(healthEvents, gridFrom, gridTo)...), conflictByID, zone)
 	view.Agenda = planningEventViews(append(planningEventsInRange(events, from, to), planningEventsInRange(healthEvents, from, to)...), conflictByID, zone)
 	view.CalendarDays = planningDays(calendarEvents, gridFrom, gridTo, from, to, time.Now())
@@ -160,11 +157,16 @@ func (a *App) planningICS(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
+	zone, err := a.planningRecords.GetTimezone(r.Context(), scope)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
 	event, err := a.planningRecords.GetEvent(r.Context(), scope, id)
 	if strings.HasPrefix(id, "health-") {
 		summary, summaryErr := a.healthRecords.Summarize(r.Context(), scope, health.AllRecords)
 		if summaryErr == nil {
-			for _, candidate := range healthPlanningEvents(summary) {
+			for _, candidate := range healthPlanningEvents(summary, zone) {
 				if candidate.ID == id {
 					event, err = candidate, nil
 					break
@@ -172,11 +174,6 @@ func (a *App) planningICS(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if err != nil {
-		writeError(w, http.StatusNotFound, "not found")
-		return
-	}
-	zone, err := a.planningRecords.GetTimezone(r.Context(), scope)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "not found")
 		return
@@ -196,13 +193,21 @@ func (a *App) planningICS(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(calendar))
 }
 
-func healthPlanningEvents(summary health.Summary) []planning.Event {
+func healthPlanningEvents(summary health.Summary, zone string) []planning.Event {
 	events := make([]planning.Event, 0, len(summary.Appointments)+len(summary.Routines))
 	for _, appointment := range summary.Appointments {
 		if appointment.Status != "planned" {
 			continue
 		}
-		events = append(events, planning.Event{ID: "health-appointment-" + appointment.ID, Title: appointment.Label, Location: appointment.Location, AllDay: true, StartsOn: appointment.ScheduledOn, EndsOn: appointment.ScheduledOn, Status: "planned", SourceID: appointment.SourceID, OwnerIDs: []string{appointment.OwnerID}})
+		event := planning.Event{ID: "health-appointment-" + appointment.ID, Title: appointment.Label, Location: appointment.Location, AllDay: true, StartsOn: appointment.ScheduledOn, EndsOn: appointment.ScheduledOn, Status: "planned", SourceID: appointment.SourceID, OwnerIDs: []string{appointment.OwnerID}}
+		if start, err := time.Parse("2006-01-02T15:04", appointment.ScheduledAt); err == nil {
+			event.AllDay = false
+			event.StartsOn, event.EndsOn = "", ""
+			event.StartsAt = start.Format("2006-01-02T15:04")
+			event.EndsAt = start.Add(30 * time.Minute).Format("2006-01-02T15:04")
+			event.Timezone = zone
+		}
+		events = append(events, event)
 	}
 	for _, routine := range summary.Routines {
 		if routine.Status != "active" {
@@ -338,13 +343,6 @@ func planningDays(events []PlanningEventView, from, to, periodFrom, periodTo, no
 	for day := from; !day.After(to); day = day.AddDate(0, 0, 1) {
 		eventsForDay := byDate[day.Format("2006-01-02")]
 		entry := CalendarDayView{DayNumber: day.Day(), AccessibleDate: day.Format("Monday, 2 January 2006"), FocusURL: planningURL("agenda", day), InPeriod: !day.Before(periodFrom) && !day.After(periodTo), IsToday: sameDate(day, now), Events: eventsForDay}
-		visible := len(eventsForDay)
-		if visible > 3 {
-			visible = 3
-		}
-		entry.VisibleEvents = eventsForDay[:visible]
-		entry.OverflowEvents = eventsForDay[visible:]
-		entry.MoreEvents = len(entry.OverflowEvents)
 		days = append(days, entry)
 	}
 	return days
