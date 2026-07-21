@@ -1,110 +1,95 @@
 # OpenAI Build Week submission
 
-Verified against the official [OpenAI Build Week rules](https://openai.devpost.com/rules),
-live submission form, and host announcements on 2026-07-21. The submission
-deadline is 2026-07-21 at 5:00 PM Pacific, or 2026-07-22 at 5:30 AM IST.
+Mithra is an **Apps for Your Life** entry. It is a family operating system for
+busy couples: one place for finance, health records, household plans, upcoming
+obligations, shared facts, and private adult records.
 
-## Current release truth
+The public entry points are [mithrahq.com](https://mithrahq.com) and the
+[Mithra repository](https://github.com/glnarayanan/mithra). Confirm the hosted
+health check and the published release before submitting; this document does
+not stand in for a live deployment check.
 
-- **Hosted app:** <https://mithrahq.com> (`/healthz` returned `ready` on
-  2026-07-21).
-- **Public repository:** <https://github.com/glnarayanan/mithra> with an MIT
-  license.
-- **Release:** [`v1.5.0`](https://github.com/glnarayanan/mithra/releases/tag/v1.5.0)
-  from commit `8dc10ca`, including signed application and installer artifacts.
-- **Email provider:** Plunk; Resend is not part of the deployed application.
-- **Devpost project:** <https://devpost.com/software/mithra> with the name,
-  tagline, description, stack, hosted URL, repository, and current product
-  images populated. The demo video and final green **Submitted** confirmation
-  remain pending.
+## Devpost copy
 
-## Submission draft
+Use [submission/copy/devpost.md](../submission/copy/devpost.md) for the
+description, build notes, challenges, and next steps. It describes the shipped
+behaviour without promising medical advice, financial advice, relationship
+mediation, background calendar sync, spending, booking, or automatic record
+changes.
 
-- **Project:** Mithra
-- **Track:** Apps for Your Life
-- **Tagline:** A calm, private household coach for the facts of family life.
-- **Working description:** Mithra gives busy couples one shared place for
-  finance, health trends, planning, imports, conversational updates, calendar
-  views, a Family Brief, and a private Week in Review. It converts text, voice,
-  CSV, XLSX, and PDF inputs into typed, evidence-linked records that users review
-  and correct. Deterministic views work without AI; optional model-provider
-  coaching is factual, evidence-bound, private by scope, and never medical
-  advice, relationship judgment, spending, booking, or record-changing automation.
-  Mithra ships as a low-dependency Go binary with embedded UI, SQLite, encrypted
-  sources and backups, invitation-only two-adult households, and an Arivu-safe
-  shared-VPS installer.
-- **Why it matters:** Couples already have systems—the problem is fragmentation.
-  Mithra lowers capture and switching cost without asking a family to surrender
-  privacy or hand operational authority to an AI.
+## What judges should see
 
-## Judging-criteria evidence
+1. **Week in Review** starts with a shared, deterministic weekly status.
+2. It ranks no more than three priorities from valid shared records and gives a
+   grounded next step for each.
+3. It groups a clearly matched planning item and finance obligation once rather
+   than repeating the same event.
+4. Its observation uses recorded amounts, dates, budgets, and comparisons.
+   Optional AI wording may add context, but it cannot replace those facts.
+5. Each adult's **Only you** section stays separate. A private health or
+   finance issue cannot change shared status, shared copy, or shared empty
+   states.
+6. Health comparisons name the measurement, retain the recorded unit, and do
+   not make a medical claim. Incompatible readings show a correction notice
+   instead.
 
-| Criterion | Observable evidence |
-|---|---|
-| Technological implementation | Eleven atomic Go/SQLite units; local-first CSV/XLSX/PDF extraction; strict provider schemas; encrypted source/backup state; privacy and restart acceptance; signed rollback-safe installer. |
-| Design | One coherent responsive shell across capture, imports, finance, health, calendar, Family Brief, and Week in Review; explicit empty/error/stale states and evidence links. |
-| Potential impact | Replaces fragmented couple workflows while preserving existing files, private overlays, user correction, and factual boundaries. |
-| Quality of idea | A superapp whose unifying layer is a permissioned, non-executing household coach—not a bundle of mini-apps or another reminder list. |
+## Judge access
 
-## Codex and GPT-5.6 evidence map
-
-Primary Codex build task: `019f7561-247d-7d60-b17e-e046156f8fdf`.
-
-| Evidence | Contribution and result |
-|---|---|
-| `85e8b48` | Product interrogation settled the couples-only V1, shared/personal privacy, calm coach, no execution, low-dependency Go/SQLite binary, installer, imports, and full superapp scope. |
-| `952c2d0`–`dcefeb9` | Codex implementation plus GPT-5.6 architecture/security review established the runtime, allowlisted household access, encryption, providers, and durable jobs. |
-| `62afe7b`–`bc7d382` | Finance, factual health, full calendar, conversational capture, local-first imports, Family Brief, and Week in Review landed with focused tests and consolidated GPT-5.6 Sol review fixes. |
-| `c483cf4` | GPT-5.6 Sol review drove encrypted backups, deletion-journal reconciliation, exact rollback errors, symlink defenses, Caddy ownership, and Arivu baseline verification. |
-| `83c187d` | Fixture-only reset, arbitrary-household restart acceptance, judge path, browser QA, deployment receipt, and submission audit. |
-| `930bbcd`–`43c84e0` | Plunk delivery, public release artifacts, safe startup diagnostics, private systemd credentials, and bounded activation readiness landed before the live VPS deployment. |
-| `d1e25f6`–`9b4dec5` | Codex rebuilt the authenticated UI around the licensed Navy design direction, then checked navigation, copy, keyboard use, responsive layouts, and browser behavior. |
-| `62da1fa`–`8d97bc4` | Codex improved capture, source previews, finance corrections, timed planning, import review, diagnostics, and the seeded browser path from direct product feedback. |
-| `96d2dd4`–`63d52ac` | GPT-5.6 Terra implemented the model-provider registry and Settings picker; GPT-5.6 Sol fixed provider-switch key reuse, custom-endpoint network access, schema handling, and provider data-boundary copy. |
-
-GPT-5.6 Sol was used for high-rigor consolidated review and root-cause fixes;
-GPT-5.6 Luna and Terra assisted implementation and debugging. The product owner made the
-defining scope and privacy decisions. GPT-5.6 is meaningful build evidence and
-is not represented as an in-product runtime requirement. Mithra supports
-multiple optional text model providers; voice and visual-PDF reading remain
-OpenAI-only.
-
-## Required final fields and access
-
-- [x] `https://mithrahq.com` is free and available; keep it running through the
-  end of judging.
-- [ ] Private testing instructions contain two judge accounts and the four
-  workflows in `demo-script.md`; credentials appear nowhere public.
-- [x] Repository URL is public with an appropriate license.
-- [ ] Public YouTube video is 3:00 or shorter, has clear audio, demonstrates the
-  working product, and specifically explains Codex and GPT-5.6 contributions.
-- [x] Devpost text description is set and updated for the v1.5.0 provider model.
-- [x] Current product screenshots cover Family Brief, finance, health, planning,
-  and Week in Review without personal data.
-- [ ] **Apps for Your Life** is selected in the final submission form.
-- [ ] The `/feedback` Codex Session ID is generated in the primary build task
-  and pasted into Devpost; a thread ID is not substituted for it.
-- [x] README setup, sample-data, testing, and Codex/GPT-5.6 sections match the
-  current release.
-- [ ] No third-party trademarks, unlicensed music, real personal data, or
-  credentials appear in public artifacts.
-- [ ] Final external check is repeated after the v1.5.0 service restart and
-  immediately before submission; commit and binary SHA-256 values match the
-  local receipt.
-
-## Go/no-go commands
-
-Use `documentation/deployment-receipt.md` as the procedure and save real output
-only to ignored `documentation/deployment-receipt.local.md`.
+The hosted app is invitation-only. Reset the marked synthetic household and
+set the two synthetic judge passwords with the installed operator command:
 
 ```bash
-git status --short
-git rev-parse HEAD
-shasum -a 256 /usr/local/bin/mithra /usr/local/bin/mithra-installer
-sudo mithra-installer status
-curl --fail --silent --show-error https://mithrahq.com/healthz
+sudo mithra-installer reset-demo \
+  --owner-email judge-owner@example.com \
+  --partner-email judge-partner@example.com \
+  --owner-password-file /root/mithra-demo-owner.password \
+  --partner-password-file /root/mithra-demo-partner.password
 ```
 
-Do not submit until every external checkbox above is complete. Devpost notes
-that judges may rely only on the description, images, and video, so each must
-stand on its own even though private working access is provided.
+Both addresses must be allowlisted. The two password files must be private,
+regular files owned by root. Reset changes only the marked synthetic household,
+takes a verified encrypted backup first, and revokes its old sessions and reset
+links. Paste the generated credentials only into the private Devpost testing
+field. Use [the private template](../submission/copy/judge-instructions.template.md);
+do not commit real passwords, reset links, API keys, or session values.
+
+## Public assets
+
+- [Video render](../submission/video/mithra-build-week-demo.mp4): 160
+  seconds, 1920 × 1080, H.264/AAC, spoken narration, and burned-in captions.
+  It uses no music, stock media, credentials, or personal data. See
+  [render notes](../submission/copy/video.md).
+- [Six screenshot assets](../submission/copy/screenshots.md): Owner and Partner
+  desktop reviews, Owner mobile review, status/priorities, observation, and
+  Owner private health.
+
+## Codex and GPT-5.6
+
+Codex inspected the existing Go and SQLite application, traced the shared
+Family Brief and Week paths, then added Week-specific finance, planning, and
+health handling. It also added tests, privacy checks, browser verification,
+and the Remotion video. GPT-5.6 supported product critique, UX choices,
+prioritisation, prompt work, focused implementation, and review. The builder
+made the final scope, privacy, safety, and product decisions.
+
+GPT-5.6 helped build Mithra; it is not presented as a required runtime model.
+The app uses optional model providers only for bounded, evidence-linked
+wording. Deterministic facts remain visible if a provider is unavailable.
+
+## Submit checklist
+
+- [ ] Select **Apps for Your Life**.
+- [ ] Paste the current public repository and hosted URL.
+- [ ] Upload `submission/video/mithra-build-week-demo.mp4` to YouTube and paste
+  its public or unlisted URL.
+- [ ] Upload the six screenshots in the manifest.
+- [ ] Paste the private judge template after setting fresh synthetic passwords.
+- [ ] Add the primary-build `/feedback` session ID, not a thread ID.
+- [ ] Read the hosted app in clean Owner and Partner browser profiles.
+- [ ] Check that no password, reset URL, API key, personal data, or local URL
+  appears in public text, images, or video.
+- [ ] Confirm the saved Devpost fields and final **Submitted** state.
+
+For the longer walkthrough, use [the demo script](demo-script.md). For the
+deployment check, use [the deployment receipt procedure](deployment-receipt.md)
+and keep host-specific output in its ignored local receipt.
