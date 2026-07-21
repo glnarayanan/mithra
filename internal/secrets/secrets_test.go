@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"bytes"
+	"encoding/hex"
 	"errors"
 	"testing"
 )
@@ -46,6 +47,27 @@ func TestEnvelopeRoundTripIsRandomAndPurposeBound(t *testing.T) {
 	}
 	if _, err := settings.Open(first, []byte("household:other/settings:openai")); !errors.Is(err, ErrInvalidEnvelope) {
 		t.Fatalf("wrong context error = %v", err)
+	}
+}
+
+func TestEnvelopeFingerprintUsesTheRandomizedCiphertext(t *testing.T) {
+	box, err := New(bytes.Repeat([]byte{0x41}, MasterKeyBytes), Settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := box.Seal([]byte("provider-secret"), []byte("household:home/settings:provider"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := box.Seal([]byte("provider-secret"), []byte("household:home/settings:provider"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstFingerprint := envelopeFingerprint(first)
+	secondFingerprint := envelopeFingerprint(second)
+	decoded, decodeErr := hex.DecodeString(firstFingerprint)
+	if decodeErr != nil || len(decoded) != 8 || firstFingerprint == secondFingerprint {
+		t.Fatalf("fingerprints first=%q second=%q decode=%v", firstFingerprint, secondFingerprint, decodeErr)
 	}
 }
 

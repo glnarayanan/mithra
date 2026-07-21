@@ -1229,6 +1229,9 @@ func extractArchive(archive, target string, key []byte) error {
 			return errors.New("backup archive contains an unsafe entry")
 		}
 		path := filepath.Join(target, clean)
+		if !strings.HasPrefix(path, filepath.Clean(target)+string(filepath.Separator)) {
+			return errors.New("backup archive contains an unsafe entry")
+		}
 		if header.Typeflag == tar.TypeDir {
 			if err := os.Mkdir(path, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
 				return err

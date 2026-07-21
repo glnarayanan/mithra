@@ -4,8 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -131,8 +131,7 @@ func (s *SettingsStore) ReplaceProvider(ctx context.Context, scope policy.ActorS
 	if err != nil {
 		return ErrSettingsCredential
 	}
-	digest := sha256.Sum256([]byte(final.APIKey))
-	fingerprint := fmt.Sprintf("%x", digest[:8])
+	fingerprint := envelopeFingerprint(ciphertext)
 	now := s.now().UTC().Format(time.RFC3339Nano)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -147,6 +146,11 @@ func (s *SettingsStore) ReplaceProvider(ctx context.Context, scope policy.ActorS
 		return ErrSettingsDenied
 	}
 	return tx.Commit()
+}
+
+func envelopeFingerprint(ciphertext []byte) string {
+	digest := sha256.Sum256(ciphertext)
+	return hex.EncodeToString(digest[:8])
 }
 
 func (s *SettingsStore) RemoveProvider(ctx context.Context, scope policy.ActorScope) error {
