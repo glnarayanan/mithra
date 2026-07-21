@@ -1,7 +1,9 @@
 package installer
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -410,6 +412,52 @@ func FuzzExtractArchiveAuthenticatesBoundedInput(f *testing.F) {
 			t.Fatalf("extracted fixture = %q, %v", got, err)
 		}
 	})
+}
+
+func TestExtractArchiveRejectsTraversalEntries(t *testing.T) {
+	testExtractArchiveEntry(t, "../outside", true)
+	testExtractArchiveEntry(t, "/absolute", true)
+	testExtractArchiveEntry(t, "records/report..final.json", false)
+}
+
+func testExtractArchiveEntry(t *testing.T, entryName string, wantUnsafe bool) {
+	t.Helper()
+	root := t.TempDir()
+	plainPath := filepath.Join(root, "archive.tar.gz")
+	plain, err := os.OpenFile(plainPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gzipWriter := gzip.NewWriter(plain)
+	tarWriter := tar.NewWriter(gzipWriter)
+	if err := tarWriter.WriteHeader(&tar.Header{Name: entryName, Typeflag: tar.TypeReg, Mode: 0o600, Size: 4}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tarWriter.Write([]byte("test")); err != nil {
+		t.Fatal(err)
+	}
+	if err := errors.Join(tarWriter.Close(), gzipWriter.Close(), plain.Close()); err != nil {
+		t.Fatal(err)
+	}
+	key := bytes.Repeat([]byte{0x42}, 32)
+	archivePath := filepath.Join(root, "archive.mbackup")
+	if err := encryptArchive(plainPath, archivePath, key); err != nil {
+		t.Fatal(err)
+	}
+	stage := filepath.Join(root, "stage")
+	if err := os.Mkdir(stage, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	extractErr := extractArchive(archivePath, stage, key)
+	if wantUnsafe && (extractErr == nil || !strings.Contains(extractErr.Error(), "unsafe entry")) {
+		t.Fatalf("entry %q error=%v, want unsafe-entry rejection", entryName, extractErr)
+	}
+	if !wantUnsafe && extractErr != nil {
+		t.Fatalf("entry %q rejected: %v", entryName, extractErr)
+	}
+	if _, err := os.Stat(filepath.Join(root, "outside")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("traversal entry escaped extraction root: %v", err)
+	}
 }
 
 func TestAtomicOwnedApplyRollsBackAndLeavesArivuByteStable(t *testing.T) {
