@@ -11,7 +11,9 @@ credentials, developer tools, local URLs, or personal data.
 | `submission/screenshots/04-weekly-status-priorities.png` | Feature image | Deterministic weekly status and no more than three priorities. |
 | `submission/screenshots/05-coaching-observation.png` | Coaching image | A grounded finance observation with evidence details. |
 | `submission/screenshots/06-owner-private-health.png` | Safety image | Private health comparison and a unit-correction notice without medical advice. |
+| `submission/screenshots/07-family-brief.png` | Optional overview | The shared household overview and quick capture entry point. |
 
 Upload in this order. The first, fourth, fifth, and sixth images explain the
 core Week in Review flow; the second proves responsive use; the third proves
-the private boundary.
+the private boundary. Use the seventh only when the submission has room for a
+broader product view.
