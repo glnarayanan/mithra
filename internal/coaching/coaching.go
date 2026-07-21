@@ -9,8 +9,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"math/big"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,8 +20,8 @@ import (
 )
 
 const (
-	PromptVersion = "coaching-v2"
-	SchemaVersion = "coaching-v1"
+	PromptVersion = "coaching-v3"
+	SchemaVersion = "coaching-v2"
 )
 
 var (
@@ -42,12 +44,28 @@ type Fact struct {
 }
 
 type Context struct {
-	HouseholdID       string `json:"household_id"`
-	Scope             string `json:"scope"`
-	SharedRevision    int64  `json:"shared_revision"`
-	PersonalRevision  int64  `json:"personal_revision"`
-	SourceFingerprint string `json:"source_fingerprint"`
-	Facts             []Fact `json:"facts"`
+	HouseholdID       string   `json:"household_id"`
+	Scope             string   `json:"scope"`
+	SharedRevision    int64    `json:"shared_revision"`
+	PersonalRevision  int64    `json:"personal_revision"`
+	SourceFingerprint string   `json:"source_fingerprint"`
+	Facts             []Fact   `json:"facts"`
+	Signals           []Signal `json:"signals"`
+}
+
+// Signal is a deterministic observation prepared from visible typed records.
+// It gives the model facts to explain, rather than asking it to do arithmetic.
+type Signal struct {
+	Kind        string   `json:"kind"`
+	Summary     string   `json:"summary"`
+	Period      string   `json:"period"`
+	EvidenceIDs []string `json:"evidence_ids"`
+}
+
+type amountRow struct {
+	month              string
+	coefficient, scale int64
+	evidence           string
 }
 
 type Item struct {
@@ -59,6 +77,7 @@ type Item struct {
 
 type Narrative struct {
 	Lead            Item   `json:"lead"`
+	Insights        []Item `json:"insights"`
 	Changes         []Item `json:"changes"`
 	Dates           []Item `json:"dates"`
 	Inconsistencies []Item `json:"inconsistencies"`
@@ -66,17 +85,26 @@ type Narrative struct {
 }
 
 type Overview struct {
-	Shared                     Narrative
-	Personal                   Narrative
-	SharedContext              Context
-	PersonalContext            Context
-	HasRecords                 bool
-	SharedCache, PersonalCache CacheState
+	Shared                         Narrative
+	Personal                       Narrative
+	SharedContext                  Context
+	PersonalContext                Context
+	HasRecords                     bool
+	SharedCache, PersonalCache     CacheState
+	SharedHistory, PersonalHistory []History
 }
 
 type CacheState struct {
 	Found, Stale bool
 	GeneratedAt  time.Time
+	Model        string
+}
+
+// History is a retained, actor-scoped copy of a successful coaching response.
+type History struct {
+	Narrative   Narrative
+	Model       string
+	GeneratedAt time.Time
 }
 
 type Nudge struct {
@@ -111,6 +139,10 @@ func (s *Service) BuildContext(ctx context.Context, actor policy.ActorScope, vis
 	if err != nil {
 		return Context{}, err
 	}
+	signals, err := querySignals(ctx, tx, actor, visibility, facts, s.now().UTC())
+	if err != nil {
+		return Context{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return Context{}, err
 	}
@@ -119,7 +151,7 @@ func (s *Service) BuildContext(ctx context.Context, actor policy.ActorScope, vis
 	if visibility == policy.Shared {
 		personalKey = 0
 	}
-	return Context{HouseholdID: actor.HouseholdID, Scope: string(visibility), SharedRevision: shared, PersonalRevision: personalKey, SourceFingerprint: fingerprint, Facts: facts}, nil
+	return Context{HouseholdID: actor.HouseholdID, Scope: string(visibility), SharedRevision: shared, PersonalRevision: personalKey, SourceFingerprint: fingerprint, Facts: facts, Signals: signals}, nil
 }
 
 func (s *Service) Overview(ctx context.Context, actor policy.ActorScope, asOf time.Time) (Overview, error) {
@@ -131,13 +163,14 @@ func (s *Service) Overview(ctx context.Context, actor policy.ActorScope, asOf ti
 	if err != nil {
 		return Overview{}, err
 	}
-	result := Overview{Shared: deterministic(shared.Facts, asOf), Personal: deterministic(personal.Facts, asOf), SharedContext: shared, PersonalContext: personal, HasRecords: len(shared.Facts)+len(personal.Facts) > 0}
+	result := Overview{Shared: deterministic(shared.Facts, asOf, shared.Signals...), Personal: deterministic(personal.Facts, asOf, personal.Signals...), SharedContext: shared, PersonalContext: personal, HasRecords: len(shared.Facts)+len(personal.Facts) > 0}
 	if cached, state, err := s.load(ctx, actor, "brief", policy.Shared, shared); err == nil && state.Found {
 		if state.Stale {
 			cached.Dates = result.Shared.Dates
 			cached.Inconsistencies = result.Shared.Inconsistencies
 			cached.Priorities = result.Shared.Priorities
 		}
+		cached = withSignals(cached, shared.Signals, false)
 		result.Shared, result.SharedCache = cached, state
 	} else {
 		result.SharedCache = state
@@ -148,10 +181,13 @@ func (s *Service) Overview(ctx context.Context, actor policy.ActorScope, asOf ti
 			cached.Inconsistencies = result.Personal.Inconsistencies
 			cached.Priorities = result.Personal.Priorities
 		}
+		cached = withSignals(cached, personal.Signals, false)
 		result.Personal, result.PersonalCache = cached, state
 	} else {
 		result.PersonalCache = state
 	}
+	result.SharedHistory, _ = s.History(ctx, actor, "brief", policy.Shared)
+	result.PersonalHistory, _ = s.History(ctx, actor, "brief", policy.Personal)
 	return result, nil
 }
 
@@ -164,13 +200,14 @@ func (s *Service) Week(ctx context.Context, actor policy.ActorScope, asOf time.T
 	if err != nil {
 		return Overview{}, err
 	}
-	result := Overview{Shared: deterministic(shared.Facts, asOf), Personal: deterministic(personal.Facts, asOf), SharedContext: shared, PersonalContext: personal, HasRecords: len(shared.Facts)+len(personal.Facts) > 0}
+	result := Overview{Shared: deterministic(shared.Facts, asOf, shared.Signals...), Personal: deterministic(personal.Facts, asOf, personal.Signals...), SharedContext: shared, PersonalContext: personal, HasRecords: len(shared.Facts)+len(personal.Facts) > 0}
 	if cached, state, err := s.load(ctx, actor, "week", policy.Shared, shared); err == nil && state.Found {
 		if state.Stale {
 			cached.Dates = result.Shared.Dates
 			cached.Inconsistencies = result.Shared.Inconsistencies
 			cached.Priorities = result.Shared.Priorities
 		}
+		cached = withSignals(cached, shared.Signals, true)
 		result.Shared, result.SharedCache = cached, state
 	} else {
 		result.SharedCache = state
@@ -181,10 +218,13 @@ func (s *Service) Week(ctx context.Context, actor policy.ActorScope, asOf time.T
 			cached.Inconsistencies = result.Personal.Inconsistencies
 			cached.Priorities = result.Personal.Priorities
 		}
+		cached = withSignals(cached, personal.Signals, true)
 		result.Personal, result.PersonalCache = cached, state
 	} else {
 		result.PersonalCache = state
 	}
+	result.SharedHistory, _ = s.History(ctx, actor, "week", policy.Shared)
+	result.PersonalHistory, _ = s.History(ctx, actor, "week", policy.Personal)
 	return result, nil
 }
 
@@ -205,7 +245,7 @@ func (s *Service) Publish(ctx context.Context, actor policy.ActorScope, mode str
 	for _, fact := range current.Facts {
 		allowed[fact.EvidenceID] = fact
 	}
-	if err := validateNarrative(output, allowed); err != nil {
+	if err := validateNarrative(output, allowed, current.Signals...); err != nil {
 		return err
 	}
 	content, _ := json.Marshal(output)
@@ -238,7 +278,66 @@ func (s *Service) Publish(ctx context.Context, actor policy.ActorScope, mode str
 	if err != nil {
 		return err
 	}
+	historyID, err := randomID()
+	if err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO coaching_history(id,household_id,owner_user_id,mode,visibility,content_json,evidence_json,model,prompt_version,schema_version,generated_at,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, historyID, actor.HouseholdID, owner, mode, visibility, string(content), string(evidence), model, PromptVersion, SchemaVersion, stamp, stamp); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM coaching_history WHERE id IN (SELECT id FROM coaching_history WHERE household_id=? AND IFNULL(owner_user_id,'')=IFNULL(?, '') AND mode=? AND visibility=? ORDER BY generated_at DESC,id DESC LIMIT -1 OFFSET 12)`, actor.HouseholdID, owner, mode, visibility); err != nil {
+		return err
+	}
 	return tx.Commit()
+}
+
+// History returns only the requesting adult's private snapshots or household
+// shared snapshots. It never falls back across visibility.
+func (s *Service) History(ctx context.Context, actor policy.ActorScope, mode string, visibility policy.Visibility) ([]History, error) {
+	if s == nil || s.db == nil || !actor.Valid() || (mode != "brief" && mode != "week") || (visibility != policy.Shared && visibility != policy.Personal) {
+		return nil, policy.ErrUnauthorized
+	}
+	current, err := s.BuildContext(ctx, actor, visibility)
+	if err != nil {
+		return nil, err
+	}
+	owner := ""
+	if visibility == policy.Personal {
+		owner = actor.ActorID
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id,content_json,evidence_json,model,generated_at FROM coaching_history WHERE household_id=? AND IFNULL(owner_user_id,'')=? AND mode=? AND visibility=? ORDER BY generated_at DESC,id DESC LIMIT 12`, actor.HouseholdID, owner, mode, visibility)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []History{}
+	stale := []string{}
+	for rows.Next() {
+		var id, encoded, evidence, generated string
+		var history History
+		if err := rows.Scan(&id, &encoded, &evidence, &history.Model, &generated); err != nil {
+			return nil, err
+		}
+		var facts []Fact
+		if json.Unmarshal([]byte(encoded), &history.Narrative) != nil || json.Unmarshal([]byte(evidence), &facts) != nil || !evidenceStillVisible(facts, current.Facts) {
+			stale = append(stale, id)
+			continue
+		}
+		history.GeneratedAt, _ = time.Parse(time.RFC3339Nano, generated)
+		out = append(out, history)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	for _, id := range stale {
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM coaching_history WHERE id=? AND household_id=?`, id, actor.HouseholdID); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 func (s *Service) load(ctx context.Context, actor policy.ActorScope, mode string, visibility policy.Visibility, current Context) (Narrative, CacheState, error) {
@@ -246,9 +345,9 @@ func (s *Service) load(ctx context.Context, actor policy.ActorScope, mode string
 	if visibility == policy.Shared {
 		owner = ""
 	}
-	var encoded, evidence, generated, promptVersion, schemaVersion string
+	var encoded, evidence, generated, promptVersion, schemaVersion, model string
 	var shared, personal int64
-	err := s.db.QueryRowContext(ctx, `SELECT content_json,evidence_json,shared_revision,personal_revision,generated_at,prompt_version,schema_version FROM coaching_cache WHERE household_id=? AND IFNULL(owner_user_id,'')=? AND mode=? AND visibility=?`, actor.HouseholdID, owner, mode, visibility).Scan(&encoded, &evidence, &shared, &personal, &generated, &promptVersion, &schemaVersion)
+	err := s.db.QueryRowContext(ctx, `SELECT content_json,evidence_json,shared_revision,personal_revision,generated_at,prompt_version,schema_version,model FROM coaching_cache WHERE household_id=? AND IFNULL(owner_user_id,'')=? AND mode=? AND visibility=?`, actor.HouseholdID, owner, mode, visibility).Scan(&encoded, &evidence, &shared, &personal, &generated, &promptVersion, &schemaVersion, &model)
 	if err != nil {
 		return Narrative{}, CacheState{}, err
 	}
@@ -256,7 +355,7 @@ func (s *Service) load(ctx context.Context, actor policy.ActorScope, mode string
 		_, _ = s.db.ExecContext(ctx, `DELETE FROM coaching_cache WHERE household_id=? AND IFNULL(owner_user_id,'')=? AND mode=? AND visibility=?`, actor.HouseholdID, owner, mode, visibility)
 		return Narrative{}, CacheState{}, ErrStale
 	}
-	state := CacheState{Found: true}
+	state := CacheState{Found: true, Model: model}
 	state.GeneratedAt, _ = time.Parse(time.RFC3339Nano, generated)
 	var facts []Fact
 	if json.Unmarshal([]byte(evidence), &facts) != nil || !evidenceStillVisible(facts, current.Facts) {
@@ -352,6 +451,179 @@ func queryFacts(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visibi
 	return out, nil
 }
 
+// querySignals builds bounded summaries only from records already present in
+// the actor-scoped fact set. The model gets these facts, not a request to infer
+// calculations from prose.
+func querySignals(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visibility policy.Visibility, facts []Fact, asOf time.Time) ([]Signal, error) {
+	byRecord := make(map[string]Fact, len(facts))
+	for _, fact := range facts {
+		byRecord[fact.RecordID] = fact
+	}
+	ownerClause, args := "", []any{actor.HouseholdID, string(visibility)}
+	if visibility == policy.Personal {
+		ownerClause, args = " AND owner_user_id=?", append(args, actor.ActorID)
+	}
+	var out []Signal
+
+	// Finance: compare the two most recent months that have visible spending.
+	rows, err := tx.QueryContext(ctx, `SELECT id,substr(spent_on,1,7),amount_coefficient,amount_scale FROM finance_spending WHERE household_id=? AND visibility=? AND active=1`+ownerClause+` AND amount_coefficient IS NOT NULL ORDER BY spent_on DESC,id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	months := map[string][]amountRow{}
+	for rows.Next() {
+		var id, month string
+		var coefficient, scale int64
+		if err := rows.Scan(&id, &month, &coefficient, &scale); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if fact, ok := byRecord[id]; ok {
+			months[month] = append(months[month], amountRow{month, coefficient, scale, fact.EvidenceID})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+	latestMonth, priorMonth := asOf.Format("2006-01"), asOf.AddDate(0, -1, 0).Format("2006-01")
+	if count := len(months[latestMonth]) + len(months[priorMonth]); count > 0 && count <= 12 {
+		evidence := make([]string, 0, 12)
+		for _, row := range months[latestMonth] {
+			evidence = appendEvidence(evidence, row.evidence, 12)
+		}
+		for _, row := range months[priorMonth] {
+			evidence = appendEvidence(evidence, row.evidence, 12)
+		}
+		if len(evidence) > 0 {
+			out = append(out, Signal{Kind: "finance_monthly_spending", Period: priorMonth + " to " + latestMonth, Summary: "Spending recorded for " + latestMonth + " is " + sumAmounts(months[latestMonth]) + " compared with " + sumAmounts(months[priorMonth]) + " for " + priorMonth + ".", EvidenceIDs: evidence})
+		}
+	}
+
+	// Health: compare the first and last values only within the same stored key
+	// and unit. This is a factual series, never a clinical interpretation.
+	type healthRow struct{ date, value, unit, evidence string }
+	series := map[string][]healthRow{}
+	rows, err = tx.QueryContext(ctx, `SELECT id,comparability_key,observed_on,value_original,unit FROM health_observations WHERE household_id=? AND visibility=? AND active=1`+ownerClause+` ORDER BY observed_on,id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var id, key, date, value, unit string
+		if err := rows.Scan(&id, &key, &date, &value, &unit); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if fact, ok := byRecord[id]; ok {
+			series[key] = append(series[key], healthRow{date, value, unit, fact.EvidenceID})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+	seriesKeys := make([]string, 0, len(series))
+	for key := range series {
+		seriesKeys = append(seriesKeys, key)
+	}
+	sort.Strings(seriesKeys)
+	healthSignals := 0
+	for _, key := range seriesKeys {
+		points := series[key]
+		if len(points) < 2 {
+			continue
+		}
+		first, last := points[0], points[len(points)-1]
+		out = append(out, Signal{Kind: "health_series", Period: first.date + " to " + last.date, Summary: "A comparable health measurement changed from " + first.value + " " + first.unit + " on " + first.date + " to " + last.value + " " + last.unit + " on " + last.date + ". This is a record comparison, not health advice.", EvidenceIDs: appendEvidence([]string{first.evidence}, last.evidence, 12)})
+		healthSignals++
+		if healthSignals == 2 {
+			break
+		}
+	}
+
+	// Planning: dates are already selected from the typed records in queryFacts.
+	upcoming := make([]Fact, 0, 6)
+	start, end := day(asOf), day(asOf).AddDate(0, 0, 31)
+	for _, fact := range facts {
+		if fact.Family != "planning" {
+			continue
+		}
+		if date, err := time.Parse("2006-01-02", fact.Date); err == nil && !date.Before(start) && date.Before(end) {
+			upcoming = append(upcoming, fact)
+		}
+	}
+	if len(upcoming) > 0 && len(upcoming) <= 12 {
+		sort.Slice(upcoming, func(i, j int) bool { return upcoming[i].Date < upcoming[j].Date })
+		evidence := make([]string, 0, len(upcoming))
+		for _, fact := range upcoming {
+			evidence = appendEvidence(evidence, fact.EvidenceID, 12)
+		}
+		out = append(out, Signal{Kind: "planning_upcoming", Period: start.Format("2006-01-02") + " to " + end.Format("2006-01-02"), Summary: strconv.Itoa(len(upcoming)) + " dated planning records fall in the next 31 days, from " + upcoming[0].Date + " to " + upcoming[len(upcoming)-1].Date + ".", EvidenceIDs: evidence})
+	}
+
+	// Week comparison is available in both modes; Week in Review can explain it.
+	currentStart, priorStart := day(asOf).AddDate(0, 0, -6), day(asOf).AddDate(0, 0, -13)
+	current, prior := make([]Fact, 0, 12), make([]Fact, 0, 12)
+	for _, fact := range facts {
+		created := day(fact.CreatedAt)
+		if !created.Before(currentStart) && !created.After(day(asOf)) {
+			current = append(current, fact)
+		}
+		if !created.Before(priorStart) && created.Before(currentStart) {
+			prior = append(prior, fact)
+		}
+	}
+	if len(current)+len(prior) > 0 && len(current)+len(prior) <= 12 {
+		evidence := make([]string, 0, len(current)+len(prior))
+		for _, fact := range append(current, prior...) {
+			evidence = appendEvidence(evidence, fact.EvidenceID, 12)
+		}
+		out = append(out, Signal{Kind: "weekly_activity", Period: priorStart.Format("2006-01-02") + " to " + day(asOf).Format("2006-01-02"), Summary: strconv.Itoa(len(current)) + " visible records were added in the current seven days, compared with " + strconv.Itoa(len(prior)) + " in the prior seven days.", EvidenceIDs: evidence})
+	}
+	return out, nil
+}
+
+func appendEvidence(ids []string, id string, limit int) []string {
+	for _, existing := range ids {
+		if existing == id {
+			return ids
+		}
+	}
+	if len(ids) < limit {
+		return append(ids, id)
+	}
+	return ids
+}
+
+func sumAmounts(rows []amountRow) string {
+	total := new(big.Int)
+	for _, row := range rows {
+		value := big.NewInt(row.coefficient)
+		if row.scale < 6 {
+			value.Mul(value, new(big.Int).Exp(big.NewInt(10), big.NewInt(6-row.scale), nil))
+		}
+		total.Add(total, value)
+	}
+	negative := total.Sign() < 0
+	if negative {
+		total.Abs(total)
+	}
+	raw := total.Text(10)
+	for len(raw) < 7 {
+		raw = "0" + raw
+	}
+	whole, fraction := raw[:len(raw)-6], strings.TrimRight(raw[len(raw)-6:], "0")
+	if fraction != "" {
+		whole += "." + fraction
+	}
+	if negative {
+		return "-" + whole
+	}
+	return whole
+}
+
 func markConflicts(ctx context.Context, tx *sql.Tx, householdID string, facts []Fact) error {
 	index := make(map[string]int, len(facts))
 	for i, f := range facts {
@@ -414,7 +686,7 @@ func joinIssue(current, next string) string {
 	return current + "; " + next
 }
 
-func deterministic(facts []Fact, asOf time.Time) Narrative {
+func deterministic(facts []Fact, asOf time.Time, signals ...Signal) Narrative {
 	if asOf.IsZero() {
 		asOf = time.Now().UTC()
 	}
@@ -460,7 +732,57 @@ func deterministic(facts []Fact, asOf time.Time) Narrative {
 	if len(out.Inconsistencies) > 6 {
 		out.Inconsistencies = out.Inconsistencies[:6]
 	}
+	for _, signal := range signals {
+		if len(out.Insights) == 5 {
+			break
+		}
+		item := Item{Title: signalTitle(signal.Kind), Copy: signal.Summary, When: signal.Period, EvidenceIDs: signal.EvidenceIDs}
+		out.Insights = append(out.Insights, item)
+		if signal.Kind == "weekly_activity" && len(out.Changes) < 6 {
+			out.Changes = append([]Item{item}, out.Changes...)
+		}
+	}
 	return out
+}
+
+func signalTitle(kind string) string {
+	switch kind {
+	case "finance_monthly_spending":
+		return "Spending comparison"
+	case "health_series":
+		return "Health record comparison"
+	case "planning_upcoming":
+		return "Plans in the next month"
+	case "weekly_activity":
+		return "This week and last week"
+	default:
+		return "Recorded pattern"
+	}
+}
+
+func withSignals(n Narrative, signals []Signal, week bool) Narrative {
+	for _, signal := range signals {
+		item := Item{Title: signalTitle(signal.Kind), Copy: signal.Summary, When: signal.Period, EvidenceIDs: signal.EvidenceIDs}
+		if len(n.Insights) < 5 && !hasEvidence(n.Insights, item.EvidenceIDs) {
+			n.Insights = append(n.Insights, item)
+		}
+		if week && signal.Kind == "weekly_activity" && !hasEvidence(n.Changes, item.EvidenceIDs) {
+			n.Changes = append([]Item{item}, n.Changes...)
+			if len(n.Changes) > 12 {
+				n.Changes = n.Changes[:12]
+			}
+		}
+	}
+	return n
+}
+
+func hasEvidence(items []Item, evidence []string) bool {
+	for _, item := range items {
+		if strings.Join(item.EvidenceIDs, "\x00") == strings.Join(evidence, "\x00") {
+			return true
+		}
+	}
+	return false
 }
 
 func factItem(f Fact) Item {
@@ -471,11 +793,12 @@ func factItem(f Fact) Item {
 	return Item{Title: f.Content, Copy: copy, When: f.Date, EvidenceIDs: []string{f.EvidenceID}}
 }
 
-func validateNarrative(n Narrative, allowed map[string]Fact) error {
-	if len(n.Priorities) > 3 || len(n.Changes) > 12 || len(n.Dates) > 12 || len(n.Inconsistencies) > 12 {
+func validateNarrative(n Narrative, allowed map[string]Fact, signals ...Signal) error {
+	if len(n.Insights) > 5 || len(n.Priorities) > 3 || len(n.Changes) > 12 || len(n.Dates) > 12 || len(n.Inconsistencies) > 12 {
 		return ErrInvalid
 	}
 	items := []Item{n.Lead}
+	items = append(items, n.Insights...)
 	items = append(items, n.Changes...)
 	items = append(items, n.Dates...)
 	items = append(items, n.Inconsistencies...)
@@ -484,7 +807,7 @@ func validateNarrative(n Narrative, allowed map[string]Fact) error {
 		if strings.TrimSpace(item.Title) == "" && strings.TrimSpace(item.Copy) == "" {
 			continue
 		}
-		if len(item.Title) > 256 || len(item.Copy) > 1200 || len(item.EvidenceIDs) == 0 || len(item.EvidenceIDs) > 6 || unsafeWording(item.Title+" "+item.Copy) {
+		if len(item.Title) > 256 || len(item.Copy) > 1200 || len(item.EvidenceIDs) == 0 || len(item.EvidenceIDs) > 12 || unsafeWording(item.Title+" "+item.Copy, fullyCitesSignal(item.EvidenceIDs, signals)) {
 			return ErrUnsupported
 		}
 		var cited []Fact
@@ -495,17 +818,47 @@ func validateNarrative(n Narrative, allowed map[string]Fact) error {
 			}
 			cited = append(cited, fact)
 		}
-		if !groundedWording(item.Title+" "+item.Copy+" "+item.When, cited) {
+		if !groundedWording(item.Title+" "+item.Copy+" "+item.When, cited, signals, item.EvidenceIDs) {
 			return ErrUnsupported
 		}
 	}
 	return nil
 }
 
-func unsafeWording(value string) bool {
+func unsafeWording(value string, allowComparison bool) bool {
 	lower := " " + strings.ToLower(value) + " "
-	for _, term := range []string{" because ", " caused ", " causes ", " leads to ", " diagnosis ", " diagnose ", " treatment ", " medication ", " should take ", " you should ", " we recommend ", " seek medical ", " consult a ", " at risk ", " normal range ", " abnormal ", " unhealthy ", " blame ", " fault ", " score ", " reset ", " increased ", " decreased ", " higher ", " lower ", " rising ", " falling ", " overdue "} {
+	for _, term := range []string{" because ", " caused ", " causes ", " leads to ", " diagnosis ", " diagnose ", " treatment ", " medication ", " should take ", " you should ", " we recommend ", " seek medical ", " consult a ", " at risk ", " normal range ", " abnormal ", " unhealthy ", " blame ", " fault ", " score ", " reset ", " overdue "} {
 		if strings.Contains(lower, term) {
+			return true
+		}
+	}
+	if !allowComparison {
+		for _, term := range []string{" increased ", " decreased ", " higher ", " lower ", " rising ", " falling "} {
+			if strings.Contains(lower, term) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func fullyCitesSignal(citedIDs []string, signals []Signal) bool {
+	cited := make(map[string]struct{}, len(citedIDs))
+	for _, id := range citedIDs {
+		cited[id] = struct{}{}
+	}
+	for _, signal := range signals {
+		if len(signal.EvidenceIDs) == 0 {
+			continue
+		}
+		complete := true
+		for _, id := range signal.EvidenceIDs {
+			if _, ok := cited[id]; !ok {
+				complete = false
+				break
+			}
+		}
+		if complete {
 			return true
 		}
 	}
@@ -515,7 +868,7 @@ func unsafeWording(value string) bool {
 var coachingNumber = regexp.MustCompile(`[+-]?[0-9]+(?:[.,][0-9]+)*`)
 var coachingWord = regexp.MustCompile(`[a-zA-Z]{4,}`)
 
-func groundedWording(wording string, facts []Fact) bool {
+func groundedWording(wording string, facts []Fact, signals []Signal, citedIDs []string) bool {
 	if len(facts) == 0 {
 		return false
 	}
@@ -527,6 +880,28 @@ func groundedWording(wording string, facts []Fact) bool {
 		evidence.WriteString(strings.ToLower(fact.Date))
 		evidence.WriteString(" ")
 		evidence.WriteString(strings.ToLower(fact.Issue))
+	}
+	cited := make(map[string]struct{}, len(citedIDs))
+	for _, id := range citedIDs {
+		cited[id] = struct{}{}
+	}
+	for _, signal := range signals {
+		if len(signal.EvidenceIDs) == 0 {
+			continue
+		}
+		allCited := true
+		for _, id := range signal.EvidenceIDs {
+			if _, ok := cited[id]; !ok {
+				allCited = false
+				break
+			}
+		}
+		if allCited {
+			evidence.WriteString(" ")
+			evidence.WriteString(strings.ToLower(signal.Summary))
+			evidence.WriteString(" ")
+			evidence.WriteString(strings.ToLower(signal.Period))
+		}
 	}
 	source := evidence.String()
 	lower := strings.ToLower(wording)

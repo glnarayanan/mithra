@@ -152,6 +152,104 @@ func TestDeterministicOverviewCapsPrioritiesAndRejectsUnsafeUnsupportedOutput(t 
 	}
 }
 
+func TestSignalsUseVisibleTypedRecordsAndTrustOnlyFullyCitedNumbers(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.service.now = func() time.Time { return time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC) }
+	for _, row := range []struct{ date, amount string }{{"2026-06-20", "10"}, {"2026-07-20", "20"}} {
+		source := f.source(t, f.owner, policy.Shared, row.date)
+		if _, err := f.finance.Create(ctx, f.owner, finance.Draft{Kind: finance.Spending, Visibility: policy.Shared, Label: "Food", Category: "Food", Date: row.date, AmountText: row.amount, Provenance: financeProvenance(source)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for index, row := range []struct{ date, value string }{{"2026-06-20", "5.1"}, {"2026-07-20", "5.4"}} {
+		source := f.source(t, f.owner, policy.Shared, row.date+"-health")
+		if _, err := f.health.CreateObservation(ctx, f.owner, health.ObservationDraft{Visibility: policy.Shared, Subject: "Owner", Analyte: "Reading", ObservedOn: row.date, Value: row.value, Unit: "u", Provenance: healthProvenance(source)}); err != nil {
+			t.Fatal(err)
+		}
+		_ = index
+	}
+	source := f.source(t, f.owner, policy.Shared, "plan")
+	if _, err := f.planning.CreateEvent(ctx, f.owner, planning.EventDraft{Visibility: policy.Shared, Title: "Trip", AllDay: true, StartsOn: "2026-07-24", Status: "planned", Provenance: planningProvenance(source)}); err != nil {
+		t.Fatal(err)
+	}
+	input, err := f.service.BuildContext(ctx, f.owner, policy.Shared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[string]Signal{}
+	for _, signal := range input.Signals {
+		kinds[signal.Kind] = signal
+	}
+	for _, kind := range []string{"finance_monthly_spending", "health_series", "planning_upcoming", "weekly_activity"} {
+		if len(kinds[kind].EvidenceIDs) == 0 {
+			t.Fatalf("missing %s signal: %#v", kind, input.Signals)
+		}
+	}
+	week := withSignals(Narrative{}, []Signal{kinds["weekly_activity"]}, true)
+	if len(week.Changes) != 1 || week.Changes[0].Title != "This week and last week" {
+		t.Fatalf("week comparison = %#v", week)
+	}
+	financeSignal := kinds["finance_monthly_spending"]
+	if !strings.Contains(financeSignal.Summary, "20") || !strings.Contains(financeSignal.Summary, "10") {
+		t.Fatalf("finance signal = %#v", financeSignal)
+	}
+	fact := Fact{EvidenceID: "a", Content: "Rent", Date: "2026-07-20"}
+	item := Item{Title: "Rent", Copy: "Recorded 999 this month.", EvidenceIDs: []string{"a"}}
+	if err := validateNarrative(Narrative{Lead: item}, map[string]Fact{"a": fact}, Signal{Summary: "Recorded 999 this month.", EvidenceIDs: []string{"a"}}); err != nil {
+		t.Fatalf("trusted signal number rejected: %v", err)
+	}
+	if !errors.Is(validateNarrative(Narrative{Lead: item}, map[string]Fact{"a": fact}, Signal{Summary: "Recorded 999 this month.", EvidenceIDs: []string{"a", "b"}}), ErrUnsupported) {
+		t.Fatal("partially cited signal number accepted")
+	}
+	comparison := Item{Title: "Spending increased", Copy: "Recorded spending increased from 10 to 20.", EvidenceIDs: financeSignal.EvidenceIDs}
+	allowed := make(map[string]Fact, len(input.Facts))
+	for _, fact := range input.Facts {
+		allowed[fact.EvidenceID] = fact
+	}
+	if err := validateNarrative(Narrative{Lead: comparison}, allowed, financeSignal); err != nil {
+		t.Fatalf("factual signal comparison rejected: %v", err)
+	}
+	unsupportedComparison := Item{Title: "Rent increased", Copy: "Rent is higher.", EvidenceIDs: []string{"a"}}
+	if !errors.Is(validateNarrative(Narrative{Lead: unsupportedComparison}, map[string]Fact{"a": fact}), ErrUnsupported) {
+		t.Fatal("comparison without a fully cited signal accepted")
+	}
+}
+
+func TestHistoryCapsAndKeepsPrivateSnapshotsScoped(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	source := f.source(t, f.owner, policy.Personal, "private-history")
+	if _, err := f.finance.Create(ctx, f.owner, finance.Draft{Kind: finance.Income, Visibility: policy.Personal, Label: "Income", Category: "Income", Date: "2026-07-20", AmountText: "10", Provenance: financeProvenance(source)}); err != nil {
+		t.Fatal(err)
+	}
+	input, err := f.service.BuildContext(ctx, f.owner, policy.Personal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 13; i++ {
+		f.service.now = func() time.Time { return time.Date(2026, 7, 20, 0, 0, i, 0, time.UTC) }
+		if err := f.service.Publish(ctx, f.owner, "brief", policy.Personal, input, deterministic(input.Facts, time.Now()), "test-model"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	history, err := f.service.History(ctx, f.owner, "brief", policy.Personal)
+	if err != nil || len(history) != 12 || history[0].Model != "test-model" {
+		t.Fatalf("history=%#v err=%v", history, err)
+	}
+	partnerHistory, err := f.service.History(ctx, f.partner, "brief", policy.Personal)
+	if err != nil || len(partnerHistory) != 0 {
+		t.Fatalf("partner history=%#v err=%v", partnerHistory, err)
+	}
+	if err := f.sources.Delete(ctx, f.owner, source.ID); err != nil {
+		t.Fatal(err)
+	}
+	history, err = f.service.History(ctx, f.owner, "brief", policy.Personal)
+	if err != nil || len(history) != 0 {
+		t.Fatalf("deleted-source history=%#v err=%v", history, err)
+	}
+}
+
 func TestVisibleUnitAndCalendarConflictsAreExplainedWithoutPrivateInfluence(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()

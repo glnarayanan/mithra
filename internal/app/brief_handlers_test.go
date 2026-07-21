@@ -65,7 +65,7 @@ func TestFamilyBriefLoadsWithoutAIThenRefreshesEvidenceAndKeepsPartnerPrivateOut
 	})}
 
 	initial := serve(application, coachingGET("/", ownerSession))
-	for _, required := range []string{"Family Brief", "Here’s what changed and what’s coming up.", "At a glance", "Worth checking", "Regenerate AI insights"} {
+	for _, required := range []string{"Family Brief", "Here’s what changed and what’s coming up.", "At a glance", "Mithra insights", "Patterns in your records", "Worth checking", "Regenerate AI insights"} {
 		if !strings.Contains(initial.Body.String(), required) {
 			t.Fatalf("initial brief missing %q: %s", required, initial.Body.String())
 		}
@@ -87,7 +87,7 @@ func TestFamilyBriefLoadsWithoutAIThenRefreshesEvidenceAndKeepsPartnerPrivateOut
 		t.Fatalf("nudge email = %#v", mailer.last(t))
 	}
 	cached := serve(application, coachingGET("/", ownerSession))
-	if cached.Code != http.StatusOK || providerCalls != 1 {
+	if cached.Code != http.StatusOK || providerCalls != 1 || !strings.Contains(cached.Body.String(), "Generated ") || !strings.Contains(cached.Body.String(), "Recent generations") {
 		t.Fatalf("cached page code=%d calls=%d", cached.Code, providerCalls)
 	}
 	var nudgeID string
@@ -161,9 +161,28 @@ func TestCoachingRefreshRejectsUnsupportedEvidence(t *testing.T) {
 	}
 }
 
+func TestCoachingRefreshNamesTheSectionThatCouldNotRefresh(t *testing.T) {
+	application, mailer := newAuthTestApp(t, "owner@example.com")
+	session := activate(t, application, mailer, "owner@example.com", "owner secure password", nil)
+	scope := ownerScope(t, application, session)
+	source := coachingTestSource(t, application, scope, policy.Shared, "shared")
+	if _, err := application.finance.Create(context.Background(), scope, finance.Draft{Kind: finance.Spending, Visibility: policy.Shared, Label: "Food", Category: "Food", Date: "2026-07-18", AmountText: "10", Provenance: coachingFinanceProvenance(source)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := application.providerSettings.ReplaceOpenAI(context.Background(), scope, "sk-coaching-test-secret", func(context.Context, string) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	application.openAIClient = &http.Client{Transport: appRoundTripFunc(func(*http.Request) (*http.Response, error) { return nil, context.DeadlineExceeded })}
+	response := serve(application, coachingPOST("/brief/refresh", session, url.Values{}))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "could not refresh shared insights") || strings.Contains(response.Body.String(), "DeadlineExceeded") {
+		t.Fatalf("refresh=%d %q", response.Code, response.Body.String())
+	}
+}
+
 func TestPrivateItemsDoNotRepeatOneFactAcrossSections(t *testing.T) {
 	item := coaching.Item{Title: "Private fact", EvidenceIDs: []string{"evidence-1"}}
 	items := privateItems(coaching.Narrative{
+		Insights:        []coaching.Item{item},
 		Changes:         []coaching.Item{item},
 		Dates:           []coaching.Item{item},
 		Inconsistencies: []coaching.Item{item},

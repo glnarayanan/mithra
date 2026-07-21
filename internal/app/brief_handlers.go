@@ -12,6 +12,7 @@ import (
 )
 
 type CoachingItemView struct{ Title, Copy, When, EvidenceURL, EvidenceLabel string }
+type CoachingHistoryView struct{ Generated, Model, Summary string }
 type CoachingNudgeView struct {
 	ID, Title, Copy, LensURL, LensLabel string
 	FollowUpEnabled                     bool
@@ -22,16 +23,20 @@ type BriefView struct {
 	Stale, PersonalStale, HasRecords, HasShared, CanRefresh bool
 	AIConfigured, Owner                                     bool
 	Lead                                                    CoachingItemView
-	Dates, Priorities, OnlyYou                              []CoachingItemView
+	Dates, Priorities, OnlyYou, Insights                    []CoachingItemView
+	InsightHistory                                          []CoachingHistoryView
+	InsightGenerated, InsightModel                          string
 	Nudges                                                  []CoachingNudgeView
 	Capture                                                 CaptureView
 }
 type WeekReviewView struct {
-	Navigation                                           []NavigationItem
-	CSRF, Status, Period, PrivateFreshness               string
-	Stale, PrivateStale, CanRefresh                      bool
-	Changes, Dates, Inconsistencies, Priorities, OnlyYou []CoachingItemView
-	Nudges                                               []CoachingNudgeView
+	Navigation                                                     []NavigationItem
+	CSRF, Status, Period, PrivateFreshness                         string
+	Stale, PrivateStale, CanRefresh                                bool
+	Changes, Dates, Inconsistencies, Priorities, OnlyYou, Insights []CoachingItemView
+	InsightHistory                                                 []CoachingHistoryView
+	InsightGenerated, InsightModel                                 string
+	Nudges                                                         []CoachingNudgeView
 }
 
 func (a *App) brief(w http.ResponseWriter, r *http.Request) {
@@ -107,10 +112,13 @@ func (a *App) refreshCoaching(w http.ResponseWriter, r *http.Request, mode strin
 		return
 	}
 	updated, failed := 0, 0
+	updatedScopes, failedScopes := []string{}, []string{}
 	for _, visibility := range []policy.Visibility{policy.Shared, policy.Personal} {
 		input, err := a.coaching.BuildContext(r.Context(), scope, visibility)
 		if err != nil {
+			logRequestError(a.logger, r.Context(), "coaching_"+string(visibility)+"_context_failed")
 			failed++
+			failedScopes = append(failedScopes, coachingScopeLabel(visibility))
 			continue
 		}
 		if len(input.Facts) == 0 {
@@ -119,13 +127,19 @@ func (a *App) refreshCoaching(w http.ResponseWriter, r *http.Request, mode strin
 		callContext, cancel := context.WithTimeout(r.Context(), 12*time.Second)
 		output, model, err := a.analyzeCoaching(callContext, scope, mode, input)
 		cancel()
-		if err == nil {
-			err = a.coaching.Publish(r.Context(), scope, mode, visibility, input, output, model)
-		}
 		if err != nil {
+			logRequestError(a.logger, r.Context(), "coaching_"+string(visibility)+"_provider_failed")
 			failed++
+			failedScopes = append(failedScopes, coachingScopeLabel(visibility))
+			continue
+		}
+		if err = a.coaching.Publish(r.Context(), scope, mode, visibility, input, output, model); err != nil {
+			logRequestError(a.logger, r.Context(), "coaching_"+string(visibility)+"_publish_failed")
+			failed++
+			failedScopes = append(failedScopes, coachingScopeLabel(visibility))
 		} else {
 			updated++
+			updatedScopes = append(updatedScopes, coachingScopeLabel(visibility))
 		}
 	}
 	a.ensureCoachingNudge(r.Context(), scope)
@@ -134,11 +148,13 @@ func (a *App) refreshCoaching(w http.ResponseWriter, r *http.Request, mode strin
 			a.sendNudgeEmail(r.Context(), scope, nudge, true)
 		}
 	}
-	status := "Your summary is up to date."
+	status := "Mithra insights are up to date."
 	if updated == 0 && failed > 0 {
-		status = "Mithra could not refresh right now. Your saved information is still available."
+		status = "Mithra could not refresh " + strings.Join(failedScopes, " or ") + " insights. Your saved information is still available."
 	} else if failed > 0 {
-		status = "One private or shared section could not be refreshed. Your saved information is still available."
+		status = "Mithra refreshed " + strings.Join(updatedScopes, " and ") + ". It could not refresh " + strings.Join(failedScopes, " or ") + ". Your saved information is still available."
+	} else if updated > 0 {
+		status = "Mithra refreshed " + strings.Join(updatedScopes, " and ") + " insights."
 	}
 	a.renderCoachingMode(r, w, scope, csrf, mode, status)
 }
@@ -184,7 +200,7 @@ func (a *App) renderBrief(r *http.Request, w http.ResponseWriter, scope policy.A
 	providerConfig, providerErr := a.providerSettings.ProviderDetails(r.Context(), scope)
 	configured := providerErr == nil
 	evidence := evidenceMap(overview.SharedContext, overview.PersonalContext)
-	view := BriefView{Navigation: navigationForPath("/"), CSRF: csrf, Status: status, HasRecords: overview.HasRecords, HasShared: overview.Shared.Lead.Title != "", CanRefresh: configured && overview.HasRecords && csrf != "", AIConfigured: configured, Owner: scope.Role == "owner", Stale: overview.SharedCache.Stale, PersonalStale: overview.PersonalCache.Stale, Lead: itemView(overview.Shared.Lead, evidence), Dates: itemViews(overview.Shared.Dates, evidence), Priorities: itemViews(overview.Shared.Priorities, evidence), OnlyYou: itemViews(privateItems(overview.Personal), evidence), Capture: CaptureView{CSRF: csrf, ProviderConfigured: configured, VoiceSupported: configured && providerConfig.ProviderID == providers.ProviderOpenAI}}
+	view := BriefView{Navigation: navigationForPath("/"), CSRF: csrf, Status: status, HasRecords: overview.HasRecords, HasShared: overview.Shared.Lead.Title != "", CanRefresh: configured && overview.HasRecords && csrf != "", AIConfigured: configured, Owner: scope.Role == "owner", Stale: overview.SharedCache.Stale, PersonalStale: overview.PersonalCache.Stale, Lead: itemView(overview.Shared.Lead, evidence), Insights: itemViews(overview.Shared.Insights, evidence), Dates: itemViews(overview.Shared.Dates, evidence), Priorities: itemViews(overview.Shared.Priorities, evidence), OnlyYou: itemViews(privateItems(overview.Personal), evidence), InsightHistory: historyViews(overview.SharedHistory), InsightGenerated: insightGenerated(overview.SharedCache), InsightModel: overview.SharedCache.Model, Capture: CaptureView{CSRF: csrf, ProviderConfigured: configured, VoiceSupported: configured && providerConfig.ProviderID == providers.ProviderOpenAI}}
 	view.Freshness = freshness(overview.SharedCache, "Up to date")
 	if view.Status == "" && view.Stale {
 		view.Status = "A newer update is available. Dates and sources are still up to date."
@@ -204,7 +220,7 @@ func (a *App) renderWeek(r *http.Request, w http.ResponseWriter, scope policy.Ac
 	configured, _ := a.providerSettings.Configured(r.Context(), scope)
 	evidence := evidenceMap(overview.SharedContext, overview.PersonalContext)
 	from := now.AddDate(0, 0, -6)
-	view := WeekReviewView{Navigation: navigationForPath("/review"), CSRF: csrf, Status: status, Period: from.Format("2 Jan") + " – " + now.Format("2 Jan 2006"), PrivateFreshness: freshness(overview.PersonalCache, "Up to date"), Stale: overview.SharedCache.Stale, PrivateStale: overview.PersonalCache.Stale, CanRefresh: configured && overview.HasRecords && csrf != "", Changes: itemViews(overview.Shared.Changes, evidence), Dates: itemViews(overview.Shared.Dates, evidence), Inconsistencies: itemViews(overview.Shared.Inconsistencies, evidence), Priorities: itemViews(overview.Shared.Priorities, evidence), OnlyYou: itemViews(privateItems(overview.Personal), evidence)}
+	view := WeekReviewView{Navigation: navigationForPath("/review"), CSRF: csrf, Status: status, Period: from.Format("2 Jan") + " – " + now.Format("2 Jan 2006"), PrivateFreshness: freshness(overview.PersonalCache, "Up to date"), Stale: overview.SharedCache.Stale, PrivateStale: overview.PersonalCache.Stale, CanRefresh: configured && overview.HasRecords && csrf != "", Insights: itemViews(overview.Shared.Insights, evidence), InsightHistory: historyViews(overview.SharedHistory), InsightGenerated: insightGenerated(overview.SharedCache), InsightModel: overview.SharedCache.Model, Changes: itemViews(overview.Shared.Changes, evidence), Dates: itemViews(overview.Shared.Dates, evidence), Inconsistencies: itemViews(overview.Shared.Inconsistencies, evidence), Priorities: itemViews(overview.Shared.Priorities, evidence), OnlyYou: itemViews(privateItems(overview.Personal), evidence)}
 	if view.Status == "" && view.Stale {
 		view.Status = "A newer update is available. Dates and sources are still up to date."
 	}
@@ -238,10 +254,33 @@ func itemViews(items []coaching.Item, evidence map[string]coaching.Fact) []Coach
 	}
 	return out
 }
+func historyViews(history []coaching.History) []CoachingHistoryView {
+	out := make([]CoachingHistoryView, 0, len(history))
+	for _, item := range history {
+		summary := item.Narrative.Lead.Title
+		if summary == "" && len(item.Narrative.Insights) > 0 {
+			summary = item.Narrative.Insights[0].Title
+		}
+		out = append(out, CoachingHistoryView{Generated: item.GeneratedAt.Local().Format("2 Jan, 15:04"), Model: item.Model, Summary: summary})
+	}
+	return out
+}
+func insightGenerated(state coaching.CacheState) string {
+	if !state.Found || state.GeneratedAt.IsZero() {
+		return ""
+	}
+	return "Generated " + state.GeneratedAt.Local().Format("2 Jan, 15:04")
+}
+func coachingScopeLabel(visibility policy.Visibility) string {
+	if visibility == policy.Personal {
+		return "Only you"
+	}
+	return "shared"
+}
 func privateItems(n coaching.Narrative) []coaching.Item {
 	seen := make(map[string]struct{})
 	out := make([]coaching.Item, 0, 6)
-	for _, items := range [][]coaching.Item{n.Inconsistencies, n.Dates, n.Changes} {
+	for _, items := range [][]coaching.Item{n.Insights, n.Inconsistencies, n.Dates, n.Changes} {
 		for _, item := range items {
 			key := strings.Join(item.EvidenceIDs, "\x00")
 			if _, exists := seen[key]; exists {
