@@ -250,6 +250,35 @@ func TestHistoryCapsAndKeepsPrivateSnapshotsScoped(t *testing.T) {
 	}
 }
 
+func TestPublishRejectsEvidenceRemovedBeforeItsWriteTransaction(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	source := f.source(t, f.owner, policy.Shared, "shared-coaching-source")
+	if _, err := f.finance.Create(ctx, f.owner, finance.Draft{Kind: finance.Spending, Visibility: policy.Shared, Label: "Food", Category: "Food", Date: "2026-07-20", AmountText: "10", Provenance: financeProvenance(source)}); err != nil {
+		t.Fatal(err)
+	}
+	expected, err := f.service.BuildContext(ctx, f.owner, policy.Shared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := deterministic(expected.Facts, time.Now(), expected.Signals...)
+	if err := f.sources.Delete(ctx, f.owner, source.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.service.Publish(ctx, f.owner, "brief", policy.Shared, expected, output, "test-model"); !errors.Is(err, ErrStale) {
+		t.Fatalf("publish after source removal = %v, want ErrStale", err)
+	}
+	for _, table := range []string{"coaching_cache", "coaching_history"} {
+		var count int
+		if err := f.db.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 {
+			t.Fatalf("%s retained %d rows after stale publish", table, count)
+		}
+	}
+}
+
 func TestVisibleUnitAndCalendarConflictsAreExplainedWithoutPrivateInfluence(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()

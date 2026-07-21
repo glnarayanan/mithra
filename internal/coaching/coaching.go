@@ -63,7 +63,6 @@ type Signal struct {
 }
 
 type amountRow struct {
-	month              string
 	coefficient, scale int64
 	evidence           string
 }
@@ -131,6 +130,17 @@ func (s *Service) BuildContext(ctx context.Context, actor policy.ActorScope, vis
 		return Context{}, err
 	}
 	defer tx.Rollback()
+	result, err := s.buildContextTx(ctx, tx, actor, visibility)
+	if err != nil {
+		return Context{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Context{}, err
+	}
+	return result, nil
+}
+
+func (s *Service) buildContextTx(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visibility policy.Visibility) (Context, error) {
 	shared, personal, err := revisions(ctx, tx, actor)
 	if err != nil {
 		return Context{}, policy.ErrUnauthorized
@@ -141,9 +151,6 @@ func (s *Service) BuildContext(ctx context.Context, actor policy.ActorScope, vis
 	}
 	signals, err := querySignals(ctx, tx, actor, visibility, facts, s.now().UTC())
 	if err != nil {
-		return Context{}, err
-	}
-	if err := tx.Commit(); err != nil {
 		return Context{}, err
 	}
 	fingerprint := sourceFingerprint(facts)
@@ -186,8 +193,8 @@ func (s *Service) Overview(ctx context.Context, actor policy.ActorScope, asOf ti
 	} else {
 		result.PersonalCache = state
 	}
-	result.SharedHistory, _ = s.History(ctx, actor, "brief", policy.Shared)
-	result.PersonalHistory, _ = s.History(ctx, actor, "brief", policy.Personal)
+	result.SharedHistory, _ = s.history(ctx, actor, "brief", policy.Shared, shared)
+	result.PersonalHistory, _ = s.history(ctx, actor, "brief", policy.Personal, personal)
 	return result, nil
 }
 
@@ -223,18 +230,26 @@ func (s *Service) Week(ctx context.Context, actor policy.ActorScope, asOf time.T
 	} else {
 		result.PersonalCache = state
 	}
-	result.SharedHistory, _ = s.History(ctx, actor, "week", policy.Shared)
-	result.PersonalHistory, _ = s.History(ctx, actor, "week", policy.Personal)
+	result.SharedHistory, _ = s.history(ctx, actor, "week", policy.Shared, shared)
+	result.PersonalHistory, _ = s.history(ctx, actor, "week", policy.Personal, personal)
 	return result, nil
 }
 
 // Publish rebuilds permitted context immediately before storing model wording.
 // Shared and personal results are validated and cached independently.
 func (s *Service) Publish(ctx context.Context, actor policy.ActorScope, mode string, visibility policy.Visibility, expected Context, output Narrative, model string) error {
+	if s == nil || s.db == nil || !actor.Valid() || (visibility != policy.Shared && visibility != policy.Personal) {
+		return policy.ErrUnauthorized
+	}
 	if mode != "brief" && mode != "week" || strings.TrimSpace(model) == "" || len(model) > 64 {
 		return ErrInvalid
 	}
-	current, err := s.BuildContext(ctx, actor, visibility)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	current, err := s.buildContextTx(ctx, tx, actor, visibility)
 	if err != nil {
 		return err
 	}
@@ -262,18 +277,6 @@ func (s *Service) Publish(ctx context.Context, actor policy.ActorScope, mode str
 		owner = actor.ActorID
 	}
 	stamp := s.now().UTC().Format(time.RFC3339Nano)
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	shared, personal, err := revisions(ctx, tx, actor)
-	if err != nil {
-		return policy.ErrUnauthorized
-	}
-	if shared != current.SharedRevision || (visibility == policy.Personal && personal != current.PersonalRevision) {
-		return ErrStale
-	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO coaching_cache(id,household_id,owner_user_id,mode,visibility,content_json,evidence_json,shared_revision,personal_revision,source_fingerprint,model,prompt_version,schema_version,generated_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(household_id,IFNULL(owner_user_id,''),mode,visibility) DO UPDATE SET content_json=excluded.content_json,evidence_json=excluded.evidence_json,shared_revision=excluded.shared_revision,personal_revision=excluded.personal_revision,source_fingerprint=excluded.source_fingerprint,model=excluded.model,prompt_version=excluded.prompt_version,schema_version=excluded.schema_version,generated_at=excluded.generated_at,updated_at=excluded.updated_at`, id, actor.HouseholdID, owner, mode, visibility, string(content), string(evidence), current.SharedRevision, current.PersonalRevision, current.SourceFingerprint, model, PromptVersion, SchemaVersion, stamp, stamp, stamp)
 	if err != nil {
 		return err
@@ -301,6 +304,10 @@ func (s *Service) History(ctx context.Context, actor policy.ActorScope, mode str
 	if err != nil {
 		return nil, err
 	}
+	return s.history(ctx, actor, mode, visibility, current)
+}
+
+func (s *Service) history(ctx context.Context, actor policy.ActorScope, mode string, visibility policy.Visibility, current Context) ([]History, error) {
 	owner := ""
 	if visibility == policy.Personal {
 		owner = actor.ActorID
@@ -479,7 +486,7 @@ func querySignals(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visi
 			return nil, err
 		}
 		if fact, ok := byRecord[id]; ok {
-			months[month] = append(months[month], amountRow{month, coefficient, scale, fact.EvidenceID})
+			months[month] = append(months[month], amountRow{coefficient, scale, fact.EvidenceID})
 		}
 	}
 	if err := rows.Err(); err != nil {
