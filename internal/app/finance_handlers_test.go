@@ -112,6 +112,18 @@ func TestFinanceTrendRangeDefaultsAndRendersServerLinks(t *testing.T) {
 	}
 }
 
+func TestFinanceRangeControlsRemainVisibleWithoutPoints(t *testing.T) {
+	application := newTestApp(t)
+	response := httptest.NewRecorder()
+	application.renderFinance(context.Background(), response, FinanceView{Scope: "personal", Range: 3, HasRecords: true})
+	body := response.Body.String()
+	for _, required := range []string{`aria-label="Spending period"`, `href="/finance?scope=personal&amp;range=3" aria-current="page"`, `href="/finance?scope=personal&amp;range=12"`, "No dated spending records fall in this range."} {
+		if response.Code != http.StatusOK || !strings.Contains(body, required) {
+			t.Fatalf("missing no-points range control %q: %d %q", required, response.Code, body)
+		}
+	}
+}
+
 func TestFinanceAnalyticsEscapesTrendContent(t *testing.T) {
 	application := newTestApp(t)
 	response := httptest.NewRecorder()

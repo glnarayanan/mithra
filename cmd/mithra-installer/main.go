@@ -32,6 +32,21 @@ var publisherKeyBase64 string
 // Set by the release build with -X main.buildVersion=... .
 var buildVersion = "dev"
 
+type demoResetDependencies struct {
+	reset     func(context.Context, demo.Config) (demo.Receipt, error)
+	quiesce   func(context.Context, string) (func() error, error)
+	ownership func(string) (installer.RestoreOwnership, error)
+	restore   func(installer.Paths, string, []byte, installer.RestoreOwnership, func() error) error
+	wait      func(context.Context, func(context.Context) error) error
+	local     func(context.Context, installer.Plan) error
+	web       func(context.Context, string) error
+}
+
+var installedDemoResetDependencies = demoResetDependencies{
+	reset: demo.Reset, quiesce: quiesce, ownership: serviceOwnership, restore: installer.RestoreGenerationWithOwnership,
+	wait: waitForHealth, local: localPlanHealth, web: webHealth,
+}
+
 func main() {
 	os.Exit(execute(context.Background(), os.Args[1:], os.Stdout, os.Stderr))
 }
@@ -209,13 +224,13 @@ func runParsed(ctx context.Context, parsed parsedInstallerCommand, output io.Wri
 			return err
 		}
 		defer clear(key)
-		restart, err := quiesce(ctx, *root)
+		plan := installer.Plan{Options: installer.Options{Root: *root, Domain: *domain, Port: *port}, Proxy: installer.ProxyMode(*proxy)}
+		if plan.Proxy == "" {
+			plan.Proxy = installer.AppOnly
+		}
+		receipt, err := resetDemo(ctx, plan, paths, key, demo.Config{DatabasePath: paths.Database, SourceRoot: paths.Sources, BackupRoot: paths.Backups, OwnerEmail: *ownerEmail, PartnerEmail: *partnerEmail, OwnerPassword: ownerPassword, PartnerPassword: partnerPassword, MasterKey: key}, installedDemoResetDependencies)
 		if err != nil {
 			return err
-		}
-		receipt, err := demo.Reset(ctx, demo.Config{DatabasePath: paths.Database, SourceRoot: paths.Sources, BackupRoot: paths.Backups, OwnerEmail: *ownerEmail, PartnerEmail: *partnerEmail, OwnerPassword: ownerPassword, PartnerPassword: partnerPassword, MasterKey: key})
-		if restartErr := restart(); err != nil || restartErr != nil {
-			return errors.Join(err, restartErr)
 		}
 		return json.NewEncoder(output).Encode(receipt)
 	}
@@ -372,6 +387,59 @@ func runParsed(ctx context.Context, parsed parsedInstallerCommand, output io.Wri
 	default:
 		return fmt.Errorf("operation %q is not directly executable", operation)
 	}
+}
+
+// resetDemo treats a successful fixture write as provisional until the
+// restarted installed application answers its local health check. A failed
+// candidate is restored from the authenticated pre-reset generation.
+func resetDemo(ctx context.Context, plan installer.Plan, paths installer.Paths, key []byte, config demo.Config, dependencies demoResetDependencies) (demo.Receipt, error) {
+	if dependencies.reset == nil || dependencies.quiesce == nil || dependencies.ownership == nil || dependencies.restore == nil || dependencies.wait == nil || dependencies.local == nil || dependencies.web == nil {
+		return demo.Receipt{}, errors.New("demo reset dependencies are unavailable")
+	}
+	owner, err := dependencies.ownership(plan.Options.Root)
+	if err != nil {
+		return demo.Receipt{}, err
+	}
+	restart, err := dependencies.quiesce(ctx, plan.Options.Root)
+	if err != nil {
+		return demo.Receipt{}, err
+	}
+	receipt, resetErr := dependencies.reset(ctx, config)
+	if resetErr != nil {
+		return receipt, errors.Join(resetErr, restartAndCheckDemoHealth(ctx, plan, restart, dependencies))
+	}
+	if err := restartAndCheckDemoHealth(ctx, plan, restart, dependencies); err == nil {
+		return receipt, nil
+	} else {
+		candidateErr := err
+		rollbackRestart, quiesceErr := dependencies.quiesce(ctx, plan.Options.Root)
+		if quiesceErr != nil {
+			return receipt, errors.Join(candidateErr, quiesceErr)
+		}
+		rollbackErr := dependencies.restore(paths, receipt.BackupArchive, key, owner, func() error { return restartAndCheckDemoHealth(ctx, plan, rollbackRestart, dependencies) })
+		return receipt, errors.Join(candidateErr, rollbackErr)
+	}
+}
+
+func restartAndCheckDemoHealth(ctx context.Context, plan installer.Plan, restart func() error, dependencies demoResetDependencies) error {
+	if err := restart(); err != nil {
+		return err
+	}
+	return installedDemoHealth(ctx, plan, dependencies)
+}
+
+func installedDemoHealth(ctx context.Context, plan installer.Plan, dependencies demoResetDependencies) error {
+	if err := dependencies.wait(ctx, func(checkCtx context.Context) error {
+		return dependencies.local(checkCtx, plan)
+	}); err != nil {
+		return err
+	}
+	if plan.Proxy != installer.AppOnly && strings.TrimSpace(plan.Options.Domain) != "" {
+		return dependencies.wait(ctx, func(checkCtx context.Context) error {
+			return dependencies.web(checkCtx, "https://"+plan.Options.Domain+"/healthz")
+		})
+	}
+	return nil
 }
 
 // preflightPlanFacts reads existing recovery evidence only. Planning must not

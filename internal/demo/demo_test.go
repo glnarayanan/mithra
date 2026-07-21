@@ -15,6 +15,9 @@ import (
 	"github.com/glnarayanan/mithra/internal/auth"
 	"github.com/glnarayanan/mithra/internal/database"
 	"github.com/glnarayanan/mithra/internal/imports"
+	"github.com/glnarayanan/mithra/internal/policy"
+	"github.com/glnarayanan/mithra/internal/providers"
+	"github.com/glnarayanan/mithra/internal/secrets"
 )
 
 func TestPublishedSampleFilesRemainValid(t *testing.T) {
@@ -166,6 +169,71 @@ func TestResetSetsPrivateJudgeCredentialsAndRevokesBootstrapSessions(t *testing.
 		t.Fatalf("active bootstrap sessions=%d err=%v", activeBootstrapSessions, err)
 	}
 	assertFixtureAndUnrelated(t, ctx, cfg.DatabasePath)
+}
+
+func TestResetPreservesMarkedProviderConfiguration(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	key := testKey()
+	cfg := Config{
+		DatabasePath:    filepath.Join(root, "data", "mithra.sqlite3"),
+		SourceRoot:      filepath.Join(root, "data", "sources"),
+		BackupRoot:      filepath.Join(root, "backups"),
+		OwnerEmail:      "judge-owner@example.com",
+		PartnerEmail:    "judge-partner@example.com",
+		OwnerPassword:   []byte("owner demo password"),
+		PartnerPassword: []byte("partner demo password"),
+		MasterKey:       key,
+	}
+	seedUnrelatedHousehold(t, ctx, cfg.DatabasePath)
+	if _, err := Reset(ctx, cfg); err != nil {
+		t.Fatal(err)
+	}
+	db, err := database.Open(ctx, cfg.DatabasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := secrets.NewSettingsStore(db, key)
+	if err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	owner := policy.ActorScope{ActorID: ownerSeedID, HouseholdID: HouseholdID, Role: "owner"}
+	want := secrets.ProviderConfig{ProviderID: providers.ProviderOpenAI, Model: "gpt-5.4-mini", BaseURL: "https://api.openai.com/v1", APIKey: "demo-provider-key"}
+	if err := store.ReplaceProvider(ctx, owner, want, func(context.Context, secrets.ProviderConfig) error { return nil }); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	var before []byte
+	if err := db.QueryRowContext(ctx, `SELECT encrypted_api_key FROM household_openai_settings WHERE household_id=?`, HouseholdID).Scan(&before); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	db.Close()
+	if _, err := Reset(ctx, cfg); err != nil {
+		t.Fatalf("repeat reset: %v", err)
+	}
+	db, err = database.Open(ctx, cfg.DatabasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	store, err = secrets.NewSettingsStore(db, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	details, err := store.ProviderDetails(ctx, owner)
+	if err != nil || details.ProviderID != want.ProviderID || details.Model != want.Model || details.BaseURL != want.BaseURL {
+		t.Fatalf("provider details=%+v err=%v", details, err)
+	}
+	config, err := store.ProviderConfig(ctx, owner)
+	if err != nil || config != want {
+		t.Fatalf("provider config=%+v err=%v", config, err)
+	}
+	var after []byte
+	if err := db.QueryRowContext(ctx, `SELECT encrypted_api_key FROM household_openai_settings WHERE household_id=?`, HouseholdID).Scan(&after); err != nil || string(after) != string(before) {
+		t.Fatalf("provider ciphertext changed=%t err=%v", string(after) != string(before), err)
+	}
 }
 
 func TestResetRotatesMarkedJudgeEmails(t *testing.T) {

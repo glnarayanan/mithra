@@ -51,10 +51,10 @@
           </div>
         </section>
 
-        {{if .Trends}}
         <section class="finance-section" aria-labelledby="finance-trends-title">
           <div class="section-heading"><div><p class="eyebrow">Over time</p><h2 id="finance-trends-title">Spending over time</h2></div><p>Based on dated records with a number.</p></div>
           <nav class="analytics-range" aria-label="Spending period"><a href="/finance?scope={{.Scope}}&amp;range=3"{{if eq .Range 3}} aria-current="page"{{end}}>3 months</a><a href="/finance?scope={{.Scope}}&amp;range=6"{{if eq .Range 6}} aria-current="page"{{end}}>6 months</a><a href="/finance?scope={{.Scope}}&amp;range=12"{{if eq .Range 12}} aria-current="page"{{end}}>12 months</a></nav>
+          {{if .Trends}}
           <p class="analytics-note">The solid line shows monthly totals. The dashed line shows the calculated direction. A zero point does not prove that a record was entered that month.</p>
           <ul class="analytics-legend" role="list"><li><span class="analytics-legend-line analytics-legend-observed" aria-hidden="true"></span>Monthly total</li><li><span class="analytics-legend-line analytics-legend-trend" aria-hidden="true"></span>Calculated direction</li></ul>
           <div class="trend-list">
@@ -76,8 +76,10 @@
             </article>
             {{end}}
           </div>
+          {{else}}
+          <p class="quiet-copy">No dated spending records fall in this range. Choose a longer period to look back.</p>
+          {{end}}
         </section>
-        {{end}}
 
         {{if .Obligations}}
         <section class="finance-section" aria-labelledby="finance-obligations-title">

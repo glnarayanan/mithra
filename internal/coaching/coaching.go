@@ -225,7 +225,7 @@ func (s *Service) Overview(ctx context.Context, actor policy.ActorScope, asOf ti
 		return Overview{}, err
 	}
 	result := Overview{Shared: deterministic(shared.ReviewFacts, asOf, shared.Signals...), Personal: deterministic(personal.ReviewFacts, asOf, personal.Signals...), SharedContext: shared, PersonalContext: personal, HasRecords: len(shared.ReviewFacts)+len(personal.ReviewFacts) > 0}
-	if cached, state, err := s.load(ctx, actor, "brief", policy.Shared, shared); err == nil && state.Found {
+	if cached, state, err := s.load(ctx, actor, "brief", policy.Shared, shared, asOf); err == nil && state.Found {
 		if state.Stale {
 			cached.Dates = result.Shared.Dates
 			cached.Inconsistencies = result.Shared.Inconsistencies
@@ -236,7 +236,7 @@ func (s *Service) Overview(ctx context.Context, actor policy.ActorScope, asOf ti
 	} else {
 		result.SharedCache = state
 	}
-	if cached, state, err := s.load(ctx, actor, "brief", policy.Personal, personal); err == nil && state.Found {
+	if cached, state, err := s.load(ctx, actor, "brief", policy.Personal, personal, asOf); err == nil && state.Found {
 		if state.Stale {
 			cached.Dates = result.Personal.Dates
 			cached.Inconsistencies = result.Personal.Inconsistencies
@@ -262,13 +262,13 @@ func (s *Service) Week(ctx context.Context, actor policy.ActorScope, asOf time.T
 		return WeeklyReview{}, err
 	}
 	result := WeeklyReview{Shared: weeklyScope(shared, asOf), Personal: weeklyScope(personal, asOf), HasRecords: len(shared.ReviewFacts)+len(personal.ReviewFacts) > 0}
-	if cached, state, err := s.load(ctx, actor, "week", policy.Shared, shared); err == nil && state.Found {
-		result.Shared.Insights = reviewInsights(withSignals(cached, shared.Signals).Insights, result.Shared)
+	if cached, state, err := s.load(ctx, actor, "week", policy.Shared, shared, asOf); err == nil && state.Found {
+		result.Shared.Insights = cachedReviewInsights(withSignals(cached, shared.Signals).Insights)
 		result.Shared.Cache = state
 	} else {
 		result.Shared.Cache = state
 	}
-	if cached, state, err := s.load(ctx, actor, "week", policy.Personal, personal); err == nil && state.Found {
+	if cached, state, err := s.load(ctx, actor, "week", policy.Personal, personal, asOf); err == nil && state.Found {
 		result.Personal.Insights = reviewInsights(withSignals(cached, personal.Signals).Insights, result.Personal)
 		result.Personal.Cache = state
 	} else {
@@ -393,7 +393,7 @@ func (s *Service) history(ctx context.Context, actor policy.ActorScope, mode str
 	return out, nil
 }
 
-func (s *Service) load(ctx context.Context, actor policy.ActorScope, mode string, visibility policy.Visibility, current Context) (Narrative, CacheState, error) {
+func (s *Service) load(ctx context.Context, actor policy.ActorScope, mode string, visibility policy.Visibility, current Context, asOf time.Time) (Narrative, CacheState, error) {
 	owner := actor.ActorID
 	if visibility == policy.Shared {
 		owner = ""
@@ -415,7 +415,7 @@ func (s *Service) load(ctx context.Context, actor policy.ActorScope, mode string
 		_, _ = s.db.ExecContext(ctx, `DELETE FROM coaching_cache WHERE household_id=? AND IFNULL(owner_user_id,'')=? AND mode=? AND visibility=?`, actor.HouseholdID, owner, mode, visibility)
 		return Narrative{}, CacheState{}, ErrStale
 	}
-	state.Stale = shared != current.SharedRevision || personal != current.PersonalRevision
+	state.Stale = shared != current.SharedRevision || personal != current.PersonalRevision || !day(state.GeneratedAt).Equal(day(asOf.UTC()))
 	var out Narrative
 	if json.Unmarshal([]byte(encoded), &out) != nil {
 		_, _ = s.db.ExecContext(ctx, `DELETE FROM coaching_cache WHERE household_id=? AND IFNULL(owner_user_id,'')=? AND mode=? AND visibility=?`, actor.HouseholdID, owner, mode, visibility)
@@ -932,7 +932,7 @@ func weeklySection(f Fact, asOf time.Time) string {
 		if openStatus(f.Status) && !eventDate.Before(today) && eventDate.Before(today.AddDate(0, 0, 31)) {
 			return "upcoming"
 		}
-		if eventDate.Before(today) && openStatus(f.Status) && !eventDate.Before(start) {
+		if eventDate.Before(today) && openStatus(f.Status) {
 			return "change"
 		}
 	}
@@ -983,6 +983,19 @@ func reviewInsights(items []Item, scope ReviewScope) []Item {
 			item.Copy = reviewInsightCopy(item)
 			out = append(out, item)
 		}
+	}
+	return out
+}
+
+// Cached model wording stays inside a collapsed disclosure. The deterministic
+// weekly sections remain the primary plan even when the same evidence helped
+// the model phrase an observation.
+func cachedReviewInsights(items []Item) []Item {
+	out := make([]Item, 0, len(items))
+	for _, item := range items {
+		item.Title = reviewInsightTitle(item)
+		item.Copy = reviewInsightCopy(item)
+		out = append(out, item)
 	}
 	return out
 }
@@ -1143,7 +1156,7 @@ func groupReviewUpcoming(events []ReviewEvent) []ReviewEvent {
 		combined.Domain = "Planning + finance"
 		combined.Status = "Planned · Pending"
 		combined.Copy = "Review options by " + displayDate(event.When) + " · Payment due " + displayDate(candidate.When) + "."
-		combined.Reason = "Planning and payment dates are connected."
+		combined.Reason = combined.Copy
 		combined.NextStep = "Review the options before the payment is due."
 		out = append(out, combined)
 		used[i], used[j] = true, true
@@ -2092,7 +2105,11 @@ func (s *Service) EnsureNudge(ctx context.Context, actor policy.ActorScope, fami
 	}
 	visible := false
 	for _, c := range []Context{personal, shared} {
-		for _, f := range c.Facts {
+		facts := c.ReviewFacts
+		if facts == nil {
+			facts = c.Facts
+		}
+		for _, f := range facts {
 			if f.Family == family && f.RecordID == recordID && f.SourceID == sourceID {
 				visible = true
 			}

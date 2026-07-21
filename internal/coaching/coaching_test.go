@@ -443,6 +443,39 @@ func TestWeekDoesNotTreatSpendingOrHealthObservationsAsOverdue(t *testing.T) {
 	}
 }
 
+func TestWeekKeepsOldOpenActionableRecordsOverdue(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	asOf := time.Now().UTC()
+	date := asOf.AddDate(0, 0, -30).Format("2006-01-02")
+	obligationSource := f.source(t, f.owner, policy.Shared, "old insurance payment")
+	obligation, err := f.finance.Create(ctx, f.owner, finance.Draft{Kind: finance.Obligation, Visibility: policy.Shared, Label: "Insurance payment", Category: "Insurance", Date: date, AmountText: "500", Status: "pending", Provenance: financeProvenance(obligationSource)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	planSource := f.source(t, f.owner, policy.Shared, "old document review")
+	plan, err := f.planning.CreateEvent(ctx, f.owner, planning.EventDraft{Visibility: policy.Shared, Title: "Review documents", AllDay: true, StartsOn: date, Status: "planned", Provenance: planningProvenance(planSource)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	review, err := f.service.Week(ctx, f.owner, asOf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if review.Shared.Status.Label != "Needs attention" {
+		t.Fatalf("old actionable records did not affect status: %#v", review.Shared.Status)
+	}
+	seen := map[string]bool{}
+	for _, event := range review.Shared.Changes {
+		if event.Overdue {
+			seen[event.Fact.RecordID] = true
+		}
+	}
+	if !seen[obligation.ID] || !seen[plan.ID] {
+		t.Fatalf("old actionable records not retained as overdue: %#v", review.Shared.Changes)
+	}
+}
+
 func TestWeekGroupsCompatiblePlanningAndFinanceRenewal(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
@@ -1197,6 +1230,63 @@ func TestNudgeIsIdempotentAndFollowupIsExplicit(t *testing.T) {
 	var state string
 	if err := f.db.QueryRow(`SELECT state FROM coaching_nudges WHERE id=?`, first.ID).Scan(&state); err != nil || state != "stale" {
 		t.Fatalf("stale state=%q err=%v", state, err)
+	}
+}
+
+func TestEnsureNudgeFindsPersonalHealthUnitConflictInReviewFacts(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	firstSource := f.source(t, f.owner, policy.Personal, "first personal glucose")
+	first, err := f.health.CreateObservation(ctx, f.owner, health.ObservationDraft{Visibility: policy.Personal, Subject: "Owner", Analyte: "Glucose", ObservedOn: "2026-07-15", Value: "5", Unit: "mg/dL", Provenance: healthProvenance(firstSource)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondSource := f.source(t, f.owner, policy.Personal, "second personal glucose")
+	if _, err := f.health.CreateObservation(ctx, f.owner, health.ObservationDraft{Visibility: policy.Personal, Subject: "Owner", Analyte: "Glucose", ObservedOn: "2026-07-16", Value: "5", Unit: "mmol/L", Provenance: healthProvenance(secondSource)}); err != nil {
+		t.Fatal(err)
+	}
+	personal, err := f.service.BuildContext(ctx, f.owner, policy.Personal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fact := range personal.Facts {
+		if fact.RecordID == first.ID {
+			t.Fatalf("invalid health fact reached coaching input: %#v", fact)
+		}
+	}
+	nudge, err := f.service.EnsureNudge(ctx, f.owner, "health", first.ID, firstSource.ID)
+	if err != nil || nudge.RecordID != first.ID || nudge.Family != "health" {
+		t.Fatalf("health conflict nudge=%#v err=%v", nudge, err)
+	}
+	if _, err := f.service.EnsureNudge(ctx, f.partner, "health", first.ID, firstSource.ID); !errors.Is(err, policy.ErrUnauthorized) {
+		t.Fatalf("partner accessed owner's conflict nudge: %v", err)
+	}
+}
+
+func TestCacheStalesWhenReviewDateChangesWithoutRecordChanges(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	firstDay := time.Date(2026, 7, 21, 23, 55, 0, 0, time.UTC)
+	f.service.now = func() time.Time { return firstDay }
+	source := f.source(t, f.owner, policy.Shared, "daily review")
+	if _, err := f.finance.Create(ctx, f.owner, finance.Draft{Kind: finance.Spending, Visibility: policy.Shared, Label: "Groceries", Category: "Groceries", Date: "2026-07-21", AmountText: "50", Provenance: financeProvenance(source)}); err != nil {
+		t.Fatal(err)
+	}
+	input, err := f.service.BuildContext(ctx, f.owner, policy.Shared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.service.Publish(ctx, f.owner, "week", policy.Shared, input, narrativeWithTestInsight(deterministic(input.Facts, firstDay, input.Signals...), input.Facts, input.Signals), "test-model"); err != nil {
+		t.Fatal(err)
+	}
+	review, err := f.service.Week(ctx, f.owner, firstDay.Add(4*time.Minute))
+	if err != nil || review.Shared.Cache.Stale {
+		t.Fatalf("same-day review cache=%#v err=%v", review.Shared.Cache, err)
+	}
+	nextDay := firstDay.Add(10 * time.Minute)
+	review, err = f.service.Week(ctx, f.owner, nextDay)
+	if err != nil || !review.Shared.Cache.Found || !review.Shared.Cache.Stale {
+		t.Fatalf("next-day review cache=%#v err=%v", review.Shared.Cache, err)
 	}
 }
 

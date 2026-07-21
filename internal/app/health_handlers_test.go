@@ -125,6 +125,18 @@ func TestHealthRangeFiltersChartsAndKeepsConflicts(t *testing.T) {
 	}
 }
 
+func TestHealthRangeControlsRemainVisibleWithoutPoints(t *testing.T) {
+	application := newTestApp(t)
+	response := httptest.NewRecorder()
+	application.renderHealth(context.Background(), response, HealthView{Scope: "personal", Range: "3", HasRecords: true})
+	body := response.Body.String()
+	for _, required := range []string{`aria-label="Measurement range"`, `href="/health?range=3&amp;scope=personal" aria-current="page"`, `href="/health?range=12&amp;scope=personal"`, "No comparable measurements fall in this range."} {
+		if response.Code != http.StatusOK || !strings.Contains(body, required) {
+			t.Fatalf("missing no-points range control %q: %d %q", required, response.Code, body)
+		}
+	}
+}
+
 func TestHealthAnalyticsEscapesSeriesContent(t *testing.T) {
 	application := newTestApp(t)
 	response := httptest.NewRecorder()

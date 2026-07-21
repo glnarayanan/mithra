@@ -194,6 +194,140 @@ func TestCoachingRefreshNamesTheSectionThatCouldNotRefresh(t *testing.T) {
 	}
 }
 
+func TestWeekRefreshShowsGeneratedCoachingAndKeepsDeterministicSections(t *testing.T) {
+	application, mailer := newAuthTestApp(t, "owner@example.com")
+	session := activate(t, application, mailer, "owner@example.com", "owner secure password", nil)
+	scope := ownerScope(t, application, session)
+	source := coachingTestSource(t, application, scope, policy.Shared, "travel plan")
+	if _, err := application.planningRecords.CreateEvent(context.Background(), scope, planning.EventDraft{Visibility: policy.Shared, Title: "Review travel documents", AllDay: true, StartsOn: time.Now().UTC().AddDate(0, 0, 3).Format("2006-01-02"), Status: "planned", Provenance: coachingPlanningProvenance(source)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := application.providerSettings.ReplaceOpenAI(context.Background(), scope, "sk-coaching-test-secret", func(context.Context, string) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	application.openAIClient = &http.Client{Transport: appRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		calls++
+		var payload struct {
+			Input string `json:"input"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		var input struct {
+			Scope string `json:"scope"`
+			Facts []struct {
+				Content    string `json:"content"`
+				EvidenceID string `json:"evidence_id"`
+			} `json:"facts"`
+			Signals []struct {
+				Kind        string   `json:"kind"`
+				Summary     string   `json:"summary"`
+				Period      string   `json:"period"`
+				EvidenceIDs []string `json:"evidence_ids"`
+			} `json:"signals"`
+		}
+		if err := json.Unmarshal([]byte(payload.Input), &input); err != nil {
+			t.Fatal(err)
+		}
+		if input.Scope != "shared" || len(input.Facts) != 1 {
+			t.Fatalf("week refresh input=%#v", input)
+		}
+		if len(input.Signals) != 1 || input.Signals[0].Kind != "planning_upcoming" {
+			t.Fatalf("week refresh signals=%#v", input.Signals)
+		}
+		signal := input.Signals[0]
+		item := coaching.Item{Title: "Plans in the next month", Copy: signal.Summary, When: signal.Period, EvidenceIDs: signal.EvidenceIDs}
+		output, err := json.Marshal(coaching.Narrative{Insights: []coaching.Item{item}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(captureProviderBody(string(output)))), Request: request}, nil
+	})}
+
+	before := serve(application, coachingGET("/review", session))
+	if before.Code != http.StatusOK || !strings.Contains(before.Body.String(), "Weekly status") || !strings.Contains(before.Body.String(), "Review travel documents") || strings.Contains(before.Body.String(), "Generated coaching") {
+		t.Fatalf("before refresh=%d %q", before.Code, before.Body.String())
+	}
+	refreshed := serve(application, coachingPOST("/review/refresh", session, url.Values{}))
+	for _, required := range []string{"Mithra refreshed shared insights.", "Weekly status", "Review travel documents", "Generated coaching", "Generated ", "Plans in the next month"} {
+		if refreshed.Code != http.StatusOK || !strings.Contains(refreshed.Body.String(), required) {
+			t.Fatalf("week refresh missing %q: %d %q", required, refreshed.Code, refreshed.Body.String())
+		}
+	}
+	if strings.Count(refreshed.Body.String(), "Mithra’s observation") != 1 {
+		t.Fatalf("week refresh repeated the observation section: %q", refreshed.Body.String())
+	}
+	if calls != 1 {
+		t.Fatalf("provider calls=%d", calls)
+	}
+}
+
+func TestWeekRefreshKeepsSharedCoachingWhenPersonalRefreshFails(t *testing.T) {
+	application, mailer := newAuthTestApp(t, "owner@example.com")
+	session := activate(t, application, mailer, "owner@example.com", "owner secure password", nil)
+	scope := ownerScope(t, application, session)
+	sharedSource := coachingTestSource(t, application, scope, policy.Shared, "shared travel plan")
+	if _, err := application.planningRecords.CreateEvent(context.Background(), scope, planning.EventDraft{Visibility: policy.Shared, Title: "Review travel documents", AllDay: true, StartsOn: time.Now().UTC().AddDate(0, 0, 3).Format("2006-01-02"), Status: "planned", Provenance: coachingPlanningProvenance(sharedSource)}); err != nil {
+		t.Fatal(err)
+	}
+	personalSource := coachingTestSource(t, application, scope, policy.Personal, "private insurance payment")
+	if _, err := application.finance.Create(context.Background(), scope, finance.Draft{Kind: finance.Obligation, Visibility: policy.Personal, Label: "Private insurance payment", Category: "Insurance", Date: time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02"), AmountText: "500", Status: "pending", Provenance: coachingFinanceProvenance(personalSource)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := application.providerSettings.ReplaceOpenAI(context.Background(), scope, "sk-coaching-test-secret", func(context.Context, string) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	application.openAIClient = &http.Client{Transport: appRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		calls++
+		var payload struct {
+			Input string `json:"input"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		var input struct {
+			Scope string `json:"scope"`
+			Facts []struct {
+				Content    string `json:"content"`
+				EvidenceID string `json:"evidence_id"`
+			} `json:"facts"`
+			Signals []struct {
+				Kind        string   `json:"kind"`
+				Summary     string   `json:"summary"`
+				Period      string   `json:"period"`
+				EvidenceIDs []string `json:"evidence_ids"`
+			} `json:"signals"`
+		}
+		if err := json.Unmarshal([]byte(payload.Input), &input); err != nil {
+			t.Fatal(err)
+		}
+		if input.Scope == "personal" {
+			return nil, context.DeadlineExceeded
+		}
+		if len(input.Signals) != 1 || input.Signals[0].Kind != "planning_upcoming" {
+			t.Fatalf("partial week refresh signals=%#v", input.Signals)
+		}
+		signal := input.Signals[0]
+		item := coaching.Item{Title: "Plans in the next month", Copy: signal.Summary, When: signal.Period, EvidenceIDs: signal.EvidenceIDs}
+		output, err := json.Marshal(coaching.Narrative{Insights: []coaching.Item{item}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(captureProviderBody(string(output)))), Request: request}, nil
+	})}
+	refreshed := serve(application, coachingPOST("/review/refresh", session, url.Values{}))
+	for _, required := range []string{"Mithra refreshed shared. It could not refresh Only you.", "Generated coaching", "Review travel documents", "Private insurance payment"} {
+		if refreshed.Code != http.StatusOK || !strings.Contains(refreshed.Body.String(), required) {
+			t.Fatalf("partial week refresh missing %q: %d %q", required, refreshed.Code, refreshed.Body.String())
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("provider calls=%d", calls)
+	}
+}
+
 func TestPrivateItemsDoNotRepeatOneFactAcrossSections(t *testing.T) {
 	item := coaching.Item{Title: "Private fact", EvidenceIDs: []string{"evidence-1"}}
 	items := privateItems(coaching.Narrative{
