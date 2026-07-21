@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math/big"
 	"regexp"
 	"sort"
@@ -20,7 +21,7 @@ import (
 )
 
 const (
-	PromptVersion = "coaching-v5"
+	PromptVersion = "coaching-v6"
 	SchemaVersion = "coaching-v3"
 )
 
@@ -64,7 +65,9 @@ type Signal struct {
 
 type amountRow struct {
 	coefficient, scale int64
-	evidence, source   string
+	date, category     string
+	evidence           string
+	source             string
 }
 
 type evidenceRef struct{ id, source string }
@@ -179,7 +182,7 @@ func (s *Service) Overview(ctx context.Context, actor policy.ActorScope, asOf ti
 			cached.Inconsistencies = result.Shared.Inconsistencies
 			cached.Priorities = result.Shared.Priorities
 		}
-		cached = withSignals(cached, shared.Signals, false)
+		cached = withSignals(cached, shared.Signals)
 		result.Shared, result.SharedCache = cached, state
 	} else {
 		result.SharedCache = state
@@ -190,7 +193,7 @@ func (s *Service) Overview(ctx context.Context, actor policy.ActorScope, asOf ti
 			cached.Inconsistencies = result.Personal.Inconsistencies
 			cached.Priorities = result.Personal.Priorities
 		}
-		cached = withSignals(cached, personal.Signals, false)
+		cached = withSignals(cached, personal.Signals)
 		result.Personal, result.PersonalCache = cached, state
 	} else {
 		result.PersonalCache = state
@@ -216,7 +219,7 @@ func (s *Service) Week(ctx context.Context, actor policy.ActorScope, asOf time.T
 			cached.Inconsistencies = result.Shared.Inconsistencies
 			cached.Priorities = result.Shared.Priorities
 		}
-		cached = withSignals(cached, shared.Signals, true)
+		cached = withSignals(cached, shared.Signals)
 		result.Shared, result.SharedCache = cached, state
 	} else {
 		result.SharedCache = state
@@ -227,7 +230,7 @@ func (s *Service) Week(ctx context.Context, actor policy.ActorScope, asOf time.T
 			cached.Inconsistencies = result.Personal.Inconsistencies
 			cached.Priorities = result.Personal.Priorities
 		}
-		cached = withSignals(cached, personal.Signals, true)
+		cached = withSignals(cached, personal.Signals)
 		result.Personal, result.PersonalCache = cached, state
 	} else {
 		result.PersonalCache = state
@@ -476,21 +479,27 @@ func querySignals(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visi
 	}
 	var out []Signal
 
-	// Finance: compare the two most recent months that have visible spending.
-	rows, err := tx.QueryContext(ctx, `SELECT id,substr(spent_on,1,7),amount_coefficient,amount_scale FROM finance_spending WHERE household_id=? AND visibility=? AND active=1`+ownerClause+` AND amount_coefficient IS NOT NULL ORDER BY spent_on DESC,id`, args...)
+	// Finance: compare equal portions of the current and prior month. A partial
+	// current month must never be compared with a complete prior month.
+	rows, err := tx.QueryContext(ctx, `SELECT id,spent_on,category,amount_coefficient,amount_scale FROM finance_spending WHERE household_id=? AND visibility=? AND active=1`+ownerClause+` AND amount_coefficient IS NOT NULL ORDER BY spent_on DESC,id`, args...)
 	if err != nil {
 		return nil, err
 	}
 	months := map[string][]amountRow{}
 	for rows.Next() {
-		var id, month string
+		var id, date, category string
 		var coefficient, scale int64
-		if err := rows.Scan(&id, &month, &coefficient, &scale); err != nil {
+		if err := rows.Scan(&id, &date, &category, &coefficient, &scale); err != nil {
 			rows.Close()
 			return nil, err
 		}
+		parsedDate, err := time.Parse("2006-01-02", date)
+		if err != nil {
+			continue
+		}
 		if fact, ok := byRecord[id]; ok {
-			months[month] = append(months[month], amountRow{coefficient, scale, fact.EvidenceID, fact.SourceID})
+			month := parsedDate.Format("2006-01")
+			months[month] = append(months[month], amountRow{coefficient, scale, date, category, fact.EvidenceID, fact.SourceID})
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -498,11 +507,79 @@ func querySignals(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visi
 		return nil, err
 	}
 	rows.Close()
-	latestMonth, priorMonth := asOf.Format("2006-01"), asOf.AddDate(0, -1, 0).Format("2006-01")
-	if count := len(months[latestMonth]) + len(months[priorMonth]); count > 0 {
-		evidence := amountEvidence(append(months[latestMonth], months[priorMonth]...), 12)
+	latestStart := time.Date(asOf.Year(), asOf.Month(), 1, 0, 0, 0, 0, time.UTC)
+	priorStart := latestStart.AddDate(0, -1, 0)
+	latestMonth, priorMonth := latestStart.Format("2006-01"), priorStart.Format("2006-01")
+	cutoff := asOf.Day()
+	if priorDays := priorStart.AddDate(0, 1, -1).Day(); priorDays < cutoff {
+		cutoff = priorDays
+	}
+	currentRows := rowsThroughDay(months[latestMonth], asOf.Day())
+	latestRows := rowsThroughDay(months[latestMonth], cutoff)
+	priorRows := rowsThroughDay(months[priorMonth], cutoff)
+	if count := len(latestRows) + len(priorRows); count > 0 {
+		evidence := amountEvidence(append(latestRows, priorRows...), 12)
 		if len(evidence) > 0 {
-			out = append(out, Signal{Kind: "finance_monthly_spending", Period: priorMonth + " to " + latestMonth, Summary: "Spending recorded for " + latestMonth + " is " + sumAmounts(months[latestMonth]) + " compared with " + sumAmounts(months[priorMonth]) + " for " + priorMonth + ".", EvidenceIDs: evidence})
+			latestCutoff := latestStart.AddDate(0, 0, cutoff-1).Format("2006-01-02")
+			priorCutoff := priorStart.AddDate(0, 0, cutoff-1).Format("2006-01-02")
+			out = append(out, Signal{Kind: "finance_month_to_date", Period: priorMonth + " to " + latestMonth, Summary: "Spending recorded from " + latestStart.Format("2006-01-02") + " through " + latestCutoff + " is " + sumAmounts(latestRows) + ", compared with " + sumAmounts(priorRows) + " from " + priorStart.Format("2006-01-02") + " through " + priorCutoff + ".", EvidenceIDs: evidence})
+		}
+	}
+
+	// Compare current month-to-date spending with one active budget that covers
+	// today. Multiple overlapping budgets are not combined because they may
+	// describe different categories.
+	var budgetID, budgetLabel, budgetCategory string
+	var budgetCoefficient, budgetScale int64
+	err = tx.QueryRowContext(ctx, `SELECT id,label,category,amount_coefficient,amount_scale FROM finance_budgets WHERE household_id=? AND visibility=? AND active=1`+ownerClause+` AND amount_coefficient IS NOT NULL AND starts_on<=? AND ends_on>=? ORDER BY starts_on,id LIMIT 1`, append(args, day(asOf).Format("2006-01-02"), day(asOf).Format("2006-01-02"))...).Scan(&budgetID, &budgetLabel, &budgetCategory, &budgetCoefficient, &budgetScale)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	if err == nil {
+		if fact, ok := byRecord[budgetID]; ok {
+			budget := amountRow{budgetCoefficient, budgetScale, day(asOf).Format("2006-01-02"), budgetCategory, fact.EvidenceID, fact.SourceID}
+			categoryRows := rowsInCategory(currentRows, budgetCategory)
+			evidence := amountEvidence(append(append([]amountRow(nil), categoryRows...), budget), 12)
+			spent, limit := scaledAmountTotal(categoryRows), scaledAmountTotal([]amountRow{budget})
+			if len(evidence) > 0 && limit.Sign() > 0 {
+				remaining := new(big.Int).Sub(new(big.Int).Set(limit), spent)
+				out = append(out, Signal{Kind: "finance_budget", Period: latestMonth, Summary: "Spending recorded in " + budgetCategory + " through " + day(asOf).Format("2006-01-02") + " is " + formatScaledAmount(spent) + " against the " + formatScaledAmount(limit) + " budget recorded as " + budgetLabel + ", leaving " + formatScaledAmount(remaining) + ". This is " + formatPercent(spent, limit) + " of the recorded budget.", EvidenceIDs: evidence})
+			}
+		}
+	}
+
+	// Surface pending obligations dated in the next 31 days.
+	start, end := day(asOf), day(asOf).AddDate(0, 0, 31)
+	rows, err = tx.QueryContext(ctx, `SELECT id,due_on,amount_coefficient,amount_scale FROM finance_obligations WHERE household_id=? AND visibility=? AND active=1`+ownerClause+` AND status='pending' AND amount_coefficient IS NOT NULL AND due_on>=? AND due_on<? ORDER BY due_on,id`, append(args, start.Format("2006-01-02"), end.Format("2006-01-02"))...)
+	if err != nil {
+		return nil, err
+	}
+	var obligations []amountRow
+	for rows.Next() {
+		var id, date string
+		var coefficient, scale int64
+		if err := rows.Scan(&id, &date, &coefficient, &scale); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if fact, ok := byRecord[id]; ok {
+			obligations = append(obligations, amountRow{coefficient, scale, date, "", fact.EvidenceID, fact.SourceID})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+	if len(obligations) > 0 {
+		evidence := amountEvidence(obligations, 12)
+		if len(evidence) > 0 {
+			label, verb := "obligations", "are"
+			if len(obligations) == 1 {
+				label = "obligation"
+				verb = "is"
+			}
+			out = append(out, Signal{Kind: "finance_obligations", Period: start.Format("2006-01-02") + " to " + end.AddDate(0, 0, -1).Format("2006-01-02"), Summary: strconv.Itoa(len(obligations)) + " pending finance " + label + " totaling " + sumAmounts(obligations) + " " + verb + " dated in the next 31 days, from " + obligations[0].date + " to " + obligations[len(obligations)-1].date + ".", EvidenceIDs: evidence})
 		}
 	}
 
@@ -547,14 +624,14 @@ func querySignals(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visi
 		}
 		out = append(out, Signal{Kind: "health_series", Period: first.date + " to " + last.date, Summary: "A comparable health measurement changed from " + first.value + " " + first.unit + " on " + first.date + " to " + last.value + " " + last.unit + " on " + last.date + ". This is a record comparison, not health advice.", EvidenceIDs: evidence})
 		healthSignals++
-		if healthSignals == 2 {
+		if healthSignals == 3 {
 			break
 		}
 	}
 
 	// Planning: dates are already selected from the typed records in queryFacts.
 	upcoming := make([]Fact, 0, 6)
-	start, end := day(asOf), day(asOf).AddDate(0, 0, 31)
+	start, end = day(asOf), day(asOf).AddDate(0, 0, 31)
 	for _, fact := range facts {
 		if fact.Family != "planning" {
 			continue
@@ -571,58 +648,28 @@ func querySignals(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visi
 		}
 	}
 
-	// Week comparison is available in both modes; Week in Review can explain it.
-	currentStart, priorStart := day(asOf).AddDate(0, 0, -6), day(asOf).AddDate(0, 0, -13)
-	current, prior := make([]Fact, 0, 12), make([]Fact, 0, 12)
-	for _, fact := range facts {
-		created := day(fact.CreatedAt)
-		if !created.Before(currentStart) && !created.After(day(asOf)) {
-			current = append(current, fact)
-		}
-		if !created.Before(priorStart) && created.Before(currentStart) {
-			prior = append(prior, fact)
-		}
-	}
-	if len(current)+len(prior) > 0 {
-		evidence := completeFactEvidence(append(current, prior...), 12)
-		if len(current)+len(prior) > 12 {
-			evidence = representativeEvidence(current, prior, 12)
-		}
-		if len(evidence) == 0 {
-			return out, nil
-		}
-		summary := strconv.Itoa(len(current)) + " visible records were added in the current seven days, compared with " + strconv.Itoa(len(prior)) + " in the prior seven days."
-		if len(current)+len(prior) > 12 {
-			switch {
-			case len(current) > 0 && len(prior) > 0:
-				summary = "Visible records were added in both the current and prior seven-day periods."
-			case len(current) > 0:
-				summary = "Visible records were added in the current seven-day period, with none visible in the prior period."
-			default:
-				summary = "Visible records were added in the prior seven-day period, with none visible in the current period."
-			}
-		}
-		out = append(out, Signal{Kind: "weekly_activity", Period: priorStart.Format("2006-01-02") + " to " + day(asOf).Format("2006-01-02"), Summary: summary, EvidenceIDs: evidence})
-	}
 	return out, nil
 }
 
-func representativeEvidence(first, second []Fact, limit int) []string {
-	refs := make([]evidenceRef, 0, len(first)+len(second))
-	for _, group := range [][]Fact{first, second} {
-		if len(group) > 0 {
-			refs = append(refs, evidenceRef{group[0].EvidenceID, group[0].SourceID})
+func rowsThroughDay(rows []amountRow, cutoff int) []amountRow {
+	out := make([]amountRow, 0, len(rows))
+	for _, row := range rows {
+		date, err := time.Parse("2006-01-02", row.date)
+		if err == nil && date.Day() <= cutoff {
+			out = append(out, row)
 		}
 	}
-	for _, group := range [][]Fact{first, second} {
-		if len(group) == 0 {
-			continue
-		}
-		for _, fact := range group[1:] {
-			refs = append(refs, evidenceRef{fact.EvidenceID, fact.SourceID})
+	return out
+}
+
+func rowsInCategory(rows []amountRow, category string) []amountRow {
+	out := make([]amountRow, 0, len(rows))
+	for _, row := range rows {
+		if strings.EqualFold(strings.TrimSpace(row.category), strings.TrimSpace(category)) {
+			out = append(out, row)
 		}
 	}
-	return representativeSourceEvidence(refs, limit)
+	return out
 }
 
 func amountEvidence(rows []amountRow, limit int) []string {
@@ -661,23 +708,6 @@ func completeSourceEvidence(refs []evidenceRef, limit int) []string {
 	return ids
 }
 
-func representativeSourceEvidence(refs []evidenceRef, limit int) []string {
-	ids := make([]string, 0, limit)
-	sources := make(map[string]struct{}, len(refs))
-	for _, ref := range refs {
-		source := ref.source
-		if source == "" {
-			source = ref.id
-		}
-		if _, seen := sources[source]; seen {
-			continue
-		}
-		sources[source] = struct{}{}
-		ids = appendEvidence(ids, ref.id, limit)
-	}
-	return ids
-}
-
 func appendEvidence(ids []string, id string, limit int) []string {
 	for _, existing := range ids {
 		if existing == id {
@@ -691,6 +721,10 @@ func appendEvidence(ids []string, id string, limit int) []string {
 }
 
 func sumAmounts(rows []amountRow) string {
+	return formatScaledAmount(scaledAmountTotal(rows))
+}
+
+func scaledAmountTotal(rows []amountRow) *big.Int {
 	total := new(big.Int)
 	for _, row := range rows {
 		value := big.NewInt(row.coefficient)
@@ -699,6 +733,11 @@ func sumAmounts(rows []amountRow) string {
 		}
 		total.Add(total, value)
 	}
+	return total
+}
+
+func formatScaledAmount(total *big.Int) string {
+	total = new(big.Int).Set(total)
 	negative := total.Sign() < 0
 	if negative {
 		total.Abs(total)
@@ -715,6 +754,29 @@ func sumAmounts(rows []amountRow) string {
 		return "-" + whole
 	}
 	return whole
+}
+
+func formatPercent(value, total *big.Int) string {
+	if total.Sign() <= 0 {
+		return "0%"
+	}
+	negative := value.Sign() < 0
+	numerator := new(big.Int).Abs(new(big.Int).Set(value))
+	numerator.Mul(numerator, big.NewInt(10_000))
+	numerator.Add(numerator, new(big.Int).Quo(new(big.Int).Set(total), big.NewInt(2)))
+	basisPoints := numerator.Quo(numerator, total)
+	whole, fraction := new(big.Int).QuoRem(basisPoints, big.NewInt(100), new(big.Int))
+	if fraction.Sign() == 0 {
+		if negative {
+			return "-" + whole.String() + "%"
+		}
+		return whole.String() + "%"
+	}
+	prefix := ""
+	if negative {
+		prefix = "-"
+	}
+	return prefix + whole.String() + "." + fmt.Sprintf("%02d", fraction.Int64()) + "%"
 }
 
 func markConflicts(ctx context.Context, tx *sql.Tx, householdID string, facts []Fact) error {
@@ -831,39 +893,32 @@ func deterministic(facts []Fact, asOf time.Time, signals ...Signal) Narrative {
 		}
 		item := Item{Title: signalTitle(signal.Kind), Copy: signal.Summary, When: signal.Period, EvidenceIDs: signal.EvidenceIDs}
 		out.Insights = append(out.Insights, item)
-		if signal.Kind == "weekly_activity" && len(out.Changes) < 6 {
-			out.Changes = append([]Item{item}, out.Changes...)
-		}
 	}
 	return out
 }
 
 func signalTitle(kind string) string {
 	switch kind {
-	case "finance_monthly_spending":
-		return "Spending comparison"
+	case "finance_month_to_date":
+		return "Month-to-date spending"
+	case "finance_budget":
+		return "Budget and spending"
+	case "finance_obligations":
+		return "Upcoming obligations"
 	case "health_series":
 		return "Health record comparison"
 	case "planning_upcoming":
 		return "Plans in the next month"
-	case "weekly_activity":
-		return "This week and last week"
 	default:
 		return "Recorded pattern"
 	}
 }
 
-func withSignals(n Narrative, signals []Signal, week bool) Narrative {
+func withSignals(n Narrative, signals []Signal) Narrative {
 	for _, signal := range signals {
 		item := Item{Title: signalTitle(signal.Kind), Copy: signal.Summary, When: signal.Period, EvidenceIDs: signal.EvidenceIDs}
 		if len(n.Insights) < 5 && !hasEvidence(n.Insights, item.EvidenceIDs) {
 			n.Insights = append(n.Insights, item)
-		}
-		if week && signal.Kind == "weekly_activity" && !hasEvidence(n.Changes, item.EvidenceIDs) {
-			n.Changes = append([]Item{item}, n.Changes...)
-			if len(n.Changes) > 12 {
-				n.Changes = n.Changes[:12]
-			}
 		}
 	}
 	return n
@@ -903,10 +958,10 @@ func sanitizeNarrative(n Narrative, allowed map[string]Fact, fallback Item, sign
 		return Narrative{}, err
 	}
 	var out Narrative
-	valid := false
+	modelItemKept := false
 	if !emptyItem(n.Lead) && validateItem(n.Lead, allowed, signals...) == nil {
 		out.Lead = n.Lead
-		valid = true
+		modelItemKept = true
 	}
 	keep := func(items []Item, normalizeSignalEvidence bool) []Item {
 		out := make([]Item, 0, len(items))
@@ -918,7 +973,7 @@ func sanitizeNarrative(n Narrative, allowed map[string]Fact, fallback Item, sign
 				continue
 			}
 			out = append(out, item)
-			valid = true
+			modelItemKept = true
 		}
 		return out
 	}
@@ -927,13 +982,19 @@ func sanitizeNarrative(n Narrative, allowed map[string]Fact, fallback Item, sign
 	out.Dates = keep(n.Dates, false)
 	out.Inconsistencies = keep(n.Inconsistencies, false)
 	out.Priorities = keep(n.Priorities, false)
-	if len(out.Insights) == 0 {
+	if !modelItemKept {
 		return Narrative{}, ErrUnsupported
 	}
 	if len(signals) > 0 && !hasExactSignalInsight(out.Insights, signals) {
-		return Narrative{}, ErrUnsupported
+		signal := signals[0]
+		item := Item{Title: signalTitle(signal.Kind), Copy: signal.Summary, When: signal.Period, EvidenceIDs: append([]string(nil), signal.EvidenceIDs...)}
+		if len(out.Insights) == 5 {
+			out.Insights[4] = item
+		} else {
+			out.Insights = append(out.Insights, item)
+		}
 	}
-	if !valid {
+	if len(out.Insights) == 0 {
 		return Narrative{}, ErrUnsupported
 	}
 	if emptyItem(out.Lead) {
@@ -957,6 +1018,8 @@ func normalizeSignalInsight(item Item, signals []Signal) Item {
 		matched = index
 	}
 	if matched >= 0 {
+		item.Title = signalTitle(signals[matched].Kind)
+		item.When = signals[matched].Period
 		item.EvidenceIDs = append([]string(nil), signals[matched].EvidenceIDs...)
 	}
 	return item
@@ -1018,7 +1081,7 @@ func validateItem(item Item, allowed map[string]Fact, signals ...Signal) error {
 	if emptyItem(item) {
 		return nil
 	}
-	if len(item.Title) > 256 || len(item.Copy) > 1200 || len(item.EvidenceIDs) == 0 || len(item.EvidenceIDs) > 12 || imperativeWording(item.Title) || imperativeWording(item.Copy) || unsafeWording(item.Title+" "+item.Copy, fullyCitesSignal(item.EvidenceIDs, signals)) {
+	if len(item.Title) > 256 || len(item.Copy) > 1200 || len(item.EvidenceIDs) == 0 || len(item.EvidenceIDs) > 12 {
 		return ErrUnsupported
 	}
 	var cited []Fact
@@ -1029,10 +1092,25 @@ func validateItem(item Item, allowed map[string]Fact, signals ...Signal) error {
 		}
 		cited = append(cited, fact)
 	}
+	if canonicalSignalInsight(item, signals) {
+		return nil
+	}
+	if imperativeWording(item.Title) || imperativeWording(item.Copy) || unsafeWording(item.Title+" "+item.Copy, fullyCitesSignal(item.EvidenceIDs, signals)) {
+		return ErrUnsupported
+	}
 	if !groundedWording(item.Title+" "+item.Copy+" "+item.When, cited, signals, item.EvidenceIDs) {
 		return ErrUnsupported
 	}
 	return nil
+}
+
+func canonicalSignalInsight(item Item, signals []Signal) bool {
+	for _, signal := range signals {
+		if item.Title == signalTitle(signal.Kind) && item.Copy == signal.Summary && item.When == signal.Period && strings.Join(item.EvidenceIDs, "\x00") == strings.Join(signal.EvidenceIDs, "\x00") {
+			return true
+		}
+	}
+	return false
 }
 
 func unsafeWording(value string, allowComparison bool) bool {

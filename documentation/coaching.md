@@ -3,10 +3,9 @@
 Mithra's Family Brief and Week in Review are read-only coaching views. Page
 loads build deterministic, actor-scoped facts and record-based signals from
 active source-linked finance, health, and planning records; they never call a
-model provider. Signals cover adjacent-month spending, comparable health
-measurements, dated plans, and this-week versus prior-week activity. Dense
-weeks use a factual comparison without unsupported exact counts. An
-explicit refresh sends shared and personal contexts in separate requests and
+model provider. Signals cover same-day month-to-date spending, current budget
+headroom, pending obligations, comparable health measurements, and dated plans.
+An explicit refresh sends shared and personal contexts in separate requests and
 publishes wording only after membership, revisions, evidence, and source
 visibility are rechecked.
 
@@ -21,8 +20,7 @@ serving prior wording.
 Every generated item must cite an opaque evidence ID supplied in its exact
 prompt context. Exact signal calculations use every visible typed record and
 publish only when one representative evidence ID for every source fits in the
-evidence limit. Dense week comparisons make no exact count claim and use a
-bounded representative source set. Numbers and comparisons may come only from
+evidence limit. Numbers and comparisons may come only from
 a supplied deterministic signal, and only when the response cites every
 supplied signal/source evidence ID. Mithra rejects unknown evidence, invented
 numbers, unsupported
