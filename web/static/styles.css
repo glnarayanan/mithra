@@ -2581,6 +2581,39 @@ body:not(.authenticated-shell) .auth-card h1 {
   display: none;
 }
 
+/* Week in Review is a short decision page, not a record report. */
+.review-layout { display: grid; gap: clamp(1.4rem, 3vw, 2.5rem); padding-top: clamp(1.5rem, 3vw, 2.5rem); }
+.review-status, .review-observation { padding: clamp(1.25rem, 3vw, 2rem); border-radius: var(--radius); background: var(--paper); box-shadow: var(--shadow-subtle); }
+.review-status { background: var(--navy); color: white; }
+.review-status .eyebrow { color: rgb(255 255 255 / 68%); }
+.review-status h2 { color: white; margin-bottom: .35rem; }
+.review-status p:not(.eyebrow) { max-width: 60ch; margin: 0; color: rgb(255 255 255 / 78%); }
+.review-observation { border-left: .3rem solid var(--moss); }
+.review-observation h2 { margin-bottom: .45rem; }
+.review-observation > p:not(.eyebrow) { max-width: 70ch; }
+.review-priorities, .review-list { display: grid; gap: .65rem; margin: .9rem 0 0; padding: 0; list-style: none; }
+.review-priorities { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.review-priorities li, .review-list li { min-width: 0; padding: 1rem; border: .0625rem solid var(--line); border-radius: calc(var(--radius) * .78); background: var(--paper); }
+.review-priorities li { display: grid; align-content: space-between; gap: .75rem; }
+.review-priorities p, .review-list p { margin: .3rem 0 0; color: var(--muted-ink); }
+.review-meta, .review-generated { color: var(--muted-ink); font-size: .8125rem; }
+.review-next { color: var(--ink) !important; font-size: .9rem; }
+.review-next span { color: var(--moss); font-weight: 760; }
+.review-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(1.25rem, 3vw, 2.5rem); }
+.review-columns h3 { margin: 1.25rem 0 -.15rem; font-size: .9rem; }
+.review-evidence { align-self: start; }
+.review-evidence summary { color: var(--moss); cursor: pointer; font-weight: 720; }
+.review-evidence a { display: block; width: fit-content; margin-top: .35rem; color: var(--moss); font-weight: 700; }
+.review-ai-notes { margin-top: .85rem; }
+.review-ai-notes > summary { cursor: pointer; color: var(--moss); font-weight: 720; }
+.review-private { margin-top: .25rem; }
+.review-private .section-heading { margin-bottom: .45rem; }
+
+@media (max-width: 45rem) {
+  .review-priorities, .review-columns { grid-template-columns: 1fr; }
+  .review-priorities li { gap: .6rem; }
+}
+
 @media (max-width: 45rem) {
   .brief-dashboard {
     grid-template-columns: 1fr;

@@ -11,11 +11,15 @@ import (
 	"github.com/glnarayanan/mithra/internal/providers"
 )
 
-type CoachingItemView struct{ Title, Copy, When, EvidenceURL, EvidenceLabel string }
+type EvidenceView struct{ URL, Label string }
+type CoachingItemView struct {
+	Title, Copy, When, Meta, Reason, NextStep, EvidenceURL, EvidenceLabel string
+	Evidence                                                              []EvidenceView
+}
 type CoachingHistoryView struct{ Generated, Model, Summary string }
 type CoachingNudgeView struct {
-	ID, Title, Copy, LensURL, LensLabel string
-	FollowUpEnabled                     bool
+	ID, Family, RecordID, Title, Copy, LensURL, LensLabel string
+	FollowUpEnabled                                       bool
 }
 type BriefView struct {
 	Navigation                                              []NavigationItem
@@ -30,14 +34,16 @@ type BriefView struct {
 	Capture                                                 CaptureView
 }
 type WeekReviewView struct {
-	Navigation                                                     []NavigationItem
-	CSRF, Status, Period, PrivateFreshness                         string
-	Stale, PrivateStale, CanRefresh                                bool
-	HasIssues                                                      bool
-	Changes, Dates, Inconsistencies, Priorities, OnlyYou, Insights []CoachingItemView
-	InsightHistory                                                 []CoachingHistoryView
-	InsightGenerated, InsightModel                                 string
-	Nudges                                                         []CoachingNudgeView
+	Navigation                                           []NavigationItem
+	CSRF, Status, Period, WeeklyStatus, WeeklyStatusCopy string
+	PrivateStatus, PrivateStatusCopy                     string
+	Stale, PrivateStale, CanRefresh                      bool
+	Priorities, Progress, Soon, Later, OnlyYou           []CoachingItemView
+	Observation                                          CoachingItemView
+	AIInsights                                           []CoachingItemView
+	InsightHistory                                       []CoachingHistoryView
+	InsightGenerated, InsightModel                       string
+	Nudges                                               []CoachingNudgeView
 }
 
 func (a *App) brief(w http.ResponseWriter, r *http.Request) {
@@ -223,12 +229,90 @@ func (a *App) renderWeek(r *http.Request, w http.ResponseWriter, scope policy.Ac
 	from := now.AddDate(0, 0, -6)
 	privateItems := reviewEventViews(append(append(review.Personal.Issues, review.Personal.Upcoming...), review.Personal.Changes...), evidence)
 	privateItems = append(privateItems, itemViews(review.Personal.Insights, evidence)...)
-	view := WeekReviewView{Navigation: navigationForPath("/review"), CSRF: csrf, Status: status, Period: from.Format("2 Jan") + " – " + now.Format("2 Jan 2006"), PrivateFreshness: freshness(review.Personal.Cache, "Up to date"), Stale: review.Shared.Cache.Stale, PrivateStale: review.Personal.Cache.Stale, CanRefresh: configured && review.HasRecords && csrf != "", HasIssues: len(review.Shared.Issues)+len(review.Personal.Issues) > 0, Insights: itemViews(review.Shared.Insights, evidence), InsightHistory: historyViews(review.Shared.History), InsightGenerated: insightGenerated(review.Shared.Cache), InsightModel: review.Shared.Cache.Model, Changes: reviewEventViews(review.Shared.Changes, evidence), Dates: reviewEventViews(review.Shared.Upcoming, evidence), Inconsistencies: reviewEventViews(review.Shared.Issues, evidence), OnlyYou: privateItems}
+	soon, later := splitReviewUpcoming(withoutPriorityEvents(review.Shared.Upcoming, review.Shared.Priorities), now)
+	view := WeekReviewView{
+		Navigation:        navigationForPath("/review"),
+		CSRF:              csrf,
+		Status:            status,
+		Period:            from.Format("2 Jan") + " – " + now.Format("2 Jan 2006"),
+		WeeklyStatus:      review.Shared.Status.Label,
+		WeeklyStatusCopy:  review.Shared.Status.Copy,
+		PrivateStatus:     review.Personal.Status.Label,
+		PrivateStatusCopy: review.Personal.Status.Copy,
+		Stale:             review.Shared.Cache.Stale,
+		PrivateStale:      review.Personal.Cache.Stale,
+		CanRefresh:        configured && review.HasRecords && csrf != "",
+		Priorities:        reviewEventViews(review.Shared.Priorities, evidence),
+		Progress:          reviewEventViews(review.Shared.Progress, evidence),
+		Soon:              reviewEventViews(soon, evidence),
+		Later:             reviewEventViews(later, evidence),
+		OnlyYou:           privateItems,
+		Observation:       itemView(review.Shared.Observation, evidence),
+		InsightHistory:    historyViews(review.Shared.History),
+		InsightGenerated:  insightGenerated(review.Shared.Cache),
+		InsightModel:      review.Shared.Cache.Model,
+	}
+	if review.Shared.Cache.Found {
+		view.AIInsights = itemViews(review.Shared.Insights, evidence)
+	}
 	if view.Status == "" && view.Stale {
 		view.Status = "A newer update is available. Dates and sources are still up to date."
 	}
-	view.Nudges = a.nudgeViews(r.Context(), scope, append(review.Shared.Context.ReviewFacts, review.Personal.Context.ReviewFacts...))
+	issues := append(append([]coaching.ReviewEvent(nil), review.Shared.Issues...), review.Personal.Issues...)
+	view.Nudges = withoutReviewIssueNudges(a.nudgeViews(r.Context(), scope, append(review.Shared.Context.ReviewFacts, review.Personal.Context.ReviewFacts...)), issues)
 	a.renderTemplate(r.Context(), w, "review.html", view)
+}
+
+func splitReviewUpcoming(events []coaching.ReviewEvent, now time.Time) ([]coaching.ReviewEvent, []coaching.ReviewEvent) {
+	soon, later := []coaching.ReviewEvent{}, []coaching.ReviewEvent{}
+	cutoff := now.UTC().AddDate(0, 0, 7).Format("2006-01-02")
+	for _, event := range events {
+		if event.When != "" && event.When <= cutoff {
+			soon = append(soon, event)
+		} else {
+			later = append(later, event)
+		}
+	}
+	return soon, later
+}
+
+func withoutPriorityEvents(events, priorities []coaching.ReviewEvent) []coaching.ReviewEvent {
+	used := make(map[string]struct{}, len(priorities))
+	for _, priority := range priorities {
+		for _, evidenceID := range priority.EvidenceIDs {
+			used[evidenceID] = struct{}{}
+		}
+	}
+	out := make([]coaching.ReviewEvent, 0, len(events))
+	for _, event := range events {
+		duplicate := false
+		for _, evidenceID := range event.EvidenceIDs {
+			if _, exists := used[evidenceID]; exists {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			out = append(out, event)
+		}
+	}
+	return out
+}
+
+func withoutReviewIssueNudges(nudges []CoachingNudgeView, issues []coaching.ReviewEvent) []CoachingNudgeView {
+	blocked := make(map[string]struct{}, len(issues))
+	for _, issue := range issues {
+		for _, fact := range issue.Facts {
+			blocked[fact.Family+"\x00"+fact.RecordID] = struct{}{}
+		}
+	}
+	out := make([]CoachingNudgeView, 0, len(nudges))
+	for _, nudge := range nudges {
+		if _, exists := blocked[nudge.Family+"\x00"+nudge.RecordID]; !exists {
+			out = append(out, nudge)
+		}
+	}
+	return out
 }
 
 func evidenceMap(contexts ...coaching.Context) map[string]coaching.Fact {
@@ -249,11 +333,19 @@ func contextReviewFacts(context coaching.Context) []coaching.Fact {
 }
 func itemView(item coaching.Item, evidence map[string]coaching.Fact) CoachingItemView {
 	view := CoachingItemView{Title: item.Title, Copy: item.Copy, When: item.When}
-	if len(item.EvidenceIDs) > 0 {
-		if fact, ok := evidence[item.EvidenceIDs[0]]; ok {
-			view.EvidenceURL = sourceURL(fact.SourceID)
-			view.EvidenceLabel = "View original"
+	seen := map[string]struct{}{}
+	for _, evidenceID := range item.EvidenceIDs {
+		if fact, ok := evidence[evidenceID]; ok && fact.SourceID != "" {
+			url := sourceURL(fact.SourceID)
+			if _, exists := seen[url]; exists {
+				continue
+			}
+			seen[url] = struct{}{}
+			view.Evidence = append(view.Evidence, EvidenceView{URL: url, Label: "Source"})
 		}
+	}
+	if len(view.Evidence) > 0 {
+		view.EvidenceURL, view.EvidenceLabel = view.Evidence[0].URL, "Details"
 	}
 	return view
 }
@@ -267,14 +359,42 @@ func itemViews(items []coaching.Item, evidence map[string]coaching.Fact) []Coach
 func reviewEventViews(events []coaching.ReviewEvent, evidence map[string]coaching.Fact) []CoachingItemView {
 	out := make([]CoachingItemView, 0, len(events))
 	for _, event := range events {
-		view := CoachingItemView{Title: event.Title, Copy: event.Copy, When: reviewDate(event.When)}
-		if fact, ok := evidence[event.EvidenceID]; ok {
-			view.EvidenceURL = sourceURL(fact.SourceID)
-			view.EvidenceLabel = "View original"
+		view := CoachingItemView{Title: event.Title, Copy: event.Copy, When: reviewDate(event.When), Reason: event.Reason, NextStep: event.NextStep, Meta: reviewEventMeta(event)}
+		seen := map[string]struct{}{}
+		for _, evidenceID := range event.EvidenceIDs {
+			fact, ok := evidence[evidenceID]
+			if !ok || fact.SourceID == "" {
+				continue
+			}
+			url := sourceURL(fact.SourceID)
+			if _, exists := seen[url]; exists {
+				continue
+			}
+			seen[url] = struct{}{}
+			view.Evidence = append(view.Evidence, EvidenceView{URL: url, Label: "Source"})
+		}
+		if len(view.Evidence) > 0 {
+			view.EvidenceURL, view.EvidenceLabel = view.Evidence[0].URL, "Details"
 		}
 		out = append(out, view)
 	}
 	return out
+}
+
+func reviewEventMeta(event coaching.ReviewEvent) string {
+	parts := make([]string, 0, 5)
+	if event.When != "" {
+		parts = append(parts, reviewDate(event.When))
+	}
+	if event.Time != "" {
+		parts = append(parts, event.Time)
+	}
+	for _, value := range []string{event.Domain, event.Visibility, event.Status} {
+		if value != "" {
+			parts = append(parts, value)
+		}
+	}
+	return strings.Join(parts, " · ")
 }
 func reviewDate(value string) string {
 	date, err := time.Parse("2006-01-02", value)
@@ -390,7 +510,7 @@ func (a *App) nudgeViews(ctx context.Context, scope policy.ActorScope, facts []c
 		if !ok {
 			continue
 		}
-		out = append(out, CoachingNudgeView{ID: n.ID, Title: fact.Content, Copy: "Add an update when you have one, or mark this as reviewed.", LensURL: "/" + n.Family, LensLabel: strings.Title(n.Family), FollowUpEnabled: n.FollowUpEnabled})
+		out = append(out, CoachingNudgeView{ID: n.ID, Family: n.Family, RecordID: n.RecordID, Title: fact.Content, Copy: "Add an update when you have one, or mark this as reviewed.", LensURL: "/" + n.Family, LensLabel: strings.Title(n.Family), FollowUpEnabled: n.FollowUpEnabled})
 	}
 	return out
 }

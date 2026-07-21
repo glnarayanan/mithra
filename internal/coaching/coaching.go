@@ -40,6 +40,7 @@ type Fact struct {
 	RecordID     string            `json:"-"`
 	Content      string            `json:"content"`
 	Date         string            `json:"date,omitempty"`
+	Time         string            `json:"time,omitempty"`
 	Issue        string            `json:"issue,omitempty"`
 	SourceID     string            `json:"-"`
 	Visibility   policy.Visibility `json:"visibility"`
@@ -107,19 +108,27 @@ type Overview struct {
 // ReviewEvent is one typed record in one week-review section. It deliberately
 // does not reuse the Family Brief's Narrative sections.
 type ReviewEvent struct {
-	Fact       Fact
-	Title      string
-	Copy       string
-	When       string
-	EvidenceID string
+	Fact                     Fact
+	Facts                    []Fact
+	Title, Copy, When, Time  string
+	Domain, Visibility       string
+	Status, Reason, NextStep string
+	EvidenceID               string
+	EvidenceIDs              []string
+	Overdue                  bool
 }
 
+// ReviewStatus is a deterministic shared or personal weekly readout.
+type ReviewStatus struct{ Label, Copy string }
+
 type ReviewScope struct {
-	Changes, Upcoming, Issues []ReviewEvent
-	Insights                  []Item
-	Context                   Context
-	Cache                     CacheState
-	History                   []History
+	Changes, Upcoming, Issues, Priorities, Progress []ReviewEvent
+	Observation                                     Item
+	Status                                          ReviewStatus
+	Insights                                        []Item
+	Context                                         Context
+	Cache                                           CacheState
+	History                                         []History
 }
 
 // WeeklyReview keeps the review's deterministic record classification separate
@@ -423,21 +432,21 @@ func queryFacts(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visibi
 		args = append(args, actor.ActorID)
 	}
 	rows, err := tx.QueryContext(ctx, `WITH records AS (
-	SELECT 'finance' family,'income' kind,id,household_id,owner_user_id,visibility,source_id,label title,received_on date,'' status,incomplete_reason issue,created_at,updated_at,COALESCE(supersedes_id,'') supersedes_id FROM finance_income WHERE active=1
-	UNION ALL SELECT 'finance','spending',id,household_id,owner_user_id,visibility,source_id,label,spent_on,'',incomplete_reason,created_at,updated_at,COALESCE(supersedes_id,'') FROM finance_spending WHERE active=1
-	UNION ALL SELECT 'finance','asset',id,household_id,owner_user_id,visibility,source_id,label,observed_on,'',incomplete_reason,created_at,updated_at,COALESCE(supersedes_id,'') FROM finance_assets WHERE active=1
-	UNION ALL SELECT 'finance','liability',id,household_id,owner_user_id,visibility,source_id,label,observed_on,'',incomplete_reason,created_at,updated_at,COALESCE(supersedes_id,'') FROM finance_liabilities WHERE active=1
-	UNION ALL SELECT 'finance','budget',id,household_id,owner_user_id,visibility,source_id,label,starts_on,'',incomplete_reason,created_at,updated_at,COALESCE(supersedes_id,'') FROM finance_budgets WHERE active=1
-	UNION ALL SELECT 'finance','obligation',id,household_id,owner_user_id,visibility,source_id,label,due_on,status,incomplete_reason,created_at,updated_at,COALESCE(supersedes_id,'') FROM finance_obligations WHERE active=1
-	UNION ALL SELECT 'health','observation',id,household_id,owner_user_id,visibility,source_id,TRIM(analyte || CASE WHEN subject<>'' THEN ' for ' || subject ELSE '' END),observed_on,'','',created_at,updated_at,COALESCE(supersedes_id,'') FROM health_observations WHERE active=1
-	UNION ALL SELECT 'health','appointment',id,household_id,owner_user_id,visibility,source_id,label,scheduled_on,status,'',created_at,updated_at,'' FROM health_appointments WHERE active=1
-	UNION ALL SELECT 'health','routine',id,household_id,owner_user_id,visibility,source_id,label,next_due_on,status,'',created_at,updated_at,'' FROM health_care_routines WHERE active=1
-	UNION ALL SELECT 'planning','goal',id,household_id,owner_user_id,visibility,source_id,title,target_on,status,'',created_at,updated_at,'' FROM planning_goals WHERE active=1
-	UNION ALL SELECT 'planning','plan',id,household_id,owner_user_id,visibility,source_id,title,'',status,'',created_at,updated_at,'' FROM planning_plans WHERE active=1
-	UNION ALL SELECT 'planning','milestone',id,household_id,owner_user_id,visibility,source_id,title,due_on,status,'',created_at,updated_at,'' FROM planning_milestones WHERE active=1
-	UNION ALL SELECT 'planning','event',id,household_id,owner_user_id,visibility,source_id,title,COALESCE(NULLIF(starts_on,''),substr(starts_at,1,10)),status,'',created_at,updated_at,'' FROM planning_events WHERE active=1
+	SELECT 'finance' family,'income' kind,id,household_id,owner_user_id,visibility,source_id,label title,received_on date,'' time,'' status,incomplete_reason issue,created_at,updated_at,COALESCE(supersedes_id,'') supersedes_id FROM finance_income WHERE active=1
+	UNION ALL SELECT 'finance','spending',id,household_id,owner_user_id,visibility,source_id,label,spent_on,'','',incomplete_reason,created_at,updated_at,COALESCE(supersedes_id,'') FROM finance_spending WHERE active=1
+	UNION ALL SELECT 'finance','asset',id,household_id,owner_user_id,visibility,source_id,label,observed_on,'','',incomplete_reason,created_at,updated_at,COALESCE(supersedes_id,'') FROM finance_assets WHERE active=1
+	UNION ALL SELECT 'finance','liability',id,household_id,owner_user_id,visibility,source_id,label,observed_on,'','',incomplete_reason,created_at,updated_at,COALESCE(supersedes_id,'') FROM finance_liabilities WHERE active=1
+	UNION ALL SELECT 'finance','budget',id,household_id,owner_user_id,visibility,source_id,label,starts_on,'','',incomplete_reason,created_at,updated_at,COALESCE(supersedes_id,'') FROM finance_budgets WHERE active=1
+	UNION ALL SELECT 'finance','obligation',id,household_id,owner_user_id,visibility,source_id,label,due_on,'',status,incomplete_reason,created_at,updated_at,COALESCE(supersedes_id,'') FROM finance_obligations WHERE active=1
+	UNION ALL SELECT 'health','observation',id,household_id,owner_user_id,visibility,source_id,TRIM(analyte || CASE WHEN subject<>'' THEN ' for ' || subject ELSE '' END),observed_on,'','','',created_at,updated_at,COALESCE(supersedes_id,'') FROM health_observations WHERE active=1
+	UNION ALL SELECT 'health','appointment',id,household_id,owner_user_id,visibility,source_id,label,scheduled_on,'',status,'',created_at,updated_at,'' FROM health_appointments WHERE active=1
+	UNION ALL SELECT 'health','routine',id,household_id,owner_user_id,visibility,source_id,label,next_due_on,'',status,'',created_at,updated_at,'' FROM health_care_routines WHERE active=1
+	UNION ALL SELECT 'planning','goal',id,household_id,owner_user_id,visibility,source_id,title,target_on,'',status,'',created_at,updated_at,'' FROM planning_goals WHERE active=1
+	UNION ALL SELECT 'planning','plan',id,household_id,owner_user_id,visibility,source_id,title,'','',status,'',created_at,updated_at,'' FROM planning_plans WHERE active=1
+	UNION ALL SELECT 'planning','milestone',id,household_id,owner_user_id,visibility,source_id,title,due_on,'',status,'',created_at,updated_at,'' FROM planning_milestones WHERE active=1
+	UNION ALL SELECT 'planning','event',id,household_id,owner_user_id,visibility,source_id,title,COALESCE(NULLIF(starts_on,''),substr(starts_at,1,10)),CASE WHEN all_day=1 THEN '' ELSE substr(starts_at,12,5) END,status,'',created_at,updated_at,'' FROM planning_events WHERE active=1
 	)
-	SELECT DISTINCT r.family,r.kind,r.id,r.title,r.date,r.status,r.issue,r.visibility,el.source_id,r.created_at,r.updated_at,r.supersedes_id
+	SELECT DISTINCT r.family,r.kind,r.id,r.title,r.date,r.time,r.status,r.issue,r.visibility,el.source_id,r.created_at,r.updated_at,r.supersedes_id
 	FROM records r
 	JOIN evidence_links el ON el.record_family=r.family AND el.record_id=r.id AND el.household_id=r.household_id AND el.visibility=r.visibility AND el.owner_user_id=r.owner_user_id AND el.source_id=r.source_id
 	JOIN sources src ON src.id=el.source_id AND src.state='live' AND src.household_id=r.household_id
@@ -452,7 +461,7 @@ func queryFacts(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visibi
 	for rows.Next() {
 		var f Fact
 		var created, updated, visible string
-		if err := rows.Scan(&f.Family, &f.Kind, &f.RecordID, &f.Content, &f.Date, &f.Status, &f.Issue, &visible, &f.SourceID, &created, &updated, &f.SupersedesID); err != nil {
+		if err := rows.Scan(&f.Family, &f.Kind, &f.RecordID, &f.Content, &f.Date, &f.Time, &f.Status, &f.Issue, &visible, &f.SourceID, &created, &updated, &f.SupersedesID); err != nil {
 			return nil, err
 		}
 		f.Visibility = policy.Visibility(visible)
@@ -867,25 +876,32 @@ func weeklyScope(context Context, asOf time.Time) ReviewScope {
 	}
 	scope := ReviewScope{Context: context, Insights: deterministic(facts, asOf, context.Signals...).Insights}
 	for _, fact := range facts {
-		event := ReviewEvent{Fact: fact, Title: fact.Content, When: fact.Date, EvidenceID: fact.EvidenceID}
+		event := reviewEvent(fact)
+		event.Overdue = reviewFactOverdue(fact, asOf)
 		switch weeklySection(fact, asOf) {
 		case "issue":
-			event.Copy = "Mithra cannot use this record yet: " + strings.TrimSuffix(fact.Issue, ".") + "."
+			event.Title, event.Copy = reviewIssueCopy(fact)
 			scope.Issues = append(scope.Issues, event)
 		case "upcoming":
-			event.Copy = "Dated for " + displayDate(fact.Date) + "."
+			event.Copy, event.Reason, event.NextStep = upcomingCopy(fact)
 			scope.Upcoming = append(scope.Upcoming, event)
 		case "change":
 			event.Copy = changeCopy(fact, asOf)
 			scope.Changes = append(scope.Changes, event)
 		}
 	}
+	scope.Issues = mergeReviewIssues(scope.Issues)
+	scope.Upcoming = groupReviewUpcoming(scope.Upcoming)
 	sortReviewEvents(scope.Issues, false)
 	sortReviewEvents(scope.Upcoming, true)
 	sortReviewEvents(scope.Changes, false)
 	scope.Issues = limitReviewEvents(scope.Issues, 6)
 	scope.Upcoming = limitReviewEvents(scope.Upcoming, 6)
 	scope.Changes = limitReviewEvents(scope.Changes, 6)
+	scope.Priorities = reviewPriorities(scope)
+	scope.Progress = reviewProgress(scope)
+	scope.Observation = reviewObservation(context.Signals)
+	scope.Status = reviewStatus(scope)
 	scope.Insights = reviewInsights(scope.Insights, scope)
 	return scope
 }
@@ -912,12 +928,9 @@ func weeklySection(f Fact, asOf time.Time) string {
 	if f.UpdatedAt.After(f.CreatedAt) && !f.UpdatedAt.Before(start) {
 		return "change"
 	}
-	if hasDate == nil {
+	if hasDate == nil && actionableReviewFact(f) {
 		if openStatus(f.Status) && !eventDate.Before(today) && eventDate.Before(today.AddDate(0, 0, 31)) {
 			return "upcoming"
-		}
-		if !eventDate.Before(start) && eventDate.Before(today) {
-			return "change"
 		}
 		if eventDate.Before(today) && openStatus(f.Status) && !eventDate.Before(start) {
 			return "change"
@@ -926,11 +939,34 @@ func weeklySection(f Fact, asOf time.Time) string {
 	return ""
 }
 
+func actionableReviewFact(f Fact) bool {
+	switch f.Family {
+	case "finance":
+		return f.Kind == "obligation"
+	case "health":
+		return f.Kind == "appointment" || f.Kind == "routine"
+	case "planning":
+		return f.Kind == "goal" || f.Kind == "milestone" || f.Kind == "event"
+	default:
+		return false
+	}
+}
+
+func reviewFactOverdue(f Fact, asOf time.Time) bool {
+	if !actionableReviewFact(f) || !openStatus(f.Status) {
+		return false
+	}
+	date, err := time.Parse("2006-01-02", f.Date)
+	return err == nil && date.Before(day(asOf))
+}
+
 func reviewInsights(items []Item, scope ReviewScope) []Item {
 	used := make(map[string]struct{}, len(scope.Changes)+len(scope.Upcoming)+len(scope.Issues))
 	for _, events := range [][]ReviewEvent{scope.Changes, scope.Upcoming, scope.Issues} {
 		for _, event := range events {
-			used[event.EvidenceID] = struct{}{}
+			for _, evidenceID := range event.evidenceIDs() {
+				used[evidenceID] = struct{}{}
+			}
 		}
 	}
 	out := make([]Item, 0, len(items))
@@ -943,10 +979,468 @@ func reviewInsights(items []Item, scope ReviewScope) []Item {
 			}
 		}
 		if !duplicate {
+			item.Title = reviewInsightTitle(item)
 			out = append(out, item)
 		}
 	}
 	return out
+}
+
+func reviewInsightTitle(item Item) string {
+	if item.Title != "Health record comparison" {
+		return item.Title
+	}
+	name := strings.TrimSpace(strings.Split(item.Copy, " changed from ")[0])
+	if before, _, found := strings.Cut(name, " for "); found {
+		name = before
+	}
+	if name != "" {
+		return name
+	}
+	return item.Title
+}
+
+func reviewEvent(f Fact) ReviewEvent {
+	return ReviewEvent{
+		Fact:        f,
+		Facts:       []Fact{f},
+		Title:       reviewTitle(f),
+		When:        f.Date,
+		Time:        f.Time,
+		Domain:      reviewDomain(f),
+		Visibility:  reviewVisibility(f.Visibility),
+		Status:      reviewStatusLabel(f.Status),
+		EvidenceID:  f.EvidenceID,
+		EvidenceIDs: []string{f.EvidenceID},
+	}
+}
+
+func (e ReviewEvent) evidenceIDs() []string {
+	if len(e.EvidenceIDs) > 0 {
+		return e.EvidenceIDs
+	}
+	if e.EvidenceID != "" {
+		return []string{e.EvidenceID}
+	}
+	return nil
+}
+
+func reviewTitle(f Fact) string {
+	title := strings.TrimSpace(f.Content)
+	if f.Family == "health" && f.Kind == "observation" {
+		title = strings.TrimSpace(strings.Split(title, " for ")[0])
+	}
+	words := strings.Fields(title)
+	if len(words) > 1 && strings.EqualFold(words[0], words[len(words)-1]) {
+		words = words[:len(words)-1]
+	}
+	return strings.Join(words, " ")
+}
+
+func reviewDomain(f Fact) string {
+	switch f.Family {
+	case "finance":
+		return "Finance"
+	case "health":
+		return "Health"
+	case "planning":
+		return "Planning"
+	default:
+		return "Household"
+	}
+}
+
+func reviewVisibility(v policy.Visibility) string {
+	if v == policy.Personal {
+		return "Only you"
+	}
+	return "Shared"
+}
+
+func reviewStatusLabel(status string) string {
+	switch status {
+	case "planned":
+		return "Planned"
+	case "pending":
+		return "Pending"
+	case "active":
+		return "Active"
+	case "completed":
+		return "Completed"
+	case "cancelled":
+		return "Cancelled"
+	default:
+		return "Recorded"
+	}
+}
+
+func reviewIssueCopy(f Fact) (string, string) {
+	issue := strings.TrimSuffix(strings.TrimSpace(f.Issue), ".")
+	if f.Family == "health" && f.Kind == "observation" && strings.Contains(issue, "reported units differ") {
+		return reviewTitle(f) + " record needs correction", "Mithra cannot compare two readings because their recorded units differ."
+	}
+	return reviewTitle(f) + " needs correction", "Mithra cannot use this record yet: " + issue + "."
+}
+
+func upcomingCopy(f Fact) (copy, reason, next string) {
+	switch {
+	case f.Family == "finance" && f.Kind == "obligation":
+		return "A recorded payment is due.", "A recorded payment is due soon.", "Check the payment details before its due date."
+	case f.Family == "planning":
+		return "Preparation is due soon.", "This household plan is coming up.", "Review what needs to be ready before then."
+	case f.Family == "health":
+		return "A recorded health follow-up is due.", "This follow-up has a recorded date.", "Review the record when you are ready."
+	default:
+		return "A recorded item is coming up.", "This record has a date soon.", "Review the record before then."
+	}
+}
+
+func mergeReviewIssues(events []ReviewEvent) []ReviewEvent {
+	byKey := make(map[string]int, len(events))
+	out := make([]ReviewEvent, 0, len(events))
+	for _, event := range events {
+		key := event.Fact.Family + "\x00" + event.Fact.Kind + "\x00" + strings.ToLower(event.Fact.Content) + "\x00" + event.Copy
+		if index, ok := byKey[key]; ok {
+			out[index] = mergeReviewEvents(out[index], event)
+			continue
+		}
+		byKey[key] = len(out)
+		out = append(out, event)
+	}
+	return out
+}
+
+func groupReviewUpcoming(events []ReviewEvent) []ReviewEvent {
+	used := make([]bool, len(events))
+	out := make([]ReviewEvent, 0, len(events))
+	for i, event := range events {
+		if used[i] || event.Fact.Family != "planning" {
+			continue
+		}
+		j, ok := uniqueClosestReviewMatch(events, used, i)
+		if !ok {
+			continue
+		}
+		if matchingPlanning, unique := uniqueClosestPlanningMatch(events, used, j); !unique || matchingPlanning != i {
+			continue
+		}
+		candidate := events[j]
+		combined := mergeReviewEvents(candidate, event)
+		combined.Title = candidate.Title
+		combined.When, combined.Time = earliestReviewWhen(event, candidate)
+		combined.Domain = "Planning + finance"
+		combined.Status = "Planned · Pending"
+		combined.Copy = "Review options by " + displayDate(event.When) + " · Payment due " + displayDate(candidate.When) + "."
+		combined.Reason = "Planning and payment dates are connected."
+		combined.NextStep = "Review the options before the payment is due."
+		out = append(out, combined)
+		used[i], used[j] = true, true
+	}
+	for i, event := range events {
+		if !used[i] {
+			out = append(out, event)
+		}
+	}
+	return out
+}
+
+func uniqueClosestPlanningMatch(events []ReviewEvent, used []bool, obligationIndex int) (int, bool) {
+	obligation := events[obligationIndex]
+	best, bestDays, tied := -1, 4, false
+	for index, planning := range events {
+		if used[index] || planning.Fact.Family != "planning" || planning.Fact.Visibility != obligation.Fact.Visibility || !reviewTitlesMatch(planning.Title, obligation.Title) || !reviewDatesClose(planning.When, obligation.When) {
+			continue
+		}
+		left, leftErr := time.Parse("2006-01-02", planning.When)
+		right, rightErr := time.Parse("2006-01-02", obligation.When)
+		if leftErr != nil || rightErr != nil {
+			continue
+		}
+		days := int(left.Sub(right).Hours() / 24)
+		if days < 0 {
+			days = -days
+		}
+		if days < bestDays {
+			best, bestDays, tied = index, days, false
+		} else if days == bestDays {
+			tied = true
+		}
+	}
+	return best, best >= 0 && !tied
+}
+
+func uniqueClosestReviewMatch(events []ReviewEvent, used []bool, planningIndex int) (int, bool) {
+	planning := events[planningIndex]
+	best, bestDays, tied := -1, 4, false
+	for index, candidate := range events {
+		if used[index] || candidate.Fact.Family != "finance" || candidate.Fact.Kind != "obligation" || planning.Fact.Visibility != candidate.Fact.Visibility || !reviewTitlesMatch(planning.Title, candidate.Title) || !reviewDatesClose(planning.When, candidate.When) {
+			continue
+		}
+		left, leftErr := time.Parse("2006-01-02", planning.When)
+		right, rightErr := time.Parse("2006-01-02", candidate.When)
+		if leftErr != nil || rightErr != nil {
+			continue
+		}
+		days := int(left.Sub(right).Hours() / 24)
+		if days < 0 {
+			days = -days
+		}
+		if days < bestDays {
+			best, bestDays, tied = index, days, false
+		} else if days == bestDays {
+			tied = true
+		}
+	}
+	return best, best >= 0 && !tied
+}
+
+func mergeReviewEvents(left, right ReviewEvent) ReviewEvent {
+	left.Facts = append(append([]Fact(nil), left.Facts...), right.Facts...)
+	left.EvidenceIDs = append(append([]string(nil), left.evidenceIDs()...), right.evidenceIDs()...)
+	if left.EvidenceID == "" {
+		left.EvidenceID = right.EvidenceID
+	}
+	return left
+}
+
+func reviewTitlesMatch(left, right string) bool {
+	normalize := func(value string) string {
+		words := strings.FieldsFunc(strings.ToLower(value), func(r rune) bool { return r < 'a' || r > 'z' })
+		out := words[:0]
+		for _, word := range words {
+			if word != "review" {
+				out = append(out, word)
+			}
+		}
+		return strings.Join(out, " ")
+	}
+	return normalize(left) != "" && normalize(left) == normalize(right)
+}
+
+func reviewDatesClose(left, right string) bool {
+	a, errA := time.Parse("2006-01-02", left)
+	b, errB := time.Parse("2006-01-02", right)
+	if errA != nil || errB != nil {
+		return false
+	}
+	if a.After(b) {
+		a, b = b, a
+	}
+	return b.Sub(a) <= 72*time.Hour
+}
+
+func earliestReviewWhen(left, right ReviewEvent) (string, string) {
+	if left.When <= right.When {
+		return left.When, left.Time
+	}
+	return right.When, right.Time
+}
+
+func reviewPriorities(scope ReviewScope) []ReviewEvent {
+	all := append([]ReviewEvent(nil), scope.Issues...)
+	for _, event := range scope.Changes {
+		if event.Overdue {
+			all = append(all, event)
+		}
+	}
+	all = append(all, scope.Upcoming...)
+	sort.SliceStable(all, func(i, j int) bool {
+		left, right := reviewPriorityRank(all[i]), reviewPriorityRank(all[j])
+		if left != right {
+			return left < right
+		}
+		return all[i].When < all[j].When
+	})
+	if len(all) > 3 {
+		all = all[:3]
+	}
+	for index := range all {
+		if all[index].Reason == "" {
+			all[index].Reason = all[index].Copy
+		}
+		if all[index].NextStep == "" {
+			all[index].NextStep = "Review the record when you are ready."
+		}
+	}
+	return all
+}
+
+func reviewPriorityRank(event ReviewEvent) int {
+	if event.Fact.Issue != "" {
+		return 0
+	}
+	if event.Overdue {
+		return 1
+	}
+	if event.Fact.Family == "planning" || event.Fact.Kind == "obligation" || event.Domain == "Planning + finance" {
+		return 2
+	}
+	return 3
+}
+
+func reviewProgress(scope ReviewScope) []ReviewEvent {
+	progress := make([]ReviewEvent, 0, 3)
+	for _, event := range scope.Changes {
+		if event.Fact.Status == "completed" {
+			event.Copy = "Marked completed this week."
+			progress = append(progress, event)
+		}
+	}
+	for _, signal := range scope.Context.Signals {
+		if signal.Kind != "finance_month_to_date" || !spendingLowerThanPrior(signal.Summary) {
+			continue
+		}
+		progress = append(progress, ReviewEvent{Title: "Spending compared with last month", Copy: signal.Summary, Domain: "Finance", Visibility: reviewVisibility(policy.Visibility(scope.Context.Scope)), Status: "Recorded", EvidenceIDs: signal.EvidenceIDs})
+		break
+	}
+	if len(progress) > 3 {
+		return progress[:3]
+	}
+	return progress
+}
+
+func spendingLowerThanPrior(summary string) bool {
+	match := regexp.MustCompile(` is ([0-9][0-9,]*(?:\.[0-9]+)?), compared with ([0-9][0-9,]*(?:\.[0-9]+)?) from`).FindStringSubmatch(summary)
+	if len(match) != 3 {
+		return false
+	}
+	current, currentErr := strconv.ParseFloat(strings.ReplaceAll(match[1], ",", ""), 64)
+	prior, priorErr := strconv.ParseFloat(strings.ReplaceAll(match[2], ",", ""), 64)
+	return currentErr == nil && priorErr == nil && current < prior
+}
+
+func reviewObservation(signals []Signal) Item {
+	var budget, month Signal
+	for _, signal := range signals {
+		switch signal.Kind {
+		case "finance_budget":
+			budget = signal
+		case "finance_month_to_date":
+			month = signal
+		}
+	}
+	if budget.Kind == "" || !hasBudgetRisk([]Signal{budget}) {
+		return Item{}
+	}
+	category := "This budget"
+	if match := regexp.MustCompile(`Spending recorded in ([^.]+) through`).FindStringSubmatch(budget.Summary); len(match) == 2 {
+		category = match[1]
+	}
+	title := category + " need attention"
+	copy := budget.Summary
+	if month.Kind != "" {
+		copy += " " + month.Summary
+		if spendingLowerThanPrior(month.Summary) {
+			title = category + " need attention, not overall spending"
+		}
+	}
+	if remaining := budgetRemaining(budget.Summary); remaining != "" {
+		copy += " Suggested next step: Keep the remaining recorded " + strings.ToLower(category) + " spending within " + remaining + ", or adjust the recorded budget."
+	}
+	evidence := append([]string(nil), budget.EvidenceIDs...)
+	for _, id := range month.EvidenceIDs {
+		if !containsString(evidence, id) {
+			evidence = append(evidence, id)
+		}
+	}
+	return Item{Title: title, Copy: copy, EvidenceIDs: evidence}
+}
+
+func budgetRemaining(summary string) string {
+	match := regexp.MustCompile(`leaving ([0-9][0-9,]*(?:\.[0-9]+)?)\.`).FindStringSubmatch(summary)
+	if len(match) == 2 {
+		return match[1]
+	}
+	return ""
+}
+
+func containsString(values []string, wanted string) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
+}
+
+func reviewStatus(scope ReviewScope) ReviewStatus {
+	if scope.Context.Scope == string(policy.Personal) {
+		if len(scope.Issues) > 0 {
+			return ReviewStatus{Label: "Needs attention", Copy: "A private record needs correction before Mithra can use it."}
+		}
+		return ReviewStatus{Label: "Up to date", Copy: "No private record needs correction right now."}
+	}
+	if len(scope.Context.ReviewFacts) == 0 && len(scope.Context.Facts) == 0 && len(scope.Context.Signals) == 0 {
+		return ReviewStatus{Label: "No shared records yet", Copy: "Add or import shared records to build a weekly status."}
+	}
+	if len(scope.Issues) > 0 {
+		copy := "A visible record needs correction before Mithra can use it."
+		if category := budgetRiskCategory(scope.Context.Signals); category != "" {
+			copy += " " + category + " spending is close to the recorded budget."
+		}
+		if next := reviewPriorityNames(scope.Priorities); next != "" {
+			copy += " Next: " + next + "."
+		}
+		return ReviewStatus{Label: "Needs attention", Copy: copy}
+	}
+	for _, event := range scope.Changes {
+		if event.Overdue {
+			return ReviewStatus{Label: "Needs attention", Copy: event.Title + " is past its recorded date and still open."}
+		}
+	}
+	if len(scope.Priorities) > 0 || hasBudgetRisk(scope.Context.Signals) {
+		parts := make([]string, 0, 3)
+		for _, event := range scope.Priorities {
+			parts = append(parts, strings.ToLower(event.Title))
+		}
+		copy := "A few recorded items need attention next."
+		if len(parts) > 0 {
+			copy = "Next: " + strings.Join(parts, ", ") + "."
+		}
+		if category := budgetRiskCategory(scope.Context.Signals); category != "" {
+			copy = category + " spending is close to the recorded budget. " + copy
+		}
+		return ReviewStatus{Label: "Mostly on track", Copy: strings.ToUpper(copy[:1]) + copy[1:]}
+	}
+	return ReviewStatus{Label: "On track", Copy: "No shared overdue item or budget risk is recorded for this week."}
+}
+
+func reviewPriorityNames(events []ReviewEvent) string {
+	parts := make([]string, 0, len(events))
+	for _, event := range events {
+		parts = append(parts, strings.ToLower(event.Title))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func hasBudgetRisk(signals []Signal) bool {
+	for _, signal := range signals {
+		if signal.Kind != "finance_budget" {
+			continue
+		}
+		match := regexp.MustCompile(`([0-9]+(?:\.[0-9]+)?)% of the recorded budget`).FindStringSubmatch(signal.Summary)
+		if len(match) != 2 {
+			continue
+		}
+		percent, err := strconv.ParseFloat(match[1], 64)
+		if err == nil && percent >= 80 {
+			return true
+		}
+	}
+	return false
+}
+
+func budgetRiskCategory(signals []Signal) string {
+	for _, signal := range signals {
+		if signal.Kind != "finance_budget" || !hasBudgetRisk([]Signal{signal}) {
+			continue
+		}
+		match := regexp.MustCompile(`Spending recorded in ([^.]+) through`).FindStringSubmatch(signal.Summary)
+		if len(match) == 2 {
+			return match[1]
+		}
+	}
+	return ""
 }
 
 func displayDate(value string) string {

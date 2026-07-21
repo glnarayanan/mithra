@@ -12,6 +12,8 @@ import (
 
 	"github.com/glnarayanan/mithra/internal/coaching"
 	"github.com/glnarayanan/mithra/internal/finance"
+	"github.com/glnarayanan/mithra/internal/health"
+	"github.com/glnarayanan/mithra/internal/planning"
 	"github.com/glnarayanan/mithra/internal/policy"
 	"github.com/glnarayanan/mithra/internal/storage"
 )
@@ -117,7 +119,7 @@ func TestFamilyBriefLoadsWithoutAIThenRefreshesEvidenceAndKeepsPartnerPrivateOut
 		t.Fatalf("follow-up code=%d calls=%d mail=%#v", followUp.Code, providerCalls, mailer.last(t))
 	}
 	week := serve(application, coachingGET("/review", ownerSession))
-	if week.Code != http.StatusOK || !strings.Contains(week.Body.String(), "Week in Review") || !strings.Contains(week.Body.String(), "What changed") || !strings.Contains(week.Body.String(), "Needs a look") || !strings.Contains(week.Body.String(), "Only you") || !strings.Contains(week.Body.String(), "Learn about privacy") || !strings.Contains(week.Body.String(), "Regenerate AI insights") || strings.Contains(week.Body.String(), "Nothing looks inconsistent right now.") {
+	if week.Code != http.StatusOK || !strings.Contains(week.Body.String(), "Week in Review") || !strings.Contains(week.Body.String(), "Weekly status") || !strings.Contains(week.Body.String(), "Top priorities") || strings.Contains(week.Body.String(), "Only you</h2>") || !strings.Contains(week.Body.String(), "Regenerate AI insights") || strings.Contains(week.Body.String(), "A private record needs a look") {
 		t.Fatalf("week=%d %q", week.Code, week.Body.String())
 	}
 }
@@ -205,7 +207,33 @@ func TestPrivateItemsDoNotRepeatOneFactAcrossSections(t *testing.T) {
 	}
 }
 
-func TestWeekDoesNotCallPrivateValidationIssueConsistent(t *testing.T) {
+func TestWeekDoesNotRepeatPriorityInUpcoming(t *testing.T) {
+	event := coaching.ReviewEvent{Title: "Insurance renewal", EvidenceIDs: []string{"insurance"}}
+	if remaining := withoutPriorityEvents([]coaching.ReviewEvent{event}, []coaching.ReviewEvent{event}); len(remaining) != 0 {
+		t.Fatalf("priority remained in upcoming: %#v", remaining)
+	}
+}
+
+func TestWeekSuppressesNudgeRepresentedBySharedIssue(t *testing.T) {
+	nudges := []CoachingNudgeView{{ID: "nudge", Family: "finance", RecordID: "record"}}
+	issues := []coaching.ReviewEvent{{Facts: []coaching.Fact{{Family: "finance", RecordID: "record"}}}}
+	if remaining := withoutReviewIssueNudges(nudges, issues); len(remaining) != 0 {
+		t.Fatalf("shared issue nudge remained visible: %#v", remaining)
+	}
+}
+
+func TestWeekObservationKeepsAllDistinctSources(t *testing.T) {
+	evidence := map[string]coaching.Fact{
+		"budget": {SourceID: "budget-source"},
+		"month":  {SourceID: "month-source"},
+	}
+	view := itemView(coaching.Item{Title: "Observation", EvidenceIDs: []string{"budget", "month"}}, evidence)
+	if len(view.Evidence) != 2 {
+		t.Fatalf("observation evidence = %#v", view.Evidence)
+	}
+}
+
+func TestWeekKeepsPrivateValidationOutOfSharedOutput(t *testing.T) {
 	application, mailer := newAuthTestApp(t, "owner@example.com")
 	session := activate(t, application, mailer, "owner@example.com", "owner secure password", nil)
 	scope := ownerScope(t, application, session)
@@ -214,8 +242,50 @@ func TestWeekDoesNotCallPrivateValidationIssueConsistent(t *testing.T) {
 		t.Fatal(err)
 	}
 	week := serve(application, coachingGET("/review", session))
-	if week.Code != http.StatusOK || !strings.Contains(week.Body.String(), "A private record needs a look. It appears under Only you.") || strings.Contains(week.Body.String(), "Nothing looks inconsistent right now.") {
+	if week.Code != http.StatusOK || !strings.Contains(week.Body.String(), "No shared records yet") || !strings.Contains(week.Body.String(), "Needs attention") || strings.Contains(week.Body.String(), "A private record needs a look") || strings.Contains(week.Body.String(), "visible record needs correction") {
 		t.Fatalf("week=%d %q", week.Code, week.Body.String())
+	}
+}
+
+func TestWeekSharedMarkupDoesNotChangeForPrivateHealthIssue(t *testing.T) {
+	application, mailer := newAuthTestApp(t, "owner@example.com")
+	session := activate(t, application, mailer, "owner@example.com", "owner secure password", nil)
+	scope := ownerScope(t, application, session)
+	sharedSource := coachingTestSource(t, application, scope, policy.Shared, "shared plan")
+	if _, err := application.planningRecords.CreateEvent(context.Background(), scope, planning.EventDraft{Visibility: policy.Shared, Title: "Review travel documents", AllDay: true, StartsOn: time.Now().UTC().AddDate(0, 0, 3).Format("2006-01-02"), Status: "planned", Provenance: coachingPlanningProvenance(sharedSource)}); err != nil {
+		t.Fatal(err)
+	}
+	before := serve(application, coachingGET("/review", session)).Body.String()
+	privateSourceA := coachingTestSource(t, application, scope, policy.Personal, "private glucose one")
+	privateSourceB := coachingTestSource(t, application, scope, policy.Personal, "private glucose two")
+	for _, row := range []struct {
+		source storage.Source
+		unit   string
+	}{{privateSourceA, "mg/dL"}, {privateSourceB, "mmol/L"}} {
+		if _, err := application.healthRecords.CreateObservation(context.Background(), scope, health.ObservationDraft{Visibility: policy.Personal, Subject: "Owner", Analyte: "Glucose", ObservedOn: time.Now().UTC().Format("2006-01-02"), Value: "5", Unit: row.unit, Provenance: coachingHealthProvenance(row.source)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	after := serve(application, coachingGET("/review", session)).Body.String()
+	shared := func(body string) string {
+		start := strings.Index(body, `<section class="review-status"`)
+		end := strings.Index(body, `<footer class="coaching-actions"`)
+		if start < 0 || end < start {
+			t.Fatalf("missing shared review boundary: %q", body)
+		}
+		body = body[start:end]
+		if privateStart := strings.Index(body, `<aside class="only-you`); privateStart >= 0 {
+			if privateEnd := strings.Index(body[privateStart:], `</aside>`); privateEnd >= 0 {
+				body = body[:privateStart] + body[privateStart+privateEnd+len(`</aside>`):]
+			}
+		}
+		return body
+	}
+	if shared(before) != shared(after) {
+		t.Fatal("private health issue changed shared Week in Review markup")
+	}
+	if !strings.Contains(after, "Glucose record needs correction") || strings.Count(after, "Glucose record needs correction") != 1 {
+		t.Fatalf("private health correction was not compact and deduplicated: %q", after)
 	}
 }
 
@@ -229,6 +299,12 @@ func coachingTestSource(t *testing.T, application *App, scope policy.ActorScope,
 }
 func coachingFinanceProvenance(source storage.Source) finance.Provenance {
 	return finance.Provenance{SourceID: source.ID, SourceFamily: source.Family, SourceVersion: source.Version, LocatorKind: "source", LocatorValue: "update", GeneratedBy: "application", SchemaVersion: "finance-v1"}
+}
+func coachingHealthProvenance(source storage.Source) health.Provenance {
+	return health.Provenance{SourceID: source.ID, SourceFamily: source.Family, SourceVersion: source.Version, LocatorKind: "source", LocatorValue: "update", GeneratedBy: "application", SchemaVersion: "health-v1"}
+}
+func coachingPlanningProvenance(source storage.Source) planning.Provenance {
+	return planning.Provenance{SourceID: source.ID, SourceFamily: source.Family, SourceVersion: source.Version, LocatorKind: "source", LocatorValue: "update", GeneratedBy: "application", SchemaVersion: "planning-v1"}
 }
 func coachingGET(path string, session browserSession) *http.Request {
 	return authForm(http.MethodGet, path, url.Values{}, []*http.Cookie{session.session, session.csrf})

@@ -309,6 +309,79 @@ func TestWeekFormatsNumbersAndPercentagesWithoutCurrency(t *testing.T) {
 	}
 }
 
+func TestWeekObservationUsesRecordedBudgetAndLowerOverallSpending(t *testing.T) {
+	observation := reviewObservation([]Signal{
+		{Kind: "finance_budget", Summary: "Spending recorded in Groceries through 21 Jul 2026 is 14,500 against the 18,000 budget recorded as July groceries budget, leaving 3,500. This is 80.6% of the recorded budget.", EvidenceIDs: []string{"budget"}},
+		{Kind: "finance_month_to_date", Summary: "Spending recorded from 1 Jul 2026 through 21 Jul 2026 is 32,759, compared with 52,800 from 1 Jun 2026 through 21 Jun 2026.", EvidenceIDs: []string{"month"}},
+	})
+	if observation.Title != "Groceries need attention, not overall spending" || !strings.Contains(observation.Copy, "within 3,500") || !strings.Contains(observation.Copy, "adjust the recorded budget") {
+		t.Fatalf("observation = %#v", observation)
+	}
+}
+
+func TestWeekObservationDoesNotCallLowBudgetUseAWarning(t *testing.T) {
+	observation := reviewObservation([]Signal{{Kind: "finance_budget", Summary: "Spending recorded in Groceries through 21 Jul 2026 is 4,000 against the 18,000 budget recorded as July groceries budget, leaving 14,000. This is 22.2% of the recorded budget."}})
+	if observation.Title != "" || observation.Copy != "" {
+		t.Fatalf("low budget use became a warning: %#v", observation)
+	}
+}
+
+func TestWeekPrioritiesExcludeClosedChanges(t *testing.T) {
+	completed := ReviewEvent{Fact: Fact{Family: "planning", Status: "completed"}, Title: "Completed plan", Copy: "Marked completed this week.", When: "2026-07-20"}
+	upcoming := ReviewEvent{Fact: Fact{Family: "planning", Status: "planned"}, Title: "Review travel documents", Copy: "Preparation is due soon.", When: "2026-07-25"}
+	priorities := reviewPriorities(ReviewScope{Changes: []ReviewEvent{completed}, Upcoming: []ReviewEvent{upcoming}})
+	if len(priorities) != 1 || priorities[0].Title != upcoming.Title {
+		t.Fatalf("closed work displaced an upcoming priority: %#v", priorities)
+	}
+}
+
+func TestWeekPrioritiesKeepUpdatedOverdueWork(t *testing.T) {
+	overdue := ReviewEvent{Fact: Fact{Family: "planning", Status: "planned"}, Title: "Renew a document", Copy: "Updated this week.", When: "2026-07-20", Overdue: true}
+	priorities := reviewPriorities(ReviewScope{Changes: []ReviewEvent{overdue}})
+	if len(priorities) != 1 || priorities[0].Title != overdue.Title {
+		t.Fatalf("updated overdue work vanished: %#v", priorities)
+	}
+	status := reviewStatus(ReviewScope{Context: Context{Scope: string(policy.Shared), ReviewFacts: []Fact{{Family: "planning"}}}, Changes: []ReviewEvent{overdue}})
+	if status.Label != "Needs attention" {
+		t.Fatalf("updated overdue status = %#v", status)
+	}
+}
+
+func TestWeekStatusDoesNotClaimEmptyHouseholdIsOnTrack(t *testing.T) {
+	status := reviewStatus(ReviewScope{Context: Context{Scope: string(policy.Shared)}})
+	if status.Label != "No shared records yet" {
+		t.Fatalf("empty status = %#v", status)
+	}
+}
+
+func TestWeekDoesNotGroupAmbiguousRenewals(t *testing.T) {
+	planning := ReviewEvent{Fact: Fact{Family: "planning", Visibility: policy.Shared}, Title: "Insurance renewal review", When: "2026-07-27"}
+	first := ReviewEvent{Fact: Fact{Family: "finance", Kind: "obligation", Visibility: policy.Shared}, Title: "Insurance renewal", When: "2026-07-26"}
+	second := ReviewEvent{Fact: Fact{Family: "finance", Kind: "obligation", Visibility: policy.Shared}, Title: "Insurance renewal", When: "2026-07-28"}
+	grouped := groupReviewUpcoming([]ReviewEvent{planning, first, second})
+	if len(grouped) != 3 {
+		t.Fatalf("ambiguous renewals were grouped: %#v", grouped)
+	}
+}
+
+func TestWeekGroupingIsIndependentOfPlanningOrder(t *testing.T) {
+	first := ReviewEvent{Fact: Fact{Family: "planning", Visibility: policy.Shared}, Title: "Insurance renewal review", When: "2026-07-25"}
+	closest := ReviewEvent{Fact: Fact{Family: "planning", Visibility: policy.Shared}, Title: "Insurance renewal review", When: "2026-07-27"}
+	obligation := ReviewEvent{Fact: Fact{Family: "finance", Kind: "obligation", Visibility: policy.Shared}, Title: "Insurance renewal", When: "2026-07-28"}
+	for _, events := range [][]ReviewEvent{{first, closest, obligation}, {closest, first, obligation}} {
+		grouped := groupReviewUpcoming(events)
+		found := false
+		for _, event := range grouped {
+			if event.Domain == "Planning + finance" {
+				found = event.When == closest.When
+			}
+		}
+		if !found {
+			t.Fatalf("closest planning record was not grouped: %#v", grouped)
+		}
+	}
+}
+
 func TestWeekHealthComparisonNamesTheMeasurement(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
@@ -323,15 +396,76 @@ func TestWeekHealthComparisonNamesTheMeasurement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	foundSignal := false
 	for _, signal := range review.Shared.Context.Signals {
 		if signal.Kind == "health_series" {
 			if !strings.Contains(signal.Summary, "Glucose for Owner") || !strings.Contains(signal.Summary, "mg/dL") {
 				t.Fatalf("health signal = %#v", signal)
 			}
+			foundSignal = true
+		}
+	}
+	if !foundSignal {
+		t.Fatal("missing named health comparison")
+	}
+	for _, insight := range review.Shared.Insights {
+		if insight.Title == "Glucose" {
 			return
 		}
 	}
-	t.Fatal("missing named health comparison")
+	t.Fatalf("review insight did not name the measurement: %#v", review.Shared.Insights)
+}
+
+func TestWeekDoesNotTreatSpendingOrHealthObservationsAsOverdue(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	asOf := time.Now().UTC()
+	date := asOf.AddDate(0, 0, -1).Format("2006-01-02")
+	spendingSource := f.source(t, f.owner, policy.Shared, "recent spending")
+	if _, err := f.finance.Create(ctx, f.owner, finance.Draft{Kind: finance.Spending, Visibility: policy.Shared, Label: "Groceries", Category: "Food", Date: date, AmountText: "25", Provenance: financeProvenance(spendingSource)}); err != nil {
+		t.Fatal(err)
+	}
+	healthSource := f.source(t, f.owner, policy.Shared, "recent glucose")
+	if _, err := f.health.CreateObservation(ctx, f.owner, health.ObservationDraft{Visibility: policy.Shared, Subject: "Owner", Analyte: "Glucose", ObservedOn: date, Value: "5", Unit: "mg/dL", Provenance: healthProvenance(healthSource)}); err != nil {
+		t.Fatal(err)
+	}
+	review, err := f.service.Week(ctx, f.owner, asOf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range append(append([]ReviewEvent{}, review.Shared.Changes...), review.Shared.Upcoming...) {
+		if event.Title == "Groceries" || event.Title == "Glucose" || strings.Contains(event.Copy, "Past its recorded date") {
+			t.Fatalf("ordinary record appeared as overdue work: %#v", event)
+		}
+	}
+}
+
+func TestWeekGroupsCompatiblePlanningAndFinanceRenewal(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	asOf := time.Now().UTC()
+	date := func(days int) string { return asOf.AddDate(0, 0, days).Format("2006-01-02") }
+	planningSource := f.source(t, f.owner, policy.Shared, "insurance review")
+	if _, err := f.planning.CreateEvent(ctx, f.owner, planning.EventDraft{Visibility: policy.Shared, Title: "Insurance renewal review", AllDay: true, StartsOn: date(6), Status: "planned", Provenance: planningProvenance(planningSource)}); err != nil {
+		t.Fatal(err)
+	}
+	financeSource := f.source(t, f.owner, policy.Shared, "insurance payment")
+	if _, err := f.finance.Create(ctx, f.owner, finance.Draft{Kind: finance.Obligation, Visibility: policy.Shared, Label: "Insurance renewal", Category: "Insurance", Date: date(7), AmountText: "5000", Status: "pending", Provenance: financeProvenance(financeSource)}); err != nil {
+		t.Fatal(err)
+	}
+	review, err := f.service.Week(ctx, f.owner, asOf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var grouped []ReviewEvent
+	for _, event := range review.Shared.Upcoming {
+		if event.Title == "Insurance renewal" {
+			grouped = append(grouped, event)
+		}
+	}
+	if len(grouped) != 1 || len(grouped[0].EvidenceIDs) != 2 || !strings.Contains(grouped[0].Copy, "Payment due") {
+		t.Fatalf("renewal was not grouped conservatively: %#v", review.Shared.Upcoming)
+	}
 }
 
 func TestSignalsUseVisibleTypedRecordsAndTrustOnlyFullyCitedNumbers(t *testing.T) {
