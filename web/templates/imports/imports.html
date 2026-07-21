@@ -16,7 +16,7 @@
     <a class="skip-link" href="#main-content">Skip to main content</a>
     {{template "app-shell" .}}
     <main id="main-content" tabindex="-1" class="imports-main">
-      <section class="imports-heading"><div class="page-shell imports-heading-row"><div><p class="eyebrow">Bring in your files</p><h1>Import</h1><p class="introduction-copy">Start with an existing spreadsheet or report. Mithra reads it, organises the details, and waits for your approval.</p></div><p class="imports-privacy-note"><strong>Your file stays encrypted.</strong> Mithra sends extracted text to OpenAI only when it needs help organising it.</p></div></section>
+      <section class="imports-heading"><div class="page-shell imports-heading-row"><div><p class="eyebrow">Bring in your files</p><h1>Import</h1><p class="introduction-copy">Start with an existing spreadsheet or report. Mithra reads it, organises the details, and waits for your approval.</p></div><p class="imports-privacy-note"><strong>Your file stays encrypted.</strong> Mithra sends extracted text to your chosen model provider only when it needs help organising it.</p></div></section>
       <div class="page-shell imports-content">
         {{if .Status}}<p class="status-message" role="status" aria-live="polite">{{.Status}}</p>{{end}}
         {{if .Error}}<div class="finance-error" role="alert" data-app-error{{if .ErrorCode}} data-error-code="{{.ErrorCode}}" data-error-reference="{{.ErrorReference}}"{{end}}><p>{{.Error}}</p></div>{{end}}
@@ -49,7 +49,7 @@
             <label for="import-visibility">Who can see these records?<select id="import-visibility" name="visibility"><option value="personal">Only you</option><option value="shared">Shared with your partner</option></select></label>
             <p data-import-status role="status" aria-live="polite">Choose one file to continue.</p>
             <button type="submit"{{if not .ProviderConfigured}} disabled aria-describedby="imports-provider-note"{{end}}>Review file</button>
-            {{if not .ProviderConfigured}}<p id="imports-provider-note"><a href="/settings">Connect OpenAI in Settings</a> to organise imported information.</p>{{end}}
+            {{if not .ProviderConfigured}}<p id="imports-provider-note"><a href="/settings">Connect a model provider in Settings</a> to organise imported information.</p>{{end}}
           </form>
         </section>
         {{end}}

@@ -103,7 +103,7 @@ func (a *App) refreshCoaching(w http.ResponseWriter, r *http.Request, mode strin
 	}
 	configured, _ := a.providerSettings.Configured(r.Context(), scope)
 	if !configured {
-		a.renderCoachingMode(r, w, scope, csrf, mode, "Connect OpenAI in Settings before asking Mithra for a fresh view.")
+		a.renderCoachingMode(r, w, scope, csrf, mode, "Connect a model provider in Settings before asking Mithra for a fresh view.")
 		return
 	}
 	updated, failed := 0, 0
@@ -117,10 +117,10 @@ func (a *App) refreshCoaching(w http.ResponseWriter, r *http.Request, mode strin
 			continue
 		}
 		callContext, cancel := context.WithTimeout(r.Context(), 12*time.Second)
-		output, err := a.analyzeCoaching(callContext, scope, mode, input)
+		output, model, err := a.analyzeCoaching(callContext, scope, mode, input)
 		cancel()
 		if err == nil {
-			err = a.coaching.Publish(r.Context(), scope, mode, visibility, input, output, providers.ResponsesModel)
+			err = a.coaching.Publish(r.Context(), scope, mode, visibility, input, output, model)
 		}
 		if err != nil {
 			failed++
@@ -181,9 +181,10 @@ func (a *App) renderBrief(r *http.Request, w http.ResponseWriter, scope policy.A
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
-	configured, _ := a.providerSettings.Configured(r.Context(), scope)
+	providerConfig, providerErr := a.providerSettings.ProviderDetails(r.Context(), scope)
+	configured := providerErr == nil
 	evidence := evidenceMap(overview.SharedContext, overview.PersonalContext)
-	view := BriefView{Navigation: navigationForPath("/"), CSRF: csrf, Status: status, HasRecords: overview.HasRecords, HasShared: overview.Shared.Lead.Title != "", CanRefresh: configured && overview.HasRecords && csrf != "", AIConfigured: configured, Owner: scope.Role == "owner", Stale: overview.SharedCache.Stale, PersonalStale: overview.PersonalCache.Stale, Lead: itemView(overview.Shared.Lead, evidence), Dates: itemViews(overview.Shared.Dates, evidence), Priorities: itemViews(overview.Shared.Priorities, evidence), OnlyYou: itemViews(privateItems(overview.Personal), evidence), Capture: CaptureView{CSRF: csrf, ProviderConfigured: configured}}
+	view := BriefView{Navigation: navigationForPath("/"), CSRF: csrf, Status: status, HasRecords: overview.HasRecords, HasShared: overview.Shared.Lead.Title != "", CanRefresh: configured && overview.HasRecords && csrf != "", AIConfigured: configured, Owner: scope.Role == "owner", Stale: overview.SharedCache.Stale, PersonalStale: overview.PersonalCache.Stale, Lead: itemView(overview.Shared.Lead, evidence), Dates: itemViews(overview.Shared.Dates, evidence), Priorities: itemViews(overview.Shared.Priorities, evidence), OnlyYou: itemViews(privateItems(overview.Personal), evidence), Capture: CaptureView{CSRF: csrf, ProviderConfigured: configured, VoiceSupported: configured && providerConfig.ProviderID == providers.ProviderOpenAI}}
 	view.Freshness = freshness(overview.SharedCache, "Up to date")
 	if view.Status == "" && view.Stale {
 		view.Status = "A newer update is available. Dates and sources are still up to date."

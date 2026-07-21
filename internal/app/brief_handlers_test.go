@@ -115,7 +115,7 @@ func TestBriefOnboardingUsesProviderStateAndHouseholdRole(t *testing.T) {
 	owner := ownerScope(t, application, ownerSession)
 
 	ownerBrief := serve(application, coachingGET("/", ownerSession))
-	if ownerBrief.Code != http.StatusOK || !strings.Contains(ownerBrief.Body.String(), "Connect OpenAI to begin") || !strings.Contains(ownerBrief.Body.String(), `href="/settings#openai-title"`) {
+	if ownerBrief.Code != http.StatusOK || !strings.Contains(ownerBrief.Body.String(), "Connect a model provider to begin") || !strings.Contains(ownerBrief.Body.String(), `href="/settings#provider-title"`) {
 		t.Fatalf("owner onboarding = %d %q", ownerBrief.Code, ownerBrief.Body.String())
 	}
 
@@ -125,7 +125,7 @@ func TestBriefOnboardingUsesProviderStateAndHouseholdRole(t *testing.T) {
 	}
 	partnerSession := activateInvitation(t, application, "partner secure password", bootstrapInvitation(t, application, invite.Token))
 	partnerBrief := serve(application, coachingGET("/", partnerSession))
-	if partnerBrief.Code != http.StatusOK || !strings.Contains(partnerBrief.Body.String(), "Ask your household owner to connect OpenAI") || strings.Contains(partnerBrief.Body.String(), `href="/settings#openai-title"`) {
+	if partnerBrief.Code != http.StatusOK || !strings.Contains(partnerBrief.Body.String(), "Ask your household owner to connect one") || strings.Contains(partnerBrief.Body.String(), `href="/settings#provider-title"`) {
 		t.Fatalf("partner onboarding = %d %q", partnerBrief.Code, partnerBrief.Body.String())
 	}
 

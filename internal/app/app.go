@@ -52,7 +52,7 @@ type Config struct {
 	TrustedProxy    bool
 	Mailer          providers.Mailer
 	MasterKey       []byte
-	OpenAIClient    *http.Client // fixed-endpoint transport seam for tests.
+	OpenAIClient    *http.Client // Legacy name for the model-provider transport test seam.
 	SourceRoot      string
 	ImportPDF       imports.PDFParser // isolated parser seam used by tests and deployment.
 	Auth            *auth.Service     // test seam; production constructs the standard service.

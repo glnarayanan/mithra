@@ -113,3 +113,42 @@ test("page errors log only safe diagnostic fields", () => {
   app.reportPageErrors({ querySelectorAll: () => [element] }, { error: (...args) => calls.push(args) });
   assert.deepEqual(calls, [["Mithra request failed", { code: "import_ai_rate_limited", reference: "request-123" }]]);
 });
+
+test("provider settings fill safe defaults and require a new provider key", () => {
+  let onChange;
+  const option = (values) => ({ getAttribute: (name) => values[name] || "" });
+  const options = [
+    option({ "data-default-model": "gpt-test", "data-base-url": "https://api.openai.com/v1", "data-key-optional": "false" }),
+    option({ "data-default-model": "", "data-base-url": "https://api.anthropic.com", "data-key-optional": "false" }),
+    option({ "data-default-model": "", "data-base-url": "", "data-key-optional": "true" }),
+  ];
+  const form = { getAttribute: () => "openai" };
+  const select = { value: "openai", selectedIndex: 0, options, addEventListener: (_name, handler) => { onChange = handler; } };
+  const model = { value: "gpt-test" };
+  const baseURL = { value: "https://api.openai.com/v1", readOnly: false };
+  const apiKey = { required: false };
+  const elements = {
+    "[data-provider-settings]": form,
+    "[data-provider-select]": select,
+    "[data-provider-model]": model,
+    "[data-provider-base-url]": baseURL,
+    "[data-provider-key]": apiKey,
+  };
+
+  app.installProviderSettings({ querySelector: (selector) => elements[selector] || null });
+  assert.equal(baseURL.readOnly, true);
+  assert.equal(apiKey.required, false);
+
+  select.value = "anthropic";
+  select.selectedIndex = 1;
+  onChange();
+  assert.equal(baseURL.value, "https://api.anthropic.com");
+  assert.equal(baseURL.readOnly, true);
+  assert.equal(apiKey.required, true);
+
+  select.value = "custom";
+  select.selectedIndex = 2;
+  onChange();
+  assert.equal(baseURL.readOnly, false);
+  assert.equal(apiKey.required, false);
+});

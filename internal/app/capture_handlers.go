@@ -27,6 +27,7 @@ type CaptureView struct {
 	Status             string
 	Error              string
 	ProviderConfigured bool
+	VoiceSupported     bool
 	Pending            *CaptureItemView
 	Recent             []CaptureItemView
 }
@@ -202,7 +203,7 @@ func (a *App) captureVoice(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "voice recording could not be started")
 		return
 	}
-	client, err := a.openAIFor(r.Context(), scope)
+	client, err := a.modelFor(r.Context(), scope)
 	if err != nil {
 		_ = a.captureRecords.FailAudio(r.Context(), scope, receipt.ID, true)
 		_ = a.captureRecords.Cleanup(r.Context(), time.Now())
@@ -211,6 +212,12 @@ func (a *App) captureVoice(w http.ResponseWriter, r *http.Request) {
 	}
 	transcript, err := client.Transcribe(r.Context(), format, audio)
 	if err != nil {
+		if errors.Is(err, providers.ErrUnsupportedOperation) {
+			_ = a.captureRecords.FailAudio(r.Context(), scope, receipt.ID, true)
+			_ = a.captureRecords.Cleanup(r.Context(), time.Now())
+			writeError(w, http.StatusUnprocessableEntity, "Voice updates need OpenAI. Choose OpenAI in Settings before recording.")
+			return
+		}
 		terminal := errors.Is(err, providers.ErrInvalidCredential) || errors.Is(err, providers.ErrInvalidResponse) || errors.Is(err, providers.ErrRefusal)
 		_ = a.captureRecords.FailAudio(r.Context(), scope, receipt.ID, terminal)
 		if terminal {
@@ -248,13 +255,13 @@ func validCaptureAudio(format string, audio []byte) bool {
 	}
 }
 
-func (a *App) openAIFor(ctx context.Context, scope policy.ActorScope) (*providers.OpenAI, error) {
-	key, err := a.providerSettings.OpenAIKey(ctx, scope)
+func (a *App) modelFor(ctx context.Context, scope policy.ActorScope) (*providers.ModelClient, error) {
+	config, err := a.providerSettings.ProviderConfig(ctx, scope)
 	if err != nil {
 		return nil, err
 	}
-	client, err := providers.NewOpenAI(providers.OpenAIConfig{APIKey: key, Client: a.openAIClient})
-	key = ""
+	client, err := providers.NewModelClient(providers.ModelClientConfig{ModelConfig: providers.ModelConfig{ProviderID: config.ProviderID, Model: config.Model, BaseURL: config.BaseURL, APIKey: config.APIKey}, Client: a.openAIClient})
+	config.APIKey = ""
 	return client, err
 }
 
@@ -265,11 +272,9 @@ func (a *App) renderCapture(r *http.Request, w http.ResponseWriter, scope policy
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
-	configured, err := a.providerSettings.Configured(r.Context(), scope)
-	if err != nil {
-		configured = false
-	}
-	view := CaptureView{Navigation: navigationForPath("/capture"), CSRF: csrf, Status: status, Error: problem, ProviderConfigured: configured}
+	config, providerErr := a.providerSettings.ProviderDetails(r.Context(), scope)
+	configured := providerErr == nil
+	view := CaptureView{Navigation: navigationForPath("/capture"), CSRF: csrf, Status: status, Error: problem, ProviderConfigured: configured, VoiceSupported: configured && config.ProviderID == providers.ProviderOpenAI}
 	for _, receipt := range receipts {
 		item := captureItemView(receipt, time.Now())
 		if view.Pending == nil && (receipt.State == "clarification" || receipt.State == "awaiting_confirmation") {

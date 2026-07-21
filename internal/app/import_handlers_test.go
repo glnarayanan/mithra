@@ -238,11 +238,12 @@ func TestImportAnalysisFailureMapsEveryProviderOutcome(t *testing.T) {
 	}{
 		{providers.ErrInvalidCredential, "import_ai_key_rejected", "rejected the saved API key"},
 		{providers.ErrRateLimited, "import_ai_rate_limited", "rate-limiting requests"},
-		{providers.ErrProviderUnavailable, "import_ai_unavailable", "could not reach OpenAI"},
+		{providers.ErrProviderUnavailable, "import_ai_unavailable", "could not reach the model provider"},
 		{providers.ErrRefusal, "import_ai_refused", "did not process this file"},
 		{providers.ErrIncomplete, "import_ai_incomplete", "before the review was complete"},
 		{providers.ErrInvalidResponse, "import_ai_invalid_response", "could not validate safely"},
-		{secrets.ErrSettingsDenied, "import_ai_settings_unavailable", "saved OpenAI connection"},
+		{secrets.ErrSettingsDenied, "import_ai_settings_unavailable", "saved model provider connection"},
+		{providers.ErrUnsupportedOperation, "import_ai_openai_required", "needs OpenAI"},
 		{errImportEvidenceMismatch, "import_ai_evidence_mismatch", "row or page references"},
 		{errors.New("unexpected"), "import_ai_failed", "AI request failed"},
 	}

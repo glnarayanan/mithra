@@ -516,6 +516,30 @@
     });
   }
 
+  function installProviderSettings(root) {
+    var form = root.querySelector("[data-provider-settings]");
+    var select = root.querySelector("[data-provider-select]");
+    var model = root.querySelector("[data-provider-model]");
+    var baseURL = root.querySelector("[data-provider-base-url]");
+    var apiKey = root.querySelector("[data-provider-key]");
+    if (!form || !select || !model || !baseURL || !apiKey) return;
+    var savedProvider = form.getAttribute("data-saved-provider") || "";
+    function syncFields(replaceDefaults) {
+      var option = select.options[select.selectedIndex];
+      if (!option) return;
+      if (replaceDefaults) {
+        model.value = option.getAttribute("data-default-model") || "";
+        baseURL.value = option.getAttribute("data-base-url") || "";
+      }
+      baseURL.readOnly = select.value !== "custom";
+      apiKey.required = option.getAttribute("data-key-optional") !== "true" && select.value !== savedProvider;
+    }
+    select.addEventListener("change", function () {
+      syncFields(true);
+    });
+    syncFields(false);
+  }
+
   function install(root) {
     if (!root || typeof root.querySelector !== "function") {
       return;
@@ -530,6 +554,7 @@
     installQuickCapture(root);
     installShortcutHelp(root);
     installSourcePreview(root);
+    installProviderSettings(root);
     reportPageErrors(root, global && global.console);
     root.addEventListener("keydown", function (event) {
       var path = actionShortcutPath(event, root);
@@ -546,6 +571,7 @@
     install: install,
     isEditableControl: isEditableControl,
     navigationDestinations: navigationDestinations,
+    installProviderSettings: installProviderSettings,
     restoreFocus: restoreFocus,
     reportPageErrors: reportPageErrors,
     setStatus: setStatus,
