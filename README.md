@@ -12,7 +12,7 @@ money, books anything, or synchronizes another calendar.
 ## Start here
 
 - [User guide](documentation/user-guide.md) — Capture, Import, Shared and Only
-  you, Family Brief, Week in Review, and OpenAI boundaries.
+  you, Family Brief, Week in Review, and model-provider boundaries.
 - [Self-hosting](documentation/self-hosting.md) — verified release install and
   the complete operator lifecycle.
 - [Architecture](documentation/architecture.md), [security](documentation/security.md),

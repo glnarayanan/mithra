@@ -105,10 +105,11 @@ adult. That adult becomes the owner and sends the partner invitation in
 **Settings**. The invitee must already be in `--allowed-emails` and completes
 the normal password flow.
 
-Only the owner can connect OpenAI in **Settings**. It is optional: connect an
-OpenAI API key to enable Capture, Import mapping, and explicit coaching
-refreshes; deterministic records remain usable without it. See
-[the user guide](user-guide.md#openai-and-privacy).
+Only the owner can choose a model provider in **Settings**. It is optional:
+connect a provider key to enable Capture, Import mapping, and explicit coaching
+refreshes; deterministic records remain usable without it. Voice updates and
+visual-PDF reading need OpenAI. See
+[the user guide](user-guide.md#model-providers-and-privacy).
 
 ## Normal checks and backups
 
@@ -203,9 +204,9 @@ sudo mithra-installer restore \
 Restore authenticates and stages the archive before stopping Mithra, reconciles
 the deletion journal, applies the current allowlist, and swaps the generation
 only after health checks pass. It clears restored password hashes, sessions,
-reset and invitation tokens, OpenAI credentials, pending work, and cached
+reset and invitation tokens, model-provider credentials, pending work, and cached
 coaching. Each eligible adult must use **Set or reset your password** again;
-the owner reconnects OpenAI. On failure, the previous generation is restored.
+the owner reconnects the provider. On failure, the previous generation is restored.
 
 ## Shell completions and command reference
 

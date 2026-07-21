@@ -92,11 +92,16 @@ and startup reconciliation removes only recognizable Mithra orphans. Losing or
 changing the master key makes encrypted state unreadable, so recovery retains
 the original credential independently.
 
-Only the active owner can validate, replace, or remove the household OpenAI
-key. Validation occurs before replacement, the saved key is encrypted, and the
-UI never reads it back. Without a key, deterministic records remain available
-and provider-dependent actions queue no work. Responses requests go only to the
-fixed OpenAI HTTPS endpoint, use strict JSON schemas and `store: false`, and
-return generic bounded errors. Audio uses the fixed transcription endpoint.
+Only the active owner can validate, replace, or remove the household model
+provider. Validation occurs before replacement, the saved key is encrypted,
+and the UI never reads it back. A key is never reused when the owner switches
+providers. Without a provider, deterministic records remain available and
+provider-dependent actions queue no work. Named providers use fixed HTTPS
+origins. Custom HTTPS endpoints cannot resolve to private, loopback, link-local,
+or shared-address space; local HTTP is limited to fixed loopback presets.
+Requests reject redirects and bound every response. OpenAI Responses use strict
+JSON schemas and `store: false`; other text providers receive the same schema
+and Mithra validates the returned JSON before domain checks. Only OpenAI receives
+audio or an explicitly confirmed visual PDF.
 Jobs store identifiers rather than prompts and recheck membership, source
 state, and shared/personal revisions transactionally before publication.

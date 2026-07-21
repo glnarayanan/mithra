@@ -14,7 +14,7 @@ The consolidated final review found no unresolved P0-P2 security defects.
   household authorization;
 - source encryption, imports, document review, visual-PDF consent, deletion
   journal, backups, restore, and recovery ownership;
-- OpenAI and Plunk request boundaries, credential delivery, logs, jobs, and
+- model-provider and Plunk request boundaries, credential delivery, logs, jobs, and
   generated coaching;
 - runtime listeners, Unix-socket permissions, PDF-parser isolation, installer
   release verification, lifecycle operations, owned-path constraints, and
@@ -33,15 +33,15 @@ runtime/installer checks:
 
 - invitation-only, two-adult admission; scoped authorization; bounded Argon2id
   password work; short-lived hashed reset, invitation, session, and CSRF data;
-- encrypted source, OpenAI-setting, and backup material derived from a retained
+- encrypted source, model-provider setting, and backup material derived from a retained
   master key; no plaintext credential values in normal command arguments,
   logs, or manifests, and no master or Plunk credential in backups;
 - source-linked, review-gated imports; bounded local parsing; isolated
   no-network PDF parsing; explicit one-time visual-PDF transfer consent;
 - authenticated deletion intent and recovery replay so deletion cannot be
   silently undone by a crash or older generation;
-- optional OpenAI requests with minimized action-specific input, `store: false`,
-  strict schemas, separate shared/private contexts, and no autonomous changes;
+- optional model-provider requests with minimized action-specific input,
+  bounded JSON, separate shared/private contexts, and no autonomous changes;
 - signed release manifest, pinned publisher-key verification, digest checks
   before execution, atomic lifecycle activation, and exact Mithra-owned path
   boundaries that preserve unrelated services;
@@ -53,9 +53,10 @@ runtime/installer checks:
 
 No application can eliminate the risks of a compromised host, stolen recovery
 key, compromised email inbox, weak operator access controls, unavailable third
-party services, or an operator's DNS/TLS/proxy mistake. OpenAI use necessarily
-sends the narrowly scoped material for a user-requested action to OpenAI;
-households that do not want that transfer should leave it disconnected.
+party services, or an operator's DNS/TLS/proxy mistake. Provider use sends the
+narrowly scoped material for a user-requested action to the selected service;
+households that do not want that transfer should leave it disconnected. Custom
+provider operators must also trust the endpoint they enter.
 
 Operators must keep the server patched, protect SSH and privileged access,
 operate DNS/TLS/firewall/proxy infrastructure, retain the master key and tested
@@ -69,9 +70,9 @@ Regularly copy encrypted archives and the retained master key to separate
 protected storage, then run `mithra-installer verify-backup --archive PATH`.
 Practice restoration in a disposable environment. Restore authenticates and
 stages data before activation, preserves deletion intent, and intentionally
-clears access tokens, password hashes, OpenAI credentials, pending work, and
+clears access tokens, password hashes, model-provider credentials, pending work, and
 cached coaching; allowlisted adults re-bootstrap passwords and the owner
-reconnects OpenAI afterward.
+reconnects the provider afterward.
 
 `uninstall` preserves data and recovery material. `purge --confirm-purge` is
 irreversible and removes Mithra's retained data, backups, and master key. See
