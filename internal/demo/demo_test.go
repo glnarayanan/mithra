@@ -25,8 +25,8 @@ func TestPublishedSampleFilesRemainValid(t *testing.T) {
 		t.Fatalf("planning sample drifted err=%v", err)
 	}
 	healthRaw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "demo", "health-report.pdf"))
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || string(healthRaw) != string(healthPDF()) {
+		t.Fatalf("health sample drifted err=%v", err)
 	}
 	document, err := imports.New(nil).Extract(context.Background(), imports.Input{Name: "health-report.pdf", ContentType: "application/pdf", Bytes: healthRaw})
 	if err != nil || len(document.Fragments) != 1 {
