@@ -13,6 +13,6 @@ test("refresh status uses text content", () => {
   const form = { addEventListener: (_name, callback) => { submit = callback; } };
   brief.install({ querySelector: (selector) => selector === "[data-coaching-refresh]" ? form : status });
   submit();
-  assert.match(status.textContent, /Rechecking/);
+  assert.match(status.textContent, /records you can see/);
   assert.equal(status.dataset.tone, "working");
 });

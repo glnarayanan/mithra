@@ -19,34 +19,38 @@ submission if it reveals host paths.
 
 ### 1. Finance import and exact changes
 
-From **Bring in data**, upload a new CSV or XLSX containing income, spending,
+From **Import**, upload a new CSV or XLSX containing income, spending,
 an asset, and a pending obligation. Show the local extraction review, correct
-one number if desired, import, then open **Money**. Point out number-only totals,
+one number if desired, import, then open **Finance**. Point out number-only totals,
 the category change, incomplete-state handling, the upcoming obligation, and
-the source link. No currency selection or conversion is claimed in V1.
+the source link. The seeded records already show April through July category
+changes. No currency selection or conversion is claimed in V1.
 
 ### 2. Health trend and unit mismatch
 
 Upload a text-bearing health PDF. Review the mapped values, units, dates, and
-reference range, then open **Health**. Show that different units remain separate
-and the mismatch is explained. Enter the correct value and unit through the
-correction form. State clearly: Mithra summarizes reported facts and trends; it
-does not diagnose or provide medical advice.
+reference range, then open **Health**. Show the four monthly points for glucose,
+weight, and resting heart rate. Different units remain separate and the mismatch
+is explained. Enter the correct value and unit through the correction form.
+State clearly: Mithra summarizes reported facts and trends; it does not diagnose
+or provide medical advice.
 
 ### 3. Planning capture and calendar
 
-Use **Capture** to enter a short plan by text (or demonstrate microphone denial
-first, then voice). Confirm the proposed event, open **Plans**, and switch among
-month, week, and agenda. Open the event's Google Calendar draft and download its
-ICS file. Mithra neither uses calendar OAuth nor performs background sync.
+Use quick capture to enter a short plan by text (or demonstrate microphone
+denial first, then voice). Confirm the proposed event, open **Planning**, and
+switch among month, week, and agenda. Open the event's Google Calendar draft and
+download its ICS file. Mithra neither uses calendar OAuth nor performs background
+sync.
 
 ### 4. Shared and private coaching
 
 With both accounts in separate profiles, compare the shared **Family Brief**.
 Then open **Week in Review** for each adult and show that the shared facts agree
 while each **Only you** overlay contains only that adult's personal records.
-Open an evidence link. Refresh coaching once to demonstrate calm AI wording;
-the deterministic facts remain available if OpenAI is unavailable.
+Open an evidence link. Choose **Regenerate AI insights** once to send the records
+visible to that adult to the configured model provider. The deterministic facts
+remain available if the provider is unavailable.
 
 ## Under-three-minute narrated video
 

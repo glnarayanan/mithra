@@ -7,7 +7,7 @@
     var status = root.querySelector("[data-coaching-status]");
     if (!form || !status || typeof form.addEventListener !== "function") return;
     form.addEventListener("submit", function () {
-      status.textContent = "Rechecking the household facts before asking Mithra for a fresh view…";
+      status.textContent = "Sending the household records you can see to your model provider…";
       status.dataset.tone = "working";
     });
   }
