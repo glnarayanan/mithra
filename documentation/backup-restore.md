@@ -40,12 +40,12 @@ invalid journal fail before live data changes. Deletion intents are replayed
 against the staged database and ciphertext directory, so an archive older than
 a deletion cannot resurrect that source or its cascade-derived records.
 
-Before activation, restore clears all password hashes, OpenAI credentials,
+Before activation, restore clears all password hashes, model-provider credentials,
 browser sessions, reset and invitation tokens, throttles, jobs and leases,
 pending document work, coaching caches, nudges, and pending email work. The
 current allowlist is reconciled and eligible accounts remain pending until they
 use **Set or reset your password**. The household owner must re-enter the
-OpenAI key in Settings.
+model-provider connection in Settings.
 
 Only after these checks does the installer atomically swap the staged data
 generation into `/var/lib/mithra`. A failed application or proxy health check

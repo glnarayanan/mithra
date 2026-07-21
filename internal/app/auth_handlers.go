@@ -15,6 +15,7 @@ import (
 	"github.com/glnarayanan/mithra/internal/household"
 	"github.com/glnarayanan/mithra/internal/policy"
 	"github.com/glnarayanan/mithra/internal/providers"
+	"github.com/glnarayanan/mithra/internal/secrets"
 )
 
 const (
@@ -37,14 +38,12 @@ type AuthView struct {
 }
 
 type SettingsView struct {
-	Navigation       []NavigationItem
-	Members          []household.Member
-	Owner            bool
-	OpenAIConfigured bool
-	Timezone         string
-	CSRF             string
-	Status           string
-	Error            string
+	Navigation                                               []NavigationItem
+	Members                                                  []household.Member
+	Owner, ProviderConfigured                                bool
+	ProviderID, ProviderName, ProviderModel, ProviderBaseURL string
+	Providers                                                []providers.ModelProvider
+	Timezone, CSRF, Status, Error                            string
 }
 
 func canonicalOrigin(raw string, secure bool) (*url.URL, error) {
@@ -269,10 +268,10 @@ func (a *App) settings(w http.ResponseWriter, r *http.Request) {
 		switch r.PostForm.Get("action") {
 		case "invite":
 			a.invitePartner(w, r, scope, csrf)
-		case "save_openai":
-			a.saveOpenAISetting(w, r, scope, csrf)
-		case "remove_openai":
-			a.removeOpenAISetting(w, r, scope, csrf)
+		case "save_provider", "save_openai":
+			a.saveProviderSetting(w, r, scope, csrf)
+		case "remove_provider", "remove_openai":
+			a.removeProviderSetting(w, r, scope, csrf)
 		case "save_timezone":
 			a.saveHouseholdTimezone(w, r, scope, csrf)
 		default:
@@ -487,13 +486,33 @@ func (a *App) renderSettings(ctx context.Context, w http.ResponseWriter, scope p
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
+	var config secrets.ProviderDetails
+	if configured {
+		config, err = a.providerSettings.ProviderDetails(ctx, scope)
+		if err != nil {
+			logRequestError(a.logger, ctx, "settings_provider_state_failed")
+			writeError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+	}
 	timezone, err := a.planningRecords.GetTimezone(ctx, scope)
 	if err != nil {
 		logRequestError(a.logger, ctx, "settings_timezone_state_failed")
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
-	a.renderTemplate(ctx, w, "settings.html", SettingsView{Navigation: navigationForPath("/settings"), Members: members, Owner: scope.Role == "owner", OpenAIConfigured: configured, Timezone: timezone, CSRF: csrf, Status: status, Error: problem})
+	if !configured {
+		provider, _ := providers.ModelProviderByID(providers.ProviderOpenAI)
+		config.ProviderID, config.Model, config.BaseURL = provider.ID, provider.DefaultModel, provider.BaseURL
+	}
+	a.renderTemplate(ctx, w, "settings.html", SettingsView{Navigation: navigationForPath("/settings"), Members: members, Owner: scope.Role == "owner", ProviderConfigured: configured, ProviderID: config.ProviderID, ProviderName: providerName(config.ProviderID), ProviderModel: config.Model, ProviderBaseURL: config.BaseURL, Providers: providers.ModelProviders(), Timezone: timezone, CSRF: csrf, Status: status, Error: problem})
+}
+
+func providerName(id string) string {
+	if provider, ok := providers.ModelProviderByID(id); ok {
+		return provider.Label
+	}
+	return ""
 }
 
 func (a *App) renderTemplate(ctx context.Context, w http.ResponseWriter, name string, view any) {

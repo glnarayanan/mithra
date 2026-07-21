@@ -73,10 +73,11 @@ reject index orphans.
 `internal/jobs` stores only identifiers and revision snapshots. Lease tokens
 are hashed, lease generations fence stale workers, and publication happens in
 the same transaction as active membership, live source, and shared/personal
-revision checks. `internal/providers` uses fixed OpenAI HTTPS endpoints, strict
-Responses schemas with `store: false`, bounded responses, and the dedicated
-audio transcription endpoint. The composition root owns these concrete
-services; there is no provider abstraction or browser-visible credential.
+revision checks. `internal/providers` has one fixed provider registry and
+validates provider addresses, request size, redirects, responses, and JSON
+objects. It supports OpenAI Responses, OpenAI-compatible chat, Gemini, and
+Anthropic text requests. Only OpenAI receives audio or an explicitly confirmed
+visual PDF. The browser never receives a saved key.
 
 ## Finance domain
 
@@ -93,7 +94,7 @@ Finance reads recheck active membership and apply the same shared/personal
 scope used by encrypted source downloads. Corrections use optimistic versions,
 create a user-owned superseding record, remove the old search entry, and bump
 only the applicable shared or personal revision. The server-rendered finance
-lens remains useful without OpenAI and exposes exact totals, factual changes,
+lens remains useful without a model provider and exposes exact totals, factual changes,
 upcoming obligations, incomplete explanations, and authorized provenance.
 
 ## Health domain
@@ -131,9 +132,9 @@ token, calendar credential, subscription, or background synchronization state.
 ## Conversational capture
 
 `internal/capture` accepts one strict finance, health, or planning proposal and
-commits it only through the corresponding typed domain service. The OpenAI
-Responses request receives quoted user text, no household identifiers, and a
-closed schema with `store: false`. A clear text update is confirmed immediately
+commits it only through the corresponding typed domain service. A model request
+receives quoted user text, no household identifiers, and a closed schema.
+OpenAI Responses also set `store: false`. A clear text update is confirmed immediately
 with a ten-minute revision-fenced Undo; a missing material owner, date, unit, or
 status creates one focused clarification and no derived record. User answers
 can fill only the field Mithra requested.
@@ -172,7 +173,7 @@ status region plus an honest empty state. The tiny JavaScript enhancement writes
 updates with `textContent`, never HTML, so untrusted future import/model text
 remains text.
 
-Authentication, encrypted source infrastructure, durable jobs, the OpenAI
+Authentication, encrypted source infrastructure, durable jobs, the model-provider
 boundary, typed finance, typed health, typed planning, conversational capture,
 and document imports now build on this runtime. Coaching remains in its
 dedicated unit.
@@ -196,7 +197,7 @@ generation; restore verifies and sanitizes that generation before atomic swap.
 `internal/coaching` owns actor-scoped evidence contexts, deterministic Family
 Brief and Week in Review fallbacks, separately keyed shared/private caches,
 generated-output validation, and the one-nudge lifecycle. Browser page loads
-perform SQLite reads only. OpenAI is invoked only by an explicit refresh, with
+perform SQLite reads only. The selected provider is invoked only by an explicit refresh, with
 shared and personal facts sent in separate calls and publication fenced by a
 fresh membership, revision, source, and evidence check. See
 [`coaching.md`](coaching.md) for the privacy and notification contract.

@@ -62,6 +62,7 @@ func TestOpenAIStructuredClassifiesFailuresWithoutReflectingBodies(t *testing.T)
 		{"incomplete", 200, `{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}}`, ErrIncomplete},
 		{"malformed", 200, `{`, ErrInvalidResponse},
 		{"invalid output", 200, `{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"not json"}]}]}`, ErrInvalidResponse},
+		{"ambiguous output", 200, `{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"{\"value\":1}"},{"type":"output_text","text":"{\"value\":2}"}]}]}`, ErrInvalidResponse},
 		{"unauthorized", 401, `{"error":{"message":"secret reflected body"}}`, ErrInvalidCredential},
 		{"rate limited", 429, `{"error":{"message":"secret reflected body"}}`, ErrRateLimited},
 		{"server", 500, `{"error":{"message":"secret reflected body"}}`, ErrProviderUnavailable},

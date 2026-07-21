@@ -80,21 +80,22 @@ look at dates, conflicts, inconsistencies, and up to three evidence-backed
 priorities. Their **Only you** sections are prepared separately. Neither view
 is a score, verdict, diagnosis, or relationship judgment.
 
-Opening a view does not call OpenAI. When available, an explicit refresh can
+Opening a view does not call a model provider. When available, an explicit refresh can
 improve wording from the records that are visible to that audience. Mithra
-keeps a record-based summary available when OpenAI is disconnected or cannot
+keeps a record-based summary available when the model provider is disconnected or cannot
 answer. See [coaching](coaching.md) for the evidence and notification boundary.
 
-## OpenAI and privacy
+## Model providers and privacy
 
-OpenAI is optional. The household owner can connect, replace, or disconnect an
-OpenAI key in **Settings**. The saved key is encrypted and never displayed.
+AI is optional. The household owner can choose a provider, model, and address
+in **Settings**, then connect, replace, or disconnect its key. The saved key is encrypted and never displayed.
 Without it, saved finance, health, and planning records still work. Capture,
 Import organisation, and AI refresh actions remain unavailable.
 
 For an action you request, Mithra sends only the material needed for that
-action, separates shared and private contexts, and requests `store: false`.
-OpenAI cannot sign in, see the saved key, change records, send invitations, or
+action and separates shared and private contexts. OpenAI requests set
+`store: false`; other services apply their own data rules.
+The model provider cannot sign in, see the saved key, change records, send invitations, or
 act without confirmation. Read [security](security.md) for the full identity,
 encryption, and provider contract.
 
@@ -102,6 +103,6 @@ encryption, and provider contract.
 
 Ask the operator to preserve the master key and a verified encrypted backup.
 Restoring a backup deliberately clears passwords, sessions, invitations,
-OpenAI credentials, pending work, and cached coaching before current allowlist
+model-provider credentials, pending work, and cached coaching before current allowlist
 members start again with **Set or reset your password**. The owner reconnects
-OpenAI afterward. See [backup and restore](backup-restore.md).
+the provider afterward. Voice updates and visual-PDF reading need OpenAI. See [backup and restore](backup-restore.md).

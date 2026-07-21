@@ -484,21 +484,23 @@ func importExtractionFailure(err error, fileName string) (string, string) {
 func importAnalysisFailure(err error) (string, string) {
 	switch {
 	case errors.Is(err, secrets.ErrSettingsDenied):
-		return "import_ai_settings_unavailable", "Mithra could not open the saved OpenAI connection. Reconnect OpenAI in Settings, then try again."
+		return "import_ai_settings_unavailable", "Mithra could not open the saved model provider connection. Reconnect it in Settings, then try again."
+	case errors.Is(err, providers.ErrUnsupportedOperation):
+		return "import_ai_openai_required", "This visual PDF needs OpenAI. Choose OpenAI in Settings, then try again."
 	case errors.Is(err, errImportEvidenceMismatch):
-		return "import_ai_evidence_mismatch", "OpenAI returned row or page references that did not match the extracted file, so Mithra rejected the review. Try again."
+		return "import_ai_evidence_mismatch", "The model returned row or page references that did not match the extracted file, so Mithra rejected the review. Try again."
 	case errors.Is(err, providers.ErrInvalidCredential):
-		return "import_ai_key_rejected", "OpenAI rejected the saved API key. Reconnect OpenAI in Settings, then try again."
+		return "import_ai_key_rejected", "The model provider rejected the saved API key. Reconnect it in Settings, then try again."
 	case errors.Is(err, providers.ErrRateLimited):
-		return "import_ai_rate_limited", "OpenAI is temporarily rate-limiting requests. Wait a minute, then try again."
+		return "import_ai_rate_limited", "The model provider is temporarily rate-limiting requests. Wait a minute, then try again."
 	case errors.Is(err, providers.ErrProviderUnavailable):
-		return "import_ai_unavailable", "Mithra could not reach OpenAI. Check the connection and try again."
+		return "import_ai_unavailable", "Mithra could not reach the model provider. Check the connection and try again."
 	case errors.Is(err, providers.ErrRefusal):
-		return "import_ai_refused", "OpenAI did not process this file. Try a different file or review its contents."
+		return "import_ai_refused", "The model provider did not process this file. Try a different file or review its contents."
 	case errors.Is(err, providers.ErrIncomplete):
-		return "import_ai_incomplete", "OpenAI stopped before the review was complete. Try again."
+		return "import_ai_incomplete", "The model provider stopped before the review was complete. Try again."
 	case errors.Is(err, providers.ErrInvalidResponse):
-		return "import_ai_invalid_response", "OpenAI returned a review Mithra could not validate safely. Try again."
+		return "import_ai_invalid_response", "The model provider returned a review Mithra could not validate safely. Try again."
 	default:
 		return "import_ai_failed", "Mithra could not organise this file because the AI request failed. Try again."
 	}

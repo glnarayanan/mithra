@@ -75,14 +75,9 @@ type captureAIPlanning struct {
 }
 
 func (a *App) analyzeCapture(ctx context.Context, scope policy.ActorScope, text string) (string, capture.Proposal, error) {
-	key, err := a.providerSettings.OpenAIKey(ctx, scope)
+	client, err := a.modelFor(ctx, scope)
 	if err != nil {
 		return "", capture.Proposal{}, errors.New("provider is not configured")
-	}
-	defer func() { key = "" }()
-	client, err := providers.NewOpenAI(providers.OpenAIConfig{APIKey: key, Client: a.openAIClient})
-	if err != nil {
-		return "", capture.Proposal{}, err
 	}
 	input, _ := json.Marshal(map[string]string{"user_update": text})
 	output, err := client.Structured(ctx, providers.StructuredRequest{Instructions: captureInstructions, Input: string(input), SchemaName: "mithra_capture_v1", Schema: captureSchema, MaxOutputTokens: 1400})

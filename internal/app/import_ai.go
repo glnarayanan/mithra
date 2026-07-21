@@ -27,7 +27,7 @@ var importSchema = json.RawMessage(`{
 }`)
 
 func (a *App) analyzeImport(ctx context.Context, scope policy.ActorScope, document imports.Document) (imports.ProposalSet, error) {
-	client, err := a.openAIFor(ctx, scope)
+	client, err := a.modelFor(ctx, scope)
 	if err != nil {
 		return imports.ProposalSet{}, err
 	}
@@ -131,7 +131,7 @@ func looksLikeDate(value string) bool {
 }
 
 func (a *App) analyzeVisualPDF(ctx context.Context, scope policy.ActorScope, pdf []byte) (imports.ProposalSet, error) {
-	client, err := a.openAIFor(ctx, scope)
+	client, err := a.modelFor(ctx, scope)
 	if err != nil {
 		return imports.ProposalSet{}, err
 	}

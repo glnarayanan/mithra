@@ -198,8 +198,8 @@ func TestBriefRendersAccessibleNavigationEmptyStateAndEscapesStatus(t *testing.T
 		`href="/planning"`,
 		`href="/assets/favicon.svg"`,
 		`aria-live="polite"`,
-		`Connect OpenAI to begin`,
-		`href="/settings#openai-title"`,
+		`Connect a model provider to begin`,
+		`href="/settings#provider-title"`,
 	} {
 		if !strings.Contains(body, required) {
 			t.Fatalf("shell is missing %q", required)

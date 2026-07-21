@@ -2,7 +2,7 @@
 
 Mithra's Family Brief and Week in Review are read-only coaching views. Page
 loads build deterministic, actor-scoped facts from active source-linked
-finance, health, and planning records; they never call OpenAI. An explicit
+finance, health, and planning records; they never call a model provider. An explicit
 refresh sends shared and personal contexts in separate requests and publishes
 wording only after membership, revisions, evidence, and source visibility are
 rechecked.
