@@ -156,6 +156,9 @@ func Reset(ctx context.Context, cfg Config) (receipt Receipt, err error) {
 	if err := verifyFixture(ctx, db, ownerActor, partnerActor, &receipt); err != nil {
 		return receipt, rollback(err)
 	}
+	if len(cfg.OwnerPassword) != 0 {
+		owner.status, partner.status = "active", "active"
+	}
 	if err := restoreAccessState(ctx, db, owner, partner); err != nil {
 		return receipt, rollback(err)
 	}
@@ -312,6 +315,13 @@ func setCredentials(ctx context.Context, db *sql.DB, owner, partner userState, o
 }
 
 func preflightIdentity(ctx context.Context, db *sql.DB, ownerEmail, partnerEmail string) error {
+	markedOwner, markedPartner, marked, err := markedDemoUsers(ctx, db)
+	if err != nil {
+		return err
+	}
+	if marked {
+		return preflightMarkedEmails(ctx, db, markedOwner, markedPartner, ownerEmail, partnerEmail)
+	}
 	owner, ownerFound, err := existingUser(ctx, db, ownerEmail)
 	if err != nil {
 		return err
@@ -339,23 +349,80 @@ func preflightIdentity(ctx context.Context, db *sql.DB, ownerEmail, partnerEmail
 			return err
 		}
 	}
-	var markerOwner, markerPartner string
-	markerErr := db.QueryRowContext(ctx, `SELECT owner_user_id,partner_user_id FROM demo_households WHERE household_id=? AND fixture_version=?`, HouseholdID, FixtureVersion).Scan(&markerOwner, &markerPartner)
-	if markerErr == nil {
-		if !ownerFound || !partnerFound || markerOwner != owner.id || markerPartner != partner.id {
-			return ErrUnsafeReset
-		}
-		return nil
-	}
-	if !errors.Is(markerErr, sql.ErrNoRows) {
-		return markerErr
-	}
 	var reserved int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM households WHERE id=?`, HouseholdID).Scan(&reserved); err != nil {
 		return err
 	}
 	if reserved != 0 {
 		return ErrUnsafeReset
+	}
+	return nil
+}
+
+// markedDemoUsers proves the immutable marker still points to exactly the two
+// accounts that belong to the fixture household. Resetting a marked fixture
+// may rotate their email addresses, but never substitutes different users.
+func markedDemoUsers(ctx context.Context, db *sql.DB) (owner, partner userState, marked bool, err error) {
+	var ownerID, partnerID string
+	err = db.QueryRowContext(ctx, `SELECT owner_user_id,partner_user_id FROM demo_households WHERE household_id=? AND fixture_version=?`, HouseholdID, FixtureVersion).Scan(&ownerID, &partnerID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return userState{}, userState{}, false, nil
+	}
+	if err != nil || ownerID == "" || partnerID == "" || ownerID == partnerID {
+		if err != nil {
+			return userState{}, userState{}, false, err
+		}
+		return userState{}, userState{}, false, ErrUnsafeReset
+	}
+	for _, candidate := range []struct {
+		id, role string
+		user     *userState
+	}{
+		{ownerID, "owner", &owner},
+		{partnerID, "adult", &partner},
+	} {
+		if err := db.QueryRowContext(ctx, `SELECT id,email,status,password_hash FROM users WHERE id=?`, candidate.id).Scan(&candidate.user.id, &candidate.user.email, &candidate.user.status, &candidate.user.password); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return userState{}, userState{}, false, ErrUnsafeReset
+			}
+			return userState{}, userState{}, false, err
+		}
+		var memberships int
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM household_members WHERE user_id=?`, candidate.id).Scan(&memberships); err != nil {
+			return userState{}, userState{}, false, err
+		}
+		var householdID, role string
+		if memberships != 1 {
+			return userState{}, userState{}, false, ErrUnsafeReset
+		}
+		if err := db.QueryRowContext(ctx, `SELECT household_id,role FROM household_members WHERE user_id=?`, candidate.id).Scan(&householdID, &role); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return userState{}, userState{}, false, ErrUnsafeReset
+			}
+			return userState{}, userState{}, false, err
+		}
+		if householdID != HouseholdID || role != candidate.role {
+			return userState{}, userState{}, false, ErrUnsafeReset
+		}
+	}
+	return owner, partner, true, nil
+}
+
+func preflightMarkedEmails(ctx context.Context, db *sql.DB, owner, partner userState, ownerEmail, partnerEmail string) error {
+	for _, candidate := range []struct {
+		email string
+		user  userState
+	}{
+		{ownerEmail, owner},
+		{partnerEmail, partner},
+	} {
+		existing, found, err := existingUser(ctx, db, candidate.email)
+		if err != nil {
+			return err
+		}
+		if found && existing.id != candidate.user.id {
+			return ErrUnsafeReset
+		}
 	}
 	return nil
 }
@@ -370,13 +437,19 @@ func existingUser(ctx context.Context, db *sql.DB, email string) (userState, boo
 }
 
 func recreateIdentity(ctx context.Context, db *sql.DB, ownerEmail, partnerEmail string) ([]string, userState, userState, error) {
-	owner, err := ensureUser(ctx, db, ownerEmail, ownerSeedID)
+	owner, partner, marked, err := markedDemoUsers(ctx, db)
 	if err != nil {
 		return nil, userState{}, userState{}, err
 	}
-	partner, err := ensureUser(ctx, db, partnerEmail, partnerSeedID)
-	if err != nil {
-		return nil, userState{}, userState{}, err
+	if !marked {
+		owner, err = ensureUser(ctx, db, ownerEmail, ownerSeedID)
+		if err != nil {
+			return nil, userState{}, userState{}, err
+		}
+		partner, err = ensureUser(ctx, db, partnerEmail, partnerSeedID)
+		if err != nil {
+			return nil, userState{}, userState{}, err
+		}
 	}
 	for _, user := range []userState{owner, partner} {
 		var household string
@@ -388,15 +461,7 @@ func recreateIdentity(ctx context.Context, db *sql.DB, ownerEmail, partnerEmail 
 			return nil, userState{}, userState{}, err
 		}
 	}
-	var markedOwner, markedPartner string
-	markerErr := db.QueryRowContext(ctx, `SELECT owner_user_id,partner_user_id FROM demo_households WHERE household_id=? AND fixture_version=?`, HouseholdID, FixtureVersion).Scan(&markedOwner, &markedPartner)
-	if markerErr == nil && (markedOwner != owner.id || markedPartner != partner.id) {
-		return nil, userState{}, userState{}, ErrUnsafeReset
-	}
-	if markerErr != nil && !errors.Is(markerErr, sql.ErrNoRows) {
-		return nil, userState{}, userState{}, markerErr
-	}
-	if errors.Is(markerErr, sql.ErrNoRows) {
+	if !marked {
 		var one int
 		if err := db.QueryRowContext(ctx, `SELECT 1 FROM households WHERE id=?`, HouseholdID).Scan(&one); err == nil {
 			return nil, userState{}, userState{}, ErrUnsafeReset
@@ -429,7 +494,12 @@ func recreateIdentity(ctx context.Context, db *sql.DB, ownerEmail, partnerEmail 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM households WHERE id=? AND EXISTS (SELECT 1 FROM demo_households WHERE household_id=households.id AND fixture_version=?)`, HouseholdID, FixtureVersion); err != nil {
 		return nil, userState{}, userState{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE users SET status='active',disabled_at=NULL,updated_at=? WHERE id IN (?,?)`, stamp, owner.id, partner.id); err != nil {
+	if marked {
+		if _, err := tx.ExecContext(ctx, `UPDATE users SET email=CASE id WHEN ? THEN ? WHEN ? THEN ? END,status='active',disabled_at=NULL,updated_at=? WHERE id IN (?,?)`, owner.id, ownerEmail, partner.id, partnerEmail, stamp, owner.id, partner.id); err != nil {
+			return nil, userState{}, userState{}, err
+		}
+		owner.email, partner.email = ownerEmail, partnerEmail
+	} else if _, err := tx.ExecContext(ctx, `UPDATE users SET status='active',disabled_at=NULL,updated_at=? WHERE id IN (?,?)`, stamp, owner.id, partner.id); err != nil {
 		return nil, userState{}, userState{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO households(id,status,owner_user_id,timezone,created_at,updated_at) VALUES(?,'active',?,'Asia/Kolkata',?,?)`, HouseholdID, owner.id, stamp, stamp); err != nil {

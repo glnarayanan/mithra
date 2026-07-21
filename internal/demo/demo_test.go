@@ -168,6 +168,100 @@ func TestResetSetsPrivateJudgeCredentialsAndRevokesBootstrapSessions(t *testing.
 	assertFixtureAndUnrelated(t, ctx, cfg.DatabasePath)
 }
 
+func TestResetRotatesMarkedJudgeEmails(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	cfg := Config{
+		DatabasePath: filepath.Join(root, "data", "mithra.sqlite3"),
+		SourceRoot:   filepath.Join(root, "data", "sources"),
+		BackupRoot:   filepath.Join(root, "backups"),
+		OwnerEmail:   "old-owner@example.com",
+		PartnerEmail: "old-partner@example.com",
+		MasterKey:    testKey(),
+	}
+	seedUnrelatedHousehold(t, ctx, cfg.DatabasePath)
+	if _, err := Reset(ctx, cfg); err != nil {
+		t.Fatal(err)
+	}
+	db, err := database.Open(ctx, cfg.DatabasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE users SET status='disabled',disabled_at=? WHERE id=?`, time.Now().UTC().Format(time.RFC3339Nano), partnerSeedID); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	db.Close()
+	cfg.OwnerEmail, cfg.PartnerEmail = "judge-owner@example.com", "judge-partner@example.com"
+	cfg.OwnerPassword, cfg.PartnerPassword = []byte("owner secure password"), []byte("partner secure password")
+	if _, err := Reset(ctx, cfg); err != nil {
+		t.Fatalf("rotate marked emails: %v", err)
+	}
+	db, err = database.Open(ctx, cfg.DatabasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, account := range []struct{ id, email, role string }{
+		{ownerSeedID, cfg.OwnerEmail, "owner"},
+		{partnerSeedID, cfg.PartnerEmail, "adult"},
+	} {
+		var email, status, household, role string
+		if err := db.QueryRowContext(ctx, `SELECT u.email,u.status,m.household_id,m.role FROM users u JOIN household_members m ON m.user_id=u.id WHERE u.id=?`, account.id).Scan(&email, &status, &household, &role); err != nil || email != account.email || status != "active" || household != HouseholdID || role != account.role {
+			t.Fatalf("rotated account %s email=%q status=%q household=%q role=%q err=%v", account.id, email, status, household, role, err)
+		}
+	}
+	var oldEmails int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE email IN ('old-owner@example.com','old-partner@example.com')`).Scan(&oldEmails); err != nil || oldEmails != 0 {
+		t.Fatalf("old demo emails=%d err=%v", oldEmails, err)
+	}
+	assertFixtureAndUnrelated(t, ctx, cfg.DatabasePath)
+}
+
+func TestResetRefusesMarkedEmailCollisionOrUnrelatedMembership(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	cfg := Config{
+		DatabasePath: filepath.Join(root, "data", "mithra.sqlite3"),
+		SourceRoot:   filepath.Join(root, "data", "sources"),
+		BackupRoot:   filepath.Join(root, "backups"),
+		OwnerEmail:   "old-owner@example.com",
+		PartnerEmail: "old-partner@example.com",
+		MasterKey:    testKey(),
+	}
+	seedUnrelatedHousehold(t, ctx, cfg.DatabasePath)
+	if _, err := Reset(ctx, cfg); err != nil {
+		t.Fatal(err)
+	}
+	cfg.OwnerEmail = "unrelated@example.com"
+	if _, err := Reset(ctx, cfg); !errors.Is(err, ErrUnsafeReset) {
+		t.Fatalf("colliding email reset=%v", err)
+	}
+	db, err := database.Open(ctx, cfg.DatabasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stamp := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err := db.ExecContext(ctx, `UPDATE household_members SET household_id=?,role='adult',created_at=? WHERE user_id=?`, "unrelated-household", stamp, ownerSeedID); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	db.Close()
+	cfg.OwnerEmail = "judge-owner@example.com"
+	if _, err := Reset(ctx, cfg); !errors.Is(err, ErrUnsafeReset) {
+		t.Fatalf("unrelated membership reset=%v", err)
+	}
+	db, err = database.Open(ctx, cfg.DatabasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var email string
+	if err := db.QueryRowContext(ctx, `SELECT email FROM users WHERE id=?`, ownerSeedID).Scan(&email); err != nil || email != "old-owner@example.com" {
+		t.Fatalf("refused reset changed owner email=%q err=%v", email, err)
+	}
+}
+
 type stateSnapshot struct {
 	tableCounts   [5]int
 	sourceDigests []string
