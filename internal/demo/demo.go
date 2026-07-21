@@ -139,7 +139,7 @@ func Reset(ctx context.Context, cfg Config) (receipt Receipt, err error) {
 	if err := seedFinance(ctx, sources, importRecords, partnerActor, policy.Personal, partnerFinanceCSV(), partnerFinanceProposals()); err != nil {
 		return receipt, rollback(err)
 	}
-	if err := seedPlanningCapture(ctx, captureRecords, ownerActor); err != nil {
+	if err := seedPlanningCaptures(ctx, captureRecords, ownerActor); err != nil {
 		return receipt, rollback(err)
 	}
 	if cfg.BeforeComplete != nil {
@@ -432,15 +432,25 @@ func seedHealth(ctx context.Context, sources *storage.Service, service *imports.
 	return service.Commit(ctx, actor, review.ID, review.Version)
 }
 
-func seedPlanningCapture(ctx context.Context, service *capture.Service, actor policy.ActorScope) error {
-	receipt, err := service.SubmitText(ctx, actor, capture.TextRequest{
-		Text: "We agreed to review our travel documents together on Saturday morning.", Summary: "Travel document review added for Saturday.", Visibility: policy.Shared,
-		Proposal: capture.Proposal{Variant: capture.PlanningVariant, Planning: &capture.PlanningProposal{Title: "Review travel documents", Description: "Check passports and bookings together.", Location: "Home", StartsAt: "2026-07-25T10:00", EndsAt: "2026-07-25T10:45", Timezone: "Asia/Kolkata", Status: "planned"}},
-	})
-	if err != nil {
-		return err
+func seedPlanningCaptures(ctx context.Context, service *capture.Service, actor policy.ActorScope) error {
+	samples := []capture.PlanningProposal{
+		{Title: "Quarterly finance review", Description: "Household finance review.", Location: "Home", StartsAt: "2026-04-26T10:00", EndsAt: "2026-04-26T11:00", Timezone: "Asia/Kolkata", Status: "completed"},
+		{Title: "Home maintenance visit", Description: "Scheduled home maintenance.", Location: "Home", StartsAt: "2026-05-17T09:00", EndsAt: "2026-05-17T10:00", Timezone: "Asia/Kolkata", Status: "completed"},
+		{Title: "Travel booking review", Description: "Travel booking details reviewed together.", Location: "Home", StartsAt: "2026-06-21T11:00", EndsAt: "2026-06-21T11:45", Timezone: "Asia/Kolkata", Status: "completed"},
+		{Title: "Review travel documents", Description: "Passports and bookings together.", Location: "Home", StartsAt: "2026-07-25T10:00", EndsAt: "2026-07-25T10:45", Timezone: "Asia/Kolkata", Status: "planned"},
+		{Title: "Insurance renewal review", Description: "Insurance renewal details.", Location: "Home", StartsAt: "2026-07-27T18:00", EndsAt: "2026-07-27T18:30", Timezone: "Asia/Kolkata", Status: "planned"},
+		{Title: "August household planning", Description: "Household dates and plans for August.", Location: "Home", StartsAt: "2026-08-02T10:00", EndsAt: "2026-08-02T10:45", Timezone: "Asia/Kolkata", Status: "planned"},
 	}
-	return service.Confirm(ctx, actor, receipt.ID)
+	for _, sample := range samples {
+		receipt, err := service.SubmitText(ctx, actor, capture.TextRequest{Text: sample.Title + ".", Summary: sample.Title + " added.", Visibility: policy.Shared, Proposal: capture.Proposal{Variant: capture.PlanningVariant, Planning: &sample}})
+		if err != nil {
+			return err
+		}
+		if err := service.Confirm(ctx, actor, receipt.ID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func hasBlocker(issues []imports.Issue) bool {
@@ -499,23 +509,41 @@ var sharedFinanceSamples = []financeSample{
 	{"spending", "Groceries", "Groceries", "2026-04-08", "", "", "14000"},
 	{"spending", "Utilities", "Utilities", "2026-04-12", "", "", "6200"},
 	{"spending", "Dining out", "Dining", "2026-04-19", "", "", "4800"},
+	{"spending", "Home loan EMI", "Debt repayment", "2026-04-03", "", "", "21000"},
+	{"spending", "Transport", "Transport", "2026-04-10", "", "", "3500"},
+	{"spending", "Insurance", "Insurance", "2026-04-15", "", "", "2500"},
+	{"spending", "Healthcare", "Healthcare", "2026-04-17", "", "", "3500"},
 	{"income", "Household income", "Income", "2026-05-01", "", "", "182000"},
 	{"spending", "Groceries", "Groceries", "2026-05-09", "", "", "14800"},
 	{"spending", "Utilities", "Utilities", "2026-05-13", "", "", "5900"},
 	{"spending", "Dining out", "Dining", "2026-05-21", "", "", "5200"},
+	{"spending", "Home loan EMI", "Debt repayment", "2026-05-03", "", "", "21000"},
+	{"spending", "Transport", "Transport", "2026-05-10", "", "", "3700"},
+	{"spending", "Insurance", "Insurance", "2026-05-15", "", "", "2500"},
+	{"spending", "Healthcare", "Healthcare", "2026-05-17", "", "", "1800"},
 	{"income", "Household income", "Income", "2026-06-01", "", "", "185000"},
 	{"spending", "Groceries", "Groceries", "2026-06-08", "", "", "15200"},
 	{"spending", "Utilities", "Utilities", "2026-06-12", "", "", "6100"},
 	{"spending", "Dining out", "Dining", "2026-06-20", "", "", "6500"},
 	{"spending", "School fees", "Education", "2026-06-24", "", "", "25000"},
+	{"spending", "Home loan EMI", "Debt repayment", "2026-06-03", "", "", "21000"},
+	{"spending", "Transport", "Transport", "2026-06-10", "", "", "4200"},
+	{"spending", "Insurance", "Insurance", "2026-06-15", "", "", "2500"},
+	{"spending", "Healthcare", "Healthcare", "2026-06-17", "", "", "4500"},
 	{"income", "Household income", "Income", "2026-07-01", "", "", "188000"},
 	{"spending", "Groceries", "Groceries", "2026-07-08", "", "", "14500"},
 	{"spending", "Utilities", "Utilities", "2026-07-12", "", "", "6400"},
 	{"spending", "Dining out", "Dining", "2026-07-18", "", "", "4200"},
-	{"budget", "July household budget", "Household", "2026-07-01", "2026-07-31", "", "85000"},
+	{"spending", "Home loan EMI", "Debt repayment", "2026-07-03", "", "", "21000"},
+	{"spending", "Transport", "Transport", "2026-07-10", "", "", "3800"},
+	{"spending", "Insurance", "Insurance", "2026-07-15", "", "", "2500"},
+	{"spending", "Healthcare", "Healthcare", "2026-07-17", "", "", "2200"},
+	{"budget", "July groceries budget", "Groceries", "2026-07-01", "2026-07-31", "", "18000"},
 	{"asset", "Emergency fund", "Savings", "2026-07-01", "", "", "450000"},
 	{"liability", "Home loan balance", "Home loan", "2026-07-01", "", "", "3200000"},
 	{"obligation", "Insurance renewal", "Insurance", "2026-07-28", "", "pending", "24000"},
+	{"obligation", "Vehicle insurance renewal", "Insurance", "2026-08-12", "", "pending", "12000"},
+	{"obligation", "Annual home maintenance", "Home", "2026-08-18", "", "pending", "8000"},
 }
 
 var partnerFinanceSamples = []financeSample{

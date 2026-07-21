@@ -8,6 +8,8 @@ coverage.out
 
 # Local runtime state and operator secrets
 .local/
+.local-backups/
+.mithra-demo-reset.lock
 data/
 backups/
 *.sqlite

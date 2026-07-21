@@ -3,20 +3,38 @@ income,Household income,Income,2026-04-01,,,180000
 spending,Groceries,Groceries,2026-04-08,,,14000
 spending,Utilities,Utilities,2026-04-12,,,6200
 spending,Dining out,Dining,2026-04-19,,,4800
+spending,Home loan EMI,Debt repayment,2026-04-03,,,21000
+spending,Transport,Transport,2026-04-10,,,3500
+spending,Insurance,Insurance,2026-04-15,,,2500
+spending,Healthcare,Healthcare,2026-04-17,,,3500
 income,Household income,Income,2026-05-01,,,182000
 spending,Groceries,Groceries,2026-05-09,,,14800
 spending,Utilities,Utilities,2026-05-13,,,5900
 spending,Dining out,Dining,2026-05-21,,,5200
+spending,Home loan EMI,Debt repayment,2026-05-03,,,21000
+spending,Transport,Transport,2026-05-10,,,3700
+spending,Insurance,Insurance,2026-05-15,,,2500
+spending,Healthcare,Healthcare,2026-05-17,,,1800
 income,Household income,Income,2026-06-01,,,185000
 spending,Groceries,Groceries,2026-06-08,,,15200
 spending,Utilities,Utilities,2026-06-12,,,6100
 spending,Dining out,Dining,2026-06-20,,,6500
 spending,School fees,Education,2026-06-24,,,25000
+spending,Home loan EMI,Debt repayment,2026-06-03,,,21000
+spending,Transport,Transport,2026-06-10,,,4200
+spending,Insurance,Insurance,2026-06-15,,,2500
+spending,Healthcare,Healthcare,2026-06-17,,,4500
 income,Household income,Income,2026-07-01,,,188000
 spending,Groceries,Groceries,2026-07-08,,,14500
 spending,Utilities,Utilities,2026-07-12,,,6400
 spending,Dining out,Dining,2026-07-18,,,4200
-budget,July household budget,Household,2026-07-01,2026-07-31,,85000
+spending,Home loan EMI,Debt repayment,2026-07-03,,,21000
+spending,Transport,Transport,2026-07-10,,,3800
+spending,Insurance,Insurance,2026-07-15,,,2500
+spending,Healthcare,Healthcare,2026-07-17,,,2200
+budget,July groceries budget,Groceries,2026-07-01,2026-07-31,,18000
 asset,Emergency fund,Savings,2026-07-01,,,450000
 liability,Home loan balance,Home loan,2026-07-01,,,3200000
 obligation,Insurance renewal,Insurance,2026-07-28,,pending,24000
+obligation,Vehicle insurance renewal,Insurance,2026-08-12,,pending,12000
+obligation,Annual home maintenance,Home,2026-08-18,,pending,8000

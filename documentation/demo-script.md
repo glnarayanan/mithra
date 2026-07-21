@@ -22,9 +22,9 @@ submission if it reveals host paths.
 From **Import**, upload a new CSV or XLSX containing income, spending,
 an asset, and a pending obligation. Show the local extraction review, correct
 one number if desired, import, then open **Finance**. Point out number-only totals,
-the category change, incomplete-state handling, the upcoming obligation, and
-the source link. The seeded records already show April through July category
-changes. No currency selection or conversion is claimed in V1.
+the category change, budget headroom, upcoming obligations, and the source
+link. The seeded records show April through July across recurring household
+categories. No currency selection or conversion is claimed in V1.
 
 ### 2. Health trend and unit mismatch
 
@@ -41,7 +41,8 @@ Use quick capture to enter a short plan by text (or demonstrate microphone
 denial first, then voice). Confirm the proposed event, open **Planning**, and
 switch among month, week, and agenda. Open the event's Google Calendar draft and
 download its ICS file. Mithra neither uses calendar OAuth nor performs background
-sync.
+sync. The seed includes completed and upcoming household dates across April
+through August.
 
 ### 4. Shared and private coaching
 
