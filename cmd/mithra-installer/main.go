@@ -36,6 +36,7 @@ type demoResetDependencies struct {
 	reset     func(context.Context, demo.Config) (demo.Receipt, error)
 	quiesce   func(context.Context, string) (func() error, error)
 	ownership func(string) (installer.RestoreOwnership, error)
+	apply     func(installer.Paths, installer.RestoreOwnership) error
 	restore   func(installer.Paths, string, []byte, installer.RestoreOwnership, func() error) error
 	wait      func(context.Context, func(context.Context) error) error
 	local     func(context.Context, installer.Plan) error
@@ -43,7 +44,7 @@ type demoResetDependencies struct {
 }
 
 var installedDemoResetDependencies = demoResetDependencies{
-	reset: demo.Reset, quiesce: quiesce, ownership: serviceOwnership, restore: installer.RestoreGenerationWithOwnership,
+	reset: demo.Reset, quiesce: quiesce, ownership: serviceOwnership, apply: installer.ApplyDataOwnership, restore: installer.RestoreGenerationWithOwnership,
 	wait: waitForHealth, local: localPlanHealth, web: webHealth,
 }
 
@@ -393,20 +394,28 @@ func runParsed(ctx context.Context, parsed parsedInstallerCommand, output io.Wri
 // restarted installed application answers its local health check. A failed
 // candidate is restored from the authenticated pre-reset generation.
 func resetDemo(ctx context.Context, plan installer.Plan, paths installer.Paths, key []byte, config demo.Config, dependencies demoResetDependencies) (demo.Receipt, error) {
-	if dependencies.reset == nil || dependencies.quiesce == nil || dependencies.ownership == nil || dependencies.restore == nil || dependencies.wait == nil || dependencies.local == nil || dependencies.web == nil {
+	if dependencies.reset == nil || dependencies.quiesce == nil || dependencies.ownership == nil || dependencies.apply == nil || dependencies.restore == nil || dependencies.wait == nil || dependencies.local == nil || dependencies.web == nil {
 		return demo.Receipt{}, errors.New("demo reset dependencies are unavailable")
 	}
 	owner, err := dependencies.ownership(plan.Options.Root)
 	if err != nil {
 		return demo.Receipt{}, err
 	}
+	config.Ownership = owner
 	restart, err := dependencies.quiesce(ctx, plan.Options.Root)
 	if err != nil {
 		return demo.Receipt{}, err
 	}
 	receipt, resetErr := dependencies.reset(ctx, config)
 	if resetErr != nil {
-		return receipt, errors.Join(resetErr, restartAndCheckDemoHealth(ctx, plan, restart, dependencies))
+		ownershipErr := dependencies.apply(paths, owner)
+		return receipt, errors.Join(resetErr, ownershipErr, restartAndCheckDemoHealth(ctx, plan, restart, dependencies))
+	}
+	if err := dependencies.apply(paths, owner); err != nil {
+		rollbackErr := dependencies.restore(paths, receipt.BackupArchive, key, owner, func() error {
+			return restartAndCheckDemoHealth(ctx, plan, restart, dependencies)
+		})
+		return receipt, errors.Join(err, rollbackErr)
 	}
 	if err := restartAndCheckDemoHealth(ctx, plan, restart, dependencies); err == nil {
 		return receipt, nil

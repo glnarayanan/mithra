@@ -606,7 +606,23 @@ func applyRestoreOwnership(stage string, owner RestoreOwnership) error {
 	if !strings.HasPrefix(base, ".mithra-restore-") && !strings.HasPrefix(base, ".mithra-rollback-") {
 		return errors.New("refusing ownership change outside Mithra restore staging")
 	}
-	return filepath.WalkDir(stage, func(path string, entry fs.DirEntry, walkErr error) error {
+	return applyOwnershipTree(stage, owner)
+}
+
+// ApplyDataOwnership returns a stopped live generation to the configured
+// service identity before the installer restarts Mithra.
+func ApplyDataOwnership(paths Paths, owner RestoreOwnership) error {
+	if err := validateRestoreOwnership(paths, owner); err != nil {
+		return err
+	}
+	if !owner.Set {
+		return nil
+	}
+	return applyOwnershipTree(paths.Data, owner)
+}
+
+func applyOwnershipTree(root string, owner RestoreOwnership) error {
+	return filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}

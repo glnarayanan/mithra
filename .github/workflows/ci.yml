@@ -28,6 +28,8 @@ jobs:
       - run: go mod verify
       - run: go vet ./...
       - run: go test ./...
+      - name: Verify reset across installer and service identities
+        run: sudo env "PATH=$PATH" "GOFLAGS=$GOFLAGS" GOCACHE=/tmp/mithra-root-test-cache go test -count=1 ./cmd/mithra-installer -run '^TestResetDemoRealServiceOwnedTree$' -v
       - run: go build -trimpath ./cmd/mithra
       - run: go build -trimpath ./cmd/mithra-installer
       - run: sh -n deploy/install.sh

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -15,6 +16,33 @@ import (
 	"github.com/glnarayanan/mithra/internal/policy"
 	"github.com/glnarayanan/mithra/internal/secrets"
 )
+
+func TestNewForOwnerUsesConfiguredServiceIdentity(t *testing.T) {
+	db, err := database.Open(context.Background(), filepath.Join(t.TempDir(), "mithra.sqlite3"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	root := filepath.Join(t.TempDir(), "sources")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		t.Skip("platform does not expose file ownership")
+	}
+	key := bytes.Repeat([]byte{9}, secrets.MasterKeyBytes)
+	if _, err := NewForOwner(db, root, key, int(stat.Uid), int(stat.Gid)); err != nil {
+		t.Fatalf("open sources for configured owner: %v", err)
+	}
+	if _, err := NewForOwner(db, root, key, int(stat.Uid)+1, int(stat.Gid)); err == nil {
+		t.Fatal("source tree accepted a different configured identity")
+	}
+}
 
 func TestEncryptedSourceRoundTripAndPrivacy(t *testing.T) {
 	service, db, owner, partner := storageFixture(t)

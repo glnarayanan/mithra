@@ -25,6 +25,32 @@ func healthyFacts() HostFacts {
 	return HostFacts{OS: "linux", Arch: "amd64", Systemd: true, SQLite: true, Commands: map[string]string{"caddy": "/usr/bin/caddy", "nginx": "/usr/sbin/nginx", "apache2ctl": "/usr/sbin/apache2ctl"}, Listeners: map[int]string{}, VHosts: map[string]string{}, AppPortAvailable: true, FreeBytes: 1 << 30, MigrationClean: true, SQLiteClean: true, KeyMatches: true, AllowlistValid: true, CaddyImportsOwnedDir: true}
 }
 
+func TestApplyDataOwnershipRestrictsTheLiveMithraTree(t *testing.T) {
+	paths := OwnedPaths(t.TempDir(), AppOnly)
+	if err := os.MkdirAll(paths.Sources, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(paths.Sources, "source.enc")
+	if err := os.WriteFile(file, []byte("ciphertext"), 0o666); err != nil {
+		t.Fatal(err)
+	}
+	owner := RestoreOwnership{UID: os.Getuid(), GID: os.Getgid(), Set: true}
+	if err := ApplyDataOwnership(paths, owner); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(paths.Sources); err != nil || info.Mode().Perm() != 0o750 {
+		t.Fatalf("source directory mode=%v err=%v", info.Mode(), err)
+	}
+	if info, err := os.Stat(file); err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("source file mode=%v err=%v", info.Mode(), err)
+	}
+	unsafe := paths
+	unsafe.Data = filepath.Join(filepath.Dir(paths.Data), "other")
+	if err := ApplyDataOwnership(unsafe, owner); err == nil {
+		t.Fatal("ownership accepted a non-Mithra data tree")
+	}
+}
+
 func TestBuildPlanCoversProxyAndOperationPreconditionsWithoutArivuMutation(t *testing.T) {
 	root := t.TempDir()
 	facts := healthyFacts()
