@@ -237,4 +237,40 @@ func TestMissingDateExcludesRecordFromTotalsAndTrends(t *testing.T) {
 	}
 }
 
+func TestSummarizeRangeBuildsZeroFilledMonthlyTrendline(t *testing.T) {
+	fixture := newFinanceFixture(t)
+	source := fixture.source(t, fixture.owner, policy.Shared, []byte("monthly groceries"))
+	for index, entry := range []struct{ date, amount string }{{"2026-04-10", "100"}, {"2026-06-10", "150"}, {"2026-07-10", "200"}} {
+		if _, err := fixture.service.Create(context.Background(), fixture.owner, Draft{Kind: Spending, Visibility: policy.Shared, Label: "Groceries", Category: "Groceries", Date: entry.date, AmountText: entry.amount, Provenance: Provenance{SourceID: source.ID, SourceFamily: source.Family, SourceVersion: source.Version, LocatorKind: "row", LocatorValue: string(rune('2' + index))}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	asOf := time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)
+	for _, want := range []struct {
+		months int
+		first  string
+		values []string
+	}{{3, "2026-05", []string{"0", "150", "200"}}, {6, "2026-02", []string{"0", "0", "100", "0", "150", "200"}}, {12, "2025-08", []string{"0", "0", "0", "0", "0", "0", "0", "0", "100", "0", "150", "200"}}} {
+		summary, err := fixture.service.SummarizeRange(context.Background(), fixture.owner, AllRecords, asOf, want.months)
+		if err != nil || len(summary.Trends) != 1 {
+			t.Fatalf("range %d summary = %#v, %v", want.months, summary.Trends, err)
+		}
+		trend := summary.Trends[0]
+		if len(trend.Months) != want.months || trend.Months[0].Month.Format("2006-01") != want.first || len(trend.Trendline) != want.months {
+			t.Fatalf("range %d trend boundary = %#v", want.months, trend)
+		}
+		for index, value := range trend.Months {
+			if got := value.Value.PlainString(); got != want.values[index] {
+				t.Fatalf("range %d month %d = %s, want %s", want.months, index, got, want.values[index])
+			}
+		}
+		if trend.Previous.PlainString() != "150" || trend.Current.PlainString() != "200" || trend.Change.PlainString() != "50" {
+			t.Fatalf("range %d change = %#v", want.months, trend)
+		}
+		if trend.Trendline[len(trend.Trendline)-1] <= trend.Trendline[0] {
+			t.Fatalf("range %d trendline = %#v", want.months, trend.Trendline)
+		}
+	}
+}
+
 func deepEqualJSON(left, right any) bool { return reflect.DeepEqual(left, right) }

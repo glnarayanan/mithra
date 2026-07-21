@@ -18,6 +18,7 @@ type FinanceView struct {
 	Navigation      []NavigationItem
 	CSRF            string
 	Scope           string
+	Range           int
 	HasRecords      bool
 	CompleteCount   int
 	IncompleteCount int
@@ -43,6 +44,7 @@ type FinanceTrendView struct {
 	ChangeText        string
 	AccessibleSummary string
 	Points            string
+	TrendlinePoints   string
 }
 
 type FinanceObligationView struct {
@@ -89,13 +91,14 @@ func (a *App) financeLens(w http.ResponseWriter, r *http.Request) {
 	if filter != finance.SharedRecords && filter != finance.PersonalRecords {
 		filter = finance.AllRecords
 	}
-	summary, err := a.finance.Summarize(r.Context(), scope, filter, time.Now())
+	rangeMonths := financeTrendRange(r.URL.Query().Get("range"))
+	summary, err := a.finance.SummarizeRange(r.Context(), scope, filter, time.Now(), rangeMonths)
 	if err != nil {
 		logRequestError(a.logger, r.Context(), "finance_query_failed")
 		a.renderFinance(r.Context(), w, FinanceView{Navigation: navigationForPath("/finance"), CSRF: csrf, Scope: string(filter), Error: "Your information could not be loaded. Try again."})
 		return
 	}
-	view := financeView(summary, filter, csrf)
+	view := financeView(summary, filter, csrf, rangeMonths)
 	if r.URL.Query().Get("corrected") == "1" {
 		view.Status = "Your correction is now active. The original source remains linked."
 	} else if r.URL.Query().Get("correction") == "failed" {
@@ -174,6 +177,9 @@ func (a *App) renderFinance(ctx context.Context, w http.ResponseWriter, view Fin
 	if view.Scope == "" {
 		view.Scope = string(finance.AllRecords)
 	}
+	if view.Range == 0 {
+		view.Range = 3
+	}
 	rendered := newBufferedResponse(maxResponseBodyBytes)
 	if err := a.templates.ExecuteTemplate(rendered, "finance.html", view); err != nil || rendered.overflow {
 		logRequestError(a.logger, ctx, "finance_render_failed")
@@ -184,10 +190,10 @@ func (a *App) renderFinance(ctx context.Context, w http.ResponseWriter, view Fin
 	rendered.commit(w)
 }
 
-func financeView(summary finance.Summary, filter finance.ScopeFilter, csrf string) FinanceView {
+func financeView(summary finance.Summary, filter finance.ScopeFilter, csrf string, rangeMonths int) FinanceView {
 	view := FinanceView{
 		Navigation: navigationForPath("/finance"), CSRF: csrf, Scope: string(filter), HasRecords: len(summary.Records) > 0,
-		CompleteCount: summary.Complete, IncompleteCount: summary.Incomplete,
+		Range: rangeMonths, CompleteCount: summary.Complete, IncompleteCount: summary.Incomplete,
 	}
 	for _, item := range []struct {
 		kind  finance.Kind
@@ -197,15 +203,21 @@ func financeView(summary finance.Summary, filter finance.ScopeFilter, csrf strin
 	}
 	for index, trend := range summary.Trends {
 		change := trend.Change.PlainString()
-		changeText := "Changed by " + signedNumber(change)
+		periodLabel := trend.Months[0].Month.Format("January 2006") + " to " + trend.Months[len(trend.Months)-1].Month.Format("January 2006")
+		changeText := trend.CurrentPeriod + " " + trend.Current.PlainString() + " compared with " + trend.PreviousPeriod + " " + trend.Previous.PlainString() + ": " + signedNumber(change) + ". Overall direction: " + trendDirection(trend.Trendline) + "."
 		if trend.PreviousCount == 0 {
-			changeText = trend.Current.PlainString() + " in " + trend.CurrentPeriod + "; no prior record"
+			changeText = trend.CurrentPeriod + " " + trend.Current.PlainString() + "; no prior record"
+		}
+		values := make([]string, 0, len(trend.Months))
+		for _, month := range trend.Months {
+			values = append(values, month.Month.Format("January 2006")+" "+month.Value.PlainString())
 		}
 		view.Trends = append(view.Trends, FinanceTrendView{
-			ID: strconv.Itoa(index + 1), Category: trend.Category, PeriodLabel: trend.PreviousPeriod + " to " + trend.CurrentPeriod,
+			ID: strconv.Itoa(index + 1), Category: trend.Category, PeriodLabel: periodLabel,
 			ChangeText:        changeText,
-			AccessibleSummary: trend.PreviousPeriod + " " + trend.Previous.PlainString() + "; " + trend.CurrentPeriod + " " + trend.Current.PlainString() + ".",
-			Points:            chartPoints(trend.Previous, trend.Current),
+			AccessibleSummary: strings.Join(values, "; ") + ". Overall direction: " + trendDirection(trend.Trendline) + ".",
+			Points:            chartPoints(trend.Months, trend.Trendline, false),
+			TrendlinePoints:   chartPoints(trend.Months, trend.Trendline, true),
 		})
 	}
 	for _, record := range summary.Upcoming {
@@ -246,15 +258,61 @@ func financeView(summary finance.Summary, filter finance.ScopeFilter, csrf strin
 	return view
 }
 
-func chartPoints(previous, current finance.Decimal) string {
-	left, _ := strconv.ParseFloat(previous.PlainString(), 64)
-	right, _ := strconv.ParseFloat(current.PlainString(), 64)
-	maximum := math.Max(math.Abs(left), math.Abs(right))
-	if maximum == 0 {
-		return "12,36 208,36"
+func chartPoints(months []finance.MonthlyValue, trendline []float64, useTrendline bool) string {
+	values := make([]float64, len(months))
+	minimum, maximum := 0.0, 0.0
+	for index, month := range months {
+		value, _ := strconv.ParseFloat(month.Value.PlainString(), 64)
+		values[index] = value
+		minimum = math.Min(minimum, value)
+		maximum = math.Max(maximum, value)
 	}
-	y := func(value float64) float64 { return 40 - (math.Abs(value)/maximum)*30 }
-	return fmt.Sprintf("12,%.1f 208,%.1f", y(left), y(right))
+	for _, value := range trendline {
+		minimum = math.Min(minimum, value)
+		maximum = math.Max(maximum, value)
+	}
+	if maximum == minimum {
+		maximum = minimum + 1
+	}
+	points := make([]string, len(months))
+	for index := range months {
+		value := values[index]
+		if useTrendline && index < len(trendline) {
+			value = trendline[index]
+		}
+		x := 12.0
+		if len(months) > 1 {
+			x += 196 * float64(index) / float64(len(months)-1)
+		}
+		y := 40 - ((value-minimum)/(maximum-minimum))*30
+		points[index] = fmt.Sprintf("%.1f,%.1f", x, y)
+	}
+	return strings.Join(points, " ")
+}
+
+func financeTrendRange(value string) int {
+	switch value {
+	case "6":
+		return 6
+	case "12":
+		return 12
+	default:
+		return 3
+	}
+}
+
+func trendDirection(values []float64) string {
+	if len(values) < 2 {
+		return "flat"
+	}
+	first, last := values[0], values[len(values)-1]
+	if last > first {
+		return "rising"
+	}
+	if last < first {
+		return "falling"
+	}
+	return "flat"
 }
 
 func signedNumber(value string) string {

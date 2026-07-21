@@ -25,6 +25,7 @@
           </div>
           <form class="scope-filter" method="get" action="/finance" data-auto-submit>
             <label for="finance-scope">Records shown</label>
+            <input type="hidden" name="range" value="{{.Range}}">
             <select id="finance-scope" name="scope">
               <option value="all"{{if eq .Scope "all"}} selected{{end}}>Shared and only you</option>
               <option value="shared"{{if eq .Scope "shared"}} selected{{end}}>Shared</option>
@@ -52,7 +53,8 @@
 
         {{if .Trends}}
         <section class="finance-section" aria-labelledby="finance-trends-title">
-          <div class="section-heading"><div><p class="eyebrow">Over time</p><h2 id="finance-trends-title">Recent changes</h2></div><p>Based on records with a date and number.</p></div>
+          <div class="section-heading"><div><p class="eyebrow">Over time</p><h2 id="finance-trends-title">Spending over time</h2></div><p>Based on records with a date and number.</p></div>
+          <nav aria-label="Spending period"><p>Show: <a href="/finance?scope={{.Scope}}&amp;range=3"{{if eq .Range 3}} aria-current="page"{{end}}>3 months</a> · <a href="/finance?scope={{.Scope}}&amp;range=6"{{if eq .Range 6}} aria-current="page"{{end}}>6 months</a> · <a href="/finance?scope={{.Scope}}&amp;range=12"{{if eq .Range 12}} aria-current="page"{{end}}>12 months</a></p></nav>
           <div class="trend-list">
             {{range .Trends}}
             <article class="trend-row">
@@ -60,6 +62,7 @@
               <p class="trend-change">{{.ChangeText}}</p>
               <svg class="mini-chart" viewBox="0 0 220 46" role="img" aria-labelledby="trend-title-{{.ID}} trend-desc-{{.ID}}">
                 <title id="trend-title-{{.ID}}">{{.Category}} values</title><desc id="trend-desc-{{.ID}}">{{.AccessibleSummary}}</desc>
+                <polyline points="{{.TrendlinePoints}}" fill="none" stroke-dasharray="4 3" opacity=".55" vector-effect="non-scaling-stroke"></polyline>
                 <polyline points="{{.Points}}" fill="none" vector-effect="non-scaling-stroke"></polyline>
               </svg>
             </article>

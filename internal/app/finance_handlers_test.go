@@ -86,6 +86,32 @@ func TestFinanceLensKeepsErrorsGenericAndEscaped(t *testing.T) {
 	}
 }
 
+func TestFinanceTrendRangeDefaultsAndRendersServerLinks(t *testing.T) {
+	for raw, want := range map[string]int{"": 3, "3": 3, "6": 6, "12": 12, "2": 3, "six": 3} {
+		if got := financeTrendRange(raw); got != want {
+			t.Fatalf("range %q = %d, want %d", raw, got, want)
+		}
+	}
+	application, mailer := newAuthTestApp(t, "owner@example.com")
+	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
+	owner := ownerScope(t, application, session)
+	source, err := application.sources.Store(context.Background(), owner, []byte("spending"), storage.Metadata{Family: "text", Version: 1, Visibility: policy.Personal, LocatorKind: "source", LocatorValue: "capture"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, month := range []string{"2026-05-10", "2026-06-10", "2026-07-10"} {
+		if _, err := application.finance.Create(context.Background(), owner, finance.Draft{Kind: finance.Spending, Visibility: policy.Personal, Label: "Groceries", Category: "Groceries", Date: month, AmountText: "10", Provenance: finance.Provenance{SourceID: source.ID, SourceFamily: source.Family, SourceVersion: source.Version, LocatorKind: "source", LocatorValue: source.LocatorValue}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	page := serve(application, authenticatedFinanceRequest(session, "/finance?scope=personal&range=6"))
+	for _, text := range []string{`href="/finance?scope=personal&amp;range=3"`, `href="/finance?scope=personal&amp;range=6" aria-current="page"`, `stroke-dasharray="4 3"`} {
+		if !strings.Contains(page.Body.String(), text) {
+			t.Fatalf("finance range missing %q: %s", text, page.Body.String())
+		}
+	}
+}
+
 func TestFinanceIssueCanBeCorrectedFromTheLens(t *testing.T) {
 	application, mailer := newAuthTestApp(t, "owner@example.com")
 	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)

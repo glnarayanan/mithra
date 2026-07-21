@@ -112,6 +112,15 @@ type CategoryTrend struct {
 	CurrentCount   int
 	PreviousPeriod string
 	CurrentPeriod  string
+	Months         []MonthlyValue
+	Trendline      []float64
+}
+
+// MonthlyValue is one complete monthly spending bucket in a trend window.
+// Amounts remain Decimal; Trendline is visual-only least-squares output.
+type MonthlyValue struct {
+	Month time.Time
+	Value Decimal
 }
 
 type Summary struct {
@@ -310,7 +319,20 @@ func (s *Service) Summarize(ctx context.Context, actor policy.ActorScope, filter
 	if err != nil {
 		return Summary{}, err
 	}
-	return summarize(records, asOf.UTC())
+	return summarize(records, asOf.UTC(), 2)
+}
+
+// SummarizeRange returns monthly spending trends for a three, six, or twelve-month window.
+// Totals and record visibility match Summarize.
+func (s *Service) SummarizeRange(ctx context.Context, actor policy.ActorScope, filter ScopeFilter, asOf time.Time, months int) (Summary, error) {
+	if months != 3 && months != 6 && months != 12 {
+		months = 3
+	}
+	records, err := s.List(ctx, actor, filter)
+	if err != nil {
+		return Summary{}, err
+	}
+	return summarize(records, asOf.UTC(), months)
 }
 
 func prepareRecord(actor policy.ActorScope, draft Draft, now time.Time) (Record, error) {
@@ -576,15 +598,16 @@ func unionQuery(actor policy.ActorScope, filter ScopeFilter) (string, []any) {
 	return strings.Join(parts, " UNION ALL ") + " ORDER BY created_at DESC,id", args
 }
 
-func summarize(records []Record, asOf time.Time) (Summary, error) {
+func summarize(records []Record, asOf time.Time, months int) (Summary, error) {
 	summary := Summary{Records: records, Totals: make(map[Kind]Decimal), Counts: make(map[Kind]int)}
 	currentStart := time.Date(asOf.Year(), asOf.Month(), 1, 0, 0, 0, 0, time.UTC)
 	previousStart := currentStart.AddDate(0, -1, 0)
-	type pair struct {
-		previous, current           []Decimal
-		previousCount, currentCount int
+	windowStart := currentStart.AddDate(0, -(months - 1), 0)
+	type monthlyValues struct {
+		values []Decimal
+		counts []int
 	}
-	categoryValues := make(map[string]pair)
+	categoryValues := make(map[string]monthlyValues)
 	for _, record := range records {
 		if record.IncompleteReason != "" {
 			summary.Incomplete++
@@ -602,15 +625,18 @@ func summarize(records []Record, asOf time.Time) (Summary, error) {
 		}
 		summary.Totals[record.Kind], summary.Counts[record.Kind] = total, summary.Counts[record.Kind]+1
 		date, dateErr := time.Parse("2006-01-02", record.Date)
-		if record.Kind == Spending && dateErr == nil {
-			values := categoryValues[record.Category]
-			if !date.Before(currentStart) && date.Before(currentStart.AddDate(0, 1, 0)) {
-				values.current = append(values.current, *record.Amount)
-				values.currentCount++
-			} else if !date.Before(previousStart) && date.Before(currentStart) {
-				values.previous = append(values.previous, *record.Amount)
-				values.previousCount++
+		if record.Kind == Spending && dateErr == nil && !date.Before(windowStart) && date.Before(currentStart.AddDate(0, 1, 0)) {
+			values, ok := categoryValues[record.Category]
+			if !ok {
+				values = monthlyValues{values: make([]Decimal, months), counts: make([]int, months)}
 			}
+			index := (date.Year()-windowStart.Year())*12 + int(date.Month()-windowStart.Month())
+			value, err := Add(values.values[index], *record.Amount)
+			if err != nil {
+				return Summary{}, err
+			}
+			values.values[index] = value
+			values.counts[index]++
 			categoryValues[record.Category] = values
 		}
 		if record.Kind == Obligation && record.Status == "pending" && dateErr == nil {
@@ -620,21 +646,17 @@ func summarize(records []Record, asOf time.Time) (Summary, error) {
 		}
 	}
 	for category, values := range categoryValues {
-		previous, err := Sum(values.previous)
-		if err != nil {
-			return Summary{}, err
-		}
-		current, err := Sum(values.current)
-		if err != nil {
-			return Summary{}, err
-		}
+		previous := values.values[months-2]
+		current := values.values[months-1]
 		change, err := Add(current, Decimal{Coefficient: -previous.Coefficient, Scale: previous.Scale})
 		if err != nil {
 			return Summary{}, err
 		}
-		if values.previousCount+values.currentCount > 0 {
-			summary.Trends = append(summary.Trends, CategoryTrend{Category: category, Previous: previous, Current: current, Change: change, PreviousCount: values.previousCount, CurrentCount: values.currentCount, PreviousPeriod: previousStart.Format("January 2006"), CurrentPeriod: currentStart.Format("January 2006")})
+		monthly := make([]MonthlyValue, months)
+		for index := range values.values {
+			monthly[index] = MonthlyValue{Month: windowStart.AddDate(0, index, 0), Value: values.values[index]}
 		}
+		summary.Trends = append(summary.Trends, CategoryTrend{Category: category, Previous: previous, Current: current, Change: change, PreviousCount: values.counts[months-2], CurrentCount: values.counts[months-1], PreviousPeriod: previousStart.Format("January 2006"), CurrentPeriod: currentStart.Format("January 2006"), Months: monthly, Trendline: linearTrendline(values.values)})
 	}
 	sort.Slice(summary.Trends, func(i, j int) bool { return summary.Trends[i].Category < summary.Trends[j].Category })
 	sort.Slice(summary.Upcoming, func(i, j int) bool {
@@ -644,6 +666,41 @@ func summarize(records []Record, asOf time.Time) (Summary, error) {
 		return summary.Upcoming[i].Date < summary.Upcoming[j].Date
 	})
 	return summary, nil
+}
+
+func linearTrendline(values []Decimal) []float64 {
+	if len(values) == 0 {
+		return nil
+	}
+	var sumX, sumY, sumXY, sumXX float64
+	for index, value := range values {
+		x := float64(index)
+		y := decimalFloat(value)
+		sumX += x
+		sumY += y
+		sumXY += x * y
+		sumXX += x * x
+	}
+	n := float64(len(values))
+	denominator := n*sumXX - sumX*sumX
+	if denominator == 0 {
+		return []float64{sumY / n}
+	}
+	slope := (n*sumXY - sumX*sumY) / denominator
+	intercept := (sumY - slope*sumX) / n
+	trendline := make([]float64, len(values))
+	for index := range values {
+		trendline[index] = intercept + slope*float64(index)
+	}
+	return trendline
+}
+
+func decimalFloat(value Decimal) float64 {
+	divisor := 1.0
+	for scale := uint8(0); scale < value.Scale; scale++ {
+		divisor *= 10
+	}
+	return float64(value.Coefficient) / divisor
 }
 
 func nullableString(value string) any {
