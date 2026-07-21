@@ -6,7 +6,9 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"math/big"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -129,6 +131,14 @@ type Series struct {
 	ReferenceContext string
 	Unit             string
 	Observations     []Observation
+}
+
+// Trend is a factual description of a comparable numeric series. It does not
+// interpret whether a change is desirable or clinically meaningful.
+type Trend struct {
+	Change    string
+	Direction string
+	Line      []float64
 }
 
 type Conflict struct {
@@ -661,4 +671,135 @@ func buildSeries(observations []Observation) ([]Series, []Conflict) {
 		series = append(series, Series{Key: key, Analyte: first.Analyte, Subject: first.Subject, Specimen: first.Specimen, Method: first.Method, ReferenceContext: first.ReferenceContext, Unit: first.Unit, Observations: items})
 	}
 	return series, conflicts
+}
+
+// SeriesSince returns the comparable observations recorded on or after since.
+// It keeps the series identity and unit rules established by buildSeries.
+func SeriesSince(series []Series, since time.Time) []Series {
+	cutoff := since.UTC().Format("2006-01-02")
+	out := make([]Series, 0, len(series))
+	for _, item := range series {
+		filtered := item
+		filtered.Observations = make([]Observation, 0, len(item.Observations))
+		for _, observation := range item.Observations {
+			if observation.ObservedOn >= cutoff {
+				filtered.Observations = append(filtered.Observations, observation)
+			}
+		}
+		if len(filtered.Observations) > 0 {
+			out = append(out, filtered)
+		}
+	}
+	return out
+}
+
+// SeriesTrend calculates an exact first-to-last change and a least-squares
+// line for charting. The line is descriptive only and does not make a health
+// assessment.
+func SeriesTrend(observations []Observation) Trend {
+	trend := Trend{Direction: "steady"}
+	if len(observations) == 0 {
+		return trend
+	}
+	if len(observations) == 1 {
+		trend.Line = []float64{valueFloat(observations[0].Value)}
+		return trend
+	}
+	delta, scale := valueDifference(observations[len(observations)-1].Value, observations[0].Value)
+	trend.Change = signedDecimal(delta, scale)
+	switch delta.Sign() {
+	case -1:
+		trend.Direction = "down"
+	case 1:
+		trend.Direction = "up"
+	}
+	xs := seriesDays(observations)
+	values := make([]float64, len(observations))
+	var meanX, meanY float64
+	for index, observation := range observations {
+		values[index] = valueFloat(observation.Value)
+		meanX += xs[index]
+		meanY += values[index]
+	}
+	meanX /= float64(len(observations))
+	meanY /= float64(len(observations))
+	var numerator, denominator float64
+	for index, value := range values {
+		dx := xs[index] - meanX
+		numerator += dx * (value - meanY)
+		denominator += dx * dx
+	}
+	slope := 0.0
+	if denominator != 0 {
+		slope = numerator / denominator
+	}
+	trend.Line = make([]float64, len(values))
+	for index := range values {
+		trend.Line[index] = meanY + slope*(xs[index]-meanX)
+	}
+	return trend
+}
+
+func valueDifference(later, earlier Value) (*big.Int, uint8) {
+	scale := later.Scale
+	if earlier.Scale > scale {
+		scale = earlier.Scale
+	}
+	left := big.NewInt(later.Coefficient)
+	right := big.NewInt(earlier.Coefficient)
+	left.Mul(left, pow10(int(scale-later.Scale)))
+	right.Mul(right, pow10(int(scale-earlier.Scale)))
+	return left.Sub(left, right), scale
+}
+
+func pow10(exponent int) *big.Int {
+	return new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(exponent)), nil)
+}
+
+func signedDecimal(value *big.Int, scale uint8) string {
+	negative := value.Sign() < 0
+	digits := new(big.Int).Abs(value).String()
+	if scale > 0 {
+		width := int(scale) + 1
+		if len(digits) < width {
+			digits = strings.Repeat("0", width-len(digits)) + digits
+		}
+		point := len(digits) - int(scale)
+		digits = strings.TrimRight(digits[:point]+"."+digits[point:], "0")
+		digits = strings.TrimRight(digits, ".")
+	}
+	if negative {
+		return "-" + digits
+	}
+	return "+" + digits
+}
+
+func valueFloat(value Value) float64 {
+	parsed, _ := strconv.ParseFloat(value.PlainString(), 64)
+	return parsed
+}
+
+func seriesDays(observations []Observation) []float64 {
+	xs := make([]float64, len(observations))
+	first, err := time.Parse("2006-01-02", observations[0].ObservedOn)
+	if err != nil {
+		for index := range xs {
+			xs[index] = float64(index)
+		}
+		return xs
+	}
+	for index, observation := range observations {
+		date, parseErr := time.Parse("2006-01-02", observation.ObservedOn)
+		if parseErr != nil {
+			xs[index] = float64(index)
+			continue
+		}
+		xs[index] = date.Sub(first).Hours() / 24
+	}
+	if xs[len(xs)-1] == 0 {
+		for index := range xs {
+			xs[index] = float64(index)
+		}
+	}
+	return xs
 }

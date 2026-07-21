@@ -18,6 +18,8 @@ type HealthView struct {
 	Navigation   []NavigationItem
 	CSRF         string
 	Scope        string
+	Range        string
+	Ranges       []HealthRangeView
 	HasRecords   bool
 	Status       string
 	Error        string
@@ -28,7 +30,14 @@ type HealthView struct {
 	Records      []HealthRecordView
 }
 
-type HealthSeriesView struct{ ID, Subject, Analyte, LatestValue, Unit, LatestDate, ReferenceRange, AccessibleSummary, Points, EvidenceURL string }
+type HealthRangeView struct {
+	Label, URL string
+	Current    bool
+}
+type HealthSeriesView struct {
+	ID, Subject, Analyte, LatestValue, Unit, LatestDate, ReferenceRange, AccessibleSummary, Points, Trendline, Change, Direction, EvidenceURL string
+	HasTrend                                                                                                                                  bool
+}
 type HealthConflictView struct{ RecordID, Version, Analyte, Reason, EvidenceURL string }
 type HealthAppointmentView struct{ Label, Subject, Location, DateISO, DateLabel, EvidenceURL string }
 type HealthRoutineView struct{ Label, Subject, Schedule, EvidenceURL string }
@@ -53,13 +62,14 @@ func (a *App) healthLens(w http.ResponseWriter, r *http.Request) {
 	if filter != health.SharedRecords && filter != health.PersonalRecords {
 		filter = health.AllRecords
 	}
+	rangeValue := healthRange(r.URL.Query().Get("range"))
 	summary, err := a.healthRecords.Summarize(r.Context(), scope, filter)
 	if err != nil {
 		logRequestError(a.logger, r.Context(), "health_query_failed")
-		a.renderHealth(r.Context(), w, HealthView{Navigation: navigationForPath("/health"), CSRF: csrf, Scope: string(filter), Error: "Your records were not changed. Try this view again."})
+		a.renderHealth(r.Context(), w, HealthView{Navigation: navigationForPath("/health"), CSRF: csrf, Scope: string(filter), Range: rangeValue, Error: "Your records were not changed. Try this view again."})
 		return
 	}
-	view := healthView(summary, filter, csrf, time.Now())
+	view := healthView(summary, filter, csrf, time.Now(), rangeValue)
 	if r.URL.Query().Get("corrected") == "1" {
 		view.Status = "The corrected value and unit are now active. The original source remains linked."
 	}
@@ -102,6 +112,10 @@ func (a *App) renderHealth(ctx context.Context, w http.ResponseWriter, view Heal
 	if view.Scope == "" {
 		view.Scope = string(health.AllRecords)
 	}
+	view.Range = healthRange(view.Range)
+	if view.Ranges == nil {
+		view.Ranges = healthRangeOptions(view.Range, view.Scope)
+	}
 	rendered := newBufferedResponse(maxResponseBodyBytes)
 	if err := a.templates.ExecuteTemplate(rendered, "health.html", view); err != nil || rendered.overflow {
 		logRequestError(a.logger, ctx, "health_render_failed")
@@ -112,9 +126,14 @@ func (a *App) renderHealth(ctx context.Context, w http.ResponseWriter, view Heal
 	rendered.commit(w)
 }
 
-func healthView(summary health.Summary, filter health.ScopeFilter, csrf string, now time.Time) HealthView {
-	view := HealthView{Navigation: navigationForPath("/health"), CSRF: csrf, Scope: string(filter), HasRecords: len(summary.Observations)+len(summary.Appointments)+len(summary.Routines) > 0}
-	for index, series := range summary.Series {
+func healthView(summary health.Summary, filter health.ScopeFilter, csrf string, now time.Time, rangeValue string) HealthView {
+	rangeValue = healthRange(rangeValue)
+	view := HealthView{Navigation: navigationForPath("/health"), CSRF: csrf, Scope: string(filter), Range: rangeValue, Ranges: healthRangeOptions(rangeValue, string(filter)), HasRecords: len(summary.Observations)+len(summary.Appointments)+len(summary.Routines) > 0}
+	seriesForRange := summary.Series
+	if rangeValue != "all" {
+		seriesForRange = health.SeriesSince(summary.Series, now.AddDate(0, -healthRangeMonths(rangeValue), 0))
+	}
+	for index, series := range seriesForRange {
 		latest := series.Observations[len(series.Observations)-1]
 		date, _ := time.Parse("2006-01-02", latest.ObservedOn)
 		reference := ""
@@ -132,7 +151,13 @@ func healthView(summary health.Summary, filter health.ScopeFilter, csrf string, 
 		for _, item := range series.Observations {
 			parts = append(parts, item.ObservedOn+" "+item.Value.PlainString()+" "+series.Unit)
 		}
-		view.Series = append(view.Series, HealthSeriesView{ID: strconv.Itoa(index + 1), Subject: series.Subject, Analyte: series.Analyte, LatestValue: latest.Value.PlainString(), Unit: series.Unit, LatestDate: date.Format("2 Jan 2006"), ReferenceRange: strings.TrimSpace(reference), AccessibleSummary: strings.Join(parts, "; ") + ".", Points: healthPoints(series.Observations), EvidenceURL: healthSourceURL(latest.SourceID)})
+		trend := health.SeriesTrend(series.Observations)
+		points, trendline := healthPoints(series.Observations, trend.Line)
+		summary := strings.Join(parts, "; ") + "."
+		if len(series.Observations) > 1 {
+			summary += " Change " + trend.Change + " " + series.Unit + ", direction " + trend.Direction + ". A linear trendline is shown."
+		}
+		view.Series = append(view.Series, HealthSeriesView{ID: strconv.Itoa(index + 1), Subject: series.Subject, Analyte: series.Analyte, LatestValue: latest.Value.PlainString(), Unit: series.Unit, LatestDate: date.Format("2 Jan 2006"), ReferenceRange: strings.TrimSpace(reference), AccessibleSummary: summary, Points: points, Trendline: trendline, Change: trend.Change, Direction: trend.Direction, HasTrend: len(series.Observations) > 1, EvidenceURL: healthSourceURL(latest.SourceID)})
 	}
 	for _, conflict := range summary.Conflicts {
 		view.Conflicts = append(view.Conflicts, HealthConflictView{RecordID: conflict.RecordID, Version: strconv.FormatInt(conflict.Version, 10), Analyte: conflict.Analyte, Reason: conflict.Reason, EvidenceURL: healthSourceURL(conflict.SourceID)})
@@ -160,9 +185,42 @@ func healthView(summary health.Summary, filter health.ScopeFilter, csrf string, 
 	return view
 }
 
-func healthPoints(observations []health.Observation) string {
+func healthRange(input string) string {
+	switch input {
+	case "6", "12", "all":
+		return input
+	default:
+		return "3"
+	}
+}
+
+func healthRangeMonths(rangeValue string) int {
+	switch rangeValue {
+	case "6":
+		return 6
+	case "12":
+		return 12
+	default:
+		return 3
+	}
+}
+
+func healthRangeOptions(rangeValue, scope string) []HealthRangeView {
+	options := []struct{ value, label string }{{"3", "3 months"}, {"6", "6 months"}, {"12", "12 months"}, {"all", "All time"}}
+	result := make([]HealthRangeView, 0, len(options))
+	for _, option := range options {
+		query := url.Values{"range": {option.value}}
+		if scope != "" && scope != string(health.AllRecords) {
+			query.Set("scope", scope)
+		}
+		result = append(result, HealthRangeView{Label: option.label, URL: "/health?" + query.Encode(), Current: option.value == rangeValue})
+	}
+	return result
+}
+
+func healthPoints(observations []health.Observation, trendline []float64) (string, string) {
 	if len(observations) == 1 {
-		return "110,32"
+		return "110,32", ""
 	}
 	values := make([]float64, len(observations))
 	minimum, maximum := math.MaxFloat64, -math.MaxFloat64
@@ -176,17 +234,31 @@ func healthPoints(observations []health.Observation) string {
 			maximum = value
 		}
 	}
+	for _, value := range trendline {
+		if value < minimum {
+			minimum = value
+		}
+		if value > maximum {
+			maximum = value
+		}
+	}
 	span := maximum - minimum
 	if span == 0 {
 		span = 1
 	}
 	points := make([]string, len(values))
+	line := make([]string, len(trendline))
 	for index, value := range values {
 		x := 12 + float64(index)*196/float64(len(values)-1)
 		y := 54 - (value-minimum)*44/span
 		points[index] = fmt.Sprintf("%.1f,%.1f", x, y)
 	}
-	return strings.Join(points, " ")
+	for index, value := range trendline {
+		x := 12 + float64(index)*196/float64(len(trendline)-1)
+		y := 54 - (value-minimum)*44/span
+		line[index] = fmt.Sprintf("%.1f,%.1f", x, y)
+	}
+	return strings.Join(points, " "), strings.Join(line, " ")
 }
 func joinPresent(values ...string) string {
 	var result []string

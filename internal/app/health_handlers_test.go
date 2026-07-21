@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/glnarayanan/mithra/internal/health"
 	"github.com/glnarayanan/mithra/internal/policy"
@@ -83,6 +84,39 @@ func TestHealthLensEmptyAndCSRFBoundary(t *testing.T) {
 	response := serve(application, bad)
 	if response.Code != http.StatusForbidden {
 		t.Fatalf("missing CSRF status=%d", response.Code)
+	}
+}
+
+func TestHealthRangeFiltersChartsAndKeepsConflicts(t *testing.T) {
+	observation := func(date, value string) health.Observation {
+		parsed, err := health.ParseValue(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return health.Observation{ObservedOn: date, Value: parsed, Unit: "kg", SourceID: date}
+	}
+	summary := health.Summary{
+		Series: []health.Series{{Analyte: "Weight", Subject: "Alex", Unit: "kg", Observations: []health.Observation{
+			observation("2026-04-20", "70"), observation("2026-05-21", "71"), observation("2026-06-21", "72"), observation("2026-07-21", "73"),
+		}}},
+		Conflicts: []health.Conflict{{Analyte: "Glucose", Reason: "Units are not explicitly compatible; enter the correct value and unit.", SourceID: "conflict"}},
+	}
+	now := time.Date(2026, time.July, 21, 12, 0, 0, 0, time.UTC)
+	if healthRange("") != "3" || healthRange("bogus") != "3" || healthRange("all") != "all" {
+		t.Fatalf("health range validation failed")
+	}
+	defaultView := healthView(summary, health.AllRecords, "csrf", now, "bogus")
+	if defaultView.Range != "3" || len(defaultView.Series) != 1 || len(strings.Fields(defaultView.Series[0].Points)) != 3 {
+		t.Fatalf("default range view=%#v", defaultView)
+	}
+	if len(defaultView.Conflicts) != 1 {
+		t.Fatalf("range must retain mismatch correction path=%#v", defaultView.Conflicts)
+	}
+	for _, rangeValue := range []string{"6", "all"} {
+		view := healthView(summary, health.AllRecords, "csrf", now, rangeValue)
+		if len(view.Series) != 1 || len(strings.Fields(view.Series[0].Points)) != 4 || !view.Series[0].HasTrend || view.Series[0].Direction != "up" || view.Series[0].Trendline == "" {
+			t.Fatalf("%s month view=%#v", rangeValue, view)
+		}
 	}
 }
 

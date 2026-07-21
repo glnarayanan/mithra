@@ -24,6 +24,7 @@
             <p class="introduction-copy">Keep reported values, appointments, and routines together so changes are easier to see.</p>
           </div>
           <form class="scope-filter" method="get" action="/health" data-auto-submit>
+            <input type="hidden" name="range" value="{{.Range}}">
             <label for="health-scope">Records shown</label>
             <select id="health-scope" name="scope"><option value="all"{{if eq .Scope "all"}} selected{{end}}>Shared and only you</option><option value="shared"{{if eq .Scope "shared"}} selected{{end}}>Shared</option><option value="personal"{{if eq .Scope "personal"}} selected{{end}}>Only you</option></select>
             <button type="submit">Apply</button>
@@ -39,7 +40,9 @@
         {{else}}
         {{if .Series}}
         <section aria-labelledby="health-series-title"><div class="section-heading"><div><p class="eyebrow">Over time</p><h2 id="health-series-title">Measurements</h2></div><p>Only comparable results with matching context and units are shown together.</p></div>
-          <div class="health-series-grid">{{range .Series}}<article class="health-series-card"><div><p>{{.Subject}}</p><h3>{{.Analyte}}</h3><strong>{{.LatestValue}} <span>{{.Unit}}</span></strong><p>{{.LatestDate}}{{if .ReferenceRange}} · Reported reference {{.ReferenceRange}}{{end}}</p></div><svg viewBox="0 0 220 64" role="img" aria-labelledby="series-title-{{.ID}} series-desc-{{.ID}}"><title id="series-title-{{.ID}}">{{.Analyte}} reported values</title><desc id="series-desc-{{.ID}}">{{.AccessibleSummary}}</desc><polyline points="{{.Points}}" fill="none" vector-effect="non-scaling-stroke"></polyline></svg><a href="{{.EvidenceURL}}">View original report</a></article>{{end}}</div>
+          <nav class="calendar-view-switcher" aria-label="Measurement range">{{range .Ranges}}<a href="{{.URL}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a>{{end}}</nav>
+          <p class="health-safety-note">Showing {{range .Ranges}}{{if .Current}}{{.Label}}{{end}}{{end}} of reported measurements. The dashed line is a calculated trend, not medical advice.</p>
+          <div class="health-series-grid">{{range .Series}}<article class="health-series-card"><div><p>{{.Subject}}</p><h3>{{.Analyte}}</h3><strong>{{.LatestValue}} <span>{{.Unit}}</span></strong><p>{{.LatestDate}}{{if .ReferenceRange}} · Reported reference {{.ReferenceRange}}{{end}}</p>{{if .HasTrend}}<p>Change {{.Change}} {{.Unit}} · {{.Direction}}</p>{{end}}</div><svg viewBox="0 0 220 64" role="img" aria-labelledby="series-title-{{.ID}} series-desc-{{.ID}}"><title id="series-title-{{.ID}}">{{.Analyte}} reported values</title><desc id="series-desc-{{.ID}}">{{.AccessibleSummary}}</desc>{{if .HasTrend}}<polyline points="{{.Trendline}}" fill="none" stroke-dasharray="5 4" opacity="0.55" vector-effect="non-scaling-stroke"></polyline>{{end}}<polyline points="{{.Points}}" fill="none" vector-effect="non-scaling-stroke"></polyline></svg><a href="{{.EvidenceURL}}">View latest source</a></article>{{end}}</div>
         </section>
         {{end}}
         {{if .Conflicts}}
