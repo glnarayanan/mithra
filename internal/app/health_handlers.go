@@ -35,9 +35,11 @@ type HealthRangeView struct {
 	Current    bool
 }
 type HealthSeriesView struct {
-	ID, Subject, Analyte, LatestValue, Unit, LatestDate, ReferenceRange, AccessibleSummary, Points, Trendline, Change, Direction, EvidenceURL string
-	HasTrend                                                                                                                                  bool
+	ID, Subject, Analyte, FirstValue, FirstDate, LatestValue, Unit, LatestDate, ReferenceRange, AccessibleSummary, Points, Trendline, Change, Direction, EvidenceURL string
+	Markers                                                                                                                                                          []HealthChartMarkerView
+	HasTrend                                                                                                                                                         bool
 }
+type HealthChartMarkerView struct{ X, Y, Label, Value string }
 type HealthConflictView struct{ RecordID, Version, Analyte, Reason, EvidenceURL string }
 type HealthAppointmentView struct{ Label, Subject, Location, DateISO, DateLabel, EvidenceURL string }
 type HealthRoutineView struct{ Label, Subject, Schedule, EvidenceURL string }
@@ -134,7 +136,9 @@ func healthView(summary health.Summary, filter health.ScopeFilter, csrf string, 
 		seriesForRange = health.SeriesSince(summary.Series, now.AddDate(0, -healthRangeMonths(rangeValue), 0))
 	}
 	for index, series := range seriesForRange {
+		first := series.Observations[0]
 		latest := series.Observations[len(series.Observations)-1]
+		firstDate, _ := time.Parse("2006-01-02", first.ObservedOn)
 		date, _ := time.Parse("2006-01-02", latest.ObservedOn)
 		reference := ""
 		if latest.ReferenceLow != nil || latest.ReferenceHigh != nil {
@@ -152,12 +156,12 @@ func healthView(summary health.Summary, filter health.ScopeFilter, csrf string, 
 			parts = append(parts, item.ObservedOn+" "+item.Value.PlainString()+" "+series.Unit)
 		}
 		trend := health.SeriesTrend(series.Observations)
-		points, trendline := healthPoints(series.Observations, trend.Line)
+		points, trendline, markers := healthPoints(series.Observations, trend.Line)
 		summary := strings.Join(parts, "; ") + "."
 		if len(series.Observations) > 1 {
 			summary += " Change " + trend.Change + " " + series.Unit + ", direction " + trend.Direction + ". A linear trendline is shown."
 		}
-		view.Series = append(view.Series, HealthSeriesView{ID: strconv.Itoa(index + 1), Subject: series.Subject, Analyte: series.Analyte, LatestValue: latest.Value.PlainString(), Unit: series.Unit, LatestDate: date.Format("2 Jan 2006"), ReferenceRange: strings.TrimSpace(reference), AccessibleSummary: summary, Points: points, Trendline: trendline, Change: trend.Change, Direction: trend.Direction, HasTrend: len(series.Observations) > 1, EvidenceURL: healthSourceURL(latest.SourceID)})
+		view.Series = append(view.Series, HealthSeriesView{ID: strconv.Itoa(index + 1), Subject: series.Subject, Analyte: series.Analyte, FirstValue: first.Value.PlainString(), FirstDate: firstDate.Format("2 Jan 2006"), LatestValue: latest.Value.PlainString(), Unit: series.Unit, LatestDate: date.Format("2 Jan 2006"), ReferenceRange: strings.TrimSpace(reference), AccessibleSummary: summary, Points: points, Trendline: trendline, Markers: markers, Change: trend.Change, Direction: trend.Direction, HasTrend: len(series.Observations) > 1, EvidenceURL: healthSourceURL(latest.SourceID)})
 	}
 	for _, conflict := range summary.Conflicts {
 		view.Conflicts = append(view.Conflicts, HealthConflictView{RecordID: conflict.RecordID, Version: strconv.FormatInt(conflict.Version, 10), Analyte: conflict.Analyte, Reason: conflict.Reason, EvidenceURL: healthSourceURL(conflict.SourceID)})
@@ -218,9 +222,9 @@ func healthRangeOptions(rangeValue, scope string) []HealthRangeView {
 	return result
 }
 
-func healthPoints(observations []health.Observation, trendline []float64) (string, string) {
+func healthPoints(observations []health.Observation, trendline []float64) (string, string, []HealthChartMarkerView) {
 	if len(observations) == 1 {
-		return "110,32", ""
+		return "110,42", "", []HealthChartMarkerView{{X: "110", Y: "42", Label: observations[0].ObservedOn, Value: observations[0].Value.PlainString()}}
 	}
 	values := make([]float64, len(observations))
 	minimum, maximum := math.MaxFloat64, -math.MaxFloat64
@@ -248,17 +252,19 @@ func healthPoints(observations []health.Observation, trendline []float64) (strin
 	}
 	points := make([]string, len(values))
 	line := make([]string, len(trendline))
+	markers := make([]HealthChartMarkerView, len(values))
 	for index, value := range values {
-		x := 12 + float64(index)*196/float64(len(values)-1)
-		y := 54 - (value-minimum)*44/span
+		x := 16 + float64(index)*208/float64(len(values)-1)
+		y := 68 - (value-minimum)*48/span
 		points[index] = fmt.Sprintf("%.1f,%.1f", x, y)
+		markers[index] = HealthChartMarkerView{X: fmt.Sprintf("%.1f", x), Y: fmt.Sprintf("%.1f", y), Label: observations[index].ObservedOn, Value: observations[index].Value.PlainString()}
 	}
 	for index, value := range trendline {
-		x := 12 + float64(index)*196/float64(len(trendline)-1)
-		y := 54 - (value-minimum)*44/span
+		x := 16 + float64(index)*208/float64(len(trendline)-1)
+		y := 68 - (value-minimum)*48/span
 		line[index] = fmt.Sprintf("%.1f,%.1f", x, y)
 	}
-	return strings.Join(points, " "), strings.Join(line, " ")
+	return strings.Join(points, " "), strings.Join(line, " "), markers
 }
 func joinPresent(values ...string) string {
 	var result []string

@@ -105,10 +105,19 @@ func TestFinanceTrendRangeDefaultsAndRendersServerLinks(t *testing.T) {
 		}
 	}
 	page := serve(application, authenticatedFinanceRequest(session, "/finance?scope=personal&range=6"))
-	for _, text := range []string{`href="/finance?scope=personal&amp;range=3"`, `href="/finance?scope=personal&amp;range=6" aria-current="page"`, `stroke-dasharray="4 3"`} {
+	for _, text := range []string{`href="/finance?scope=personal&amp;range=3"`, `href="/finance?scope=personal&amp;range=6" aria-current="page"`, `class="analytics-chart"`, `May 2026`, `A zero point does not prove that a record was entered that month.`} {
 		if !strings.Contains(page.Body.String(), text) {
 			t.Fatalf("finance range missing %q: %s", text, page.Body.String())
 		}
+	}
+}
+
+func TestFinanceAnalyticsEscapesTrendContent(t *testing.T) {
+	application := newTestApp(t)
+	response := httptest.NewRecorder()
+	application.renderFinance(context.Background(), response, FinanceView{Scope: "all", HasRecords: true, Trends: []FinanceTrendView{{ID: "1", Category: `<script>alert("private")</script>`, PeriodLabel: "May 2026 to July 2026", StartLabel: "May 2026", EndLabel: "July 2026", StartValue: "0", EndValue: "10", ChangeText: "+10", AccessibleSummary: "May 2026 0; July 2026 10.", Points: "16,68 224,16", TrendlinePoints: "16,68 224,16", Markers: []FinanceChartMarkerView{{X: "16", Y: "68", Label: "May 2026", Value: "0", Zero: true}}}}})
+	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), `<script>alert`) || !strings.Contains(response.Body.String(), "&lt;script&gt;") {
+		t.Fatalf("trend content was not escaped: %d %q", response.Code, response.Body.String())
 	}
 }
 

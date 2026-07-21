@@ -118,6 +118,25 @@ func TestHealthRangeFiltersChartsAndKeepsConflicts(t *testing.T) {
 			t.Fatalf("%s month view=%#v", rangeValue, view)
 		}
 	}
+	for _, option := range healthRangeOptions("6", "personal") {
+		if !strings.Contains(option.URL, "scope=personal") || !strings.Contains(option.URL, "range=") {
+			t.Fatalf("range option lost scope or range: %#v", option)
+		}
+	}
+}
+
+func TestHealthAnalyticsEscapesSeriesContent(t *testing.T) {
+	application := newTestApp(t)
+	response := httptest.NewRecorder()
+	application.renderHealth(context.Background(), response, HealthView{Scope: "all", HasRecords: true, Series: []HealthSeriesView{{ID: "1", Subject: "Alex", Analyte: `<script>alert("private")</script>`, FirstValue: "70", FirstDate: "1 May 2026", LatestValue: "72", LatestDate: "1 July 2026", Unit: "kg", AccessibleSummary: "Two reported values.", Points: "16,68 224,16", Trendline: "16,68 224,16", Markers: []HealthChartMarkerView{{X: "16", Y: "68", Label: "2026-05-01", Value: "70"}}, HasTrend: true, Direction: "up", Change: "2", EvidenceURL: "/sources/example"}}})
+	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), `<script>alert`) || !strings.Contains(response.Body.String(), "&lt;script&gt;") {
+		t.Fatalf("series content was not escaped: %d %q", response.Code, response.Body.String())
+	}
+	for _, text := range []string{"class=\"analytics-chart\"", "1 May 2026", "1 July 2026", "range=6"} {
+		if !strings.Contains(response.Body.String(), text) {
+			t.Fatalf("health analytics missing %q: %q", text, response.Body.String())
+		}
+	}
 }
 
 func authenticatedHealthRequest(session browserSession, method, target string, values url.Values) *http.Request {

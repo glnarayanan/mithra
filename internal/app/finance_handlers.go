@@ -41,10 +41,20 @@ type FinanceTrendView struct {
 	ID                string
 	Category          string
 	PeriodLabel       string
+	StartLabel        string
+	EndLabel          string
+	StartValue        string
+	EndValue          string
 	ChangeText        string
 	AccessibleSummary string
 	Points            string
 	TrendlinePoints   string
+	Markers           []FinanceChartMarkerView
+}
+
+type FinanceChartMarkerView struct {
+	X, Y, Label, Value string
+	Zero               bool
 }
 
 type FinanceObligationView struct {
@@ -212,12 +222,16 @@ func financeView(summary finance.Summary, filter finance.ScopeFilter, csrf strin
 		for _, month := range trend.Months {
 			values = append(values, month.Month.Format("January 2006")+" "+month.Value.PlainString())
 		}
+		points, trendline, markers := financeChartPoints(trend.Months, trend.Trendline)
 		view.Trends = append(view.Trends, FinanceTrendView{
 			ID: strconv.Itoa(index + 1), Category: trend.Category, PeriodLabel: periodLabel,
+			StartLabel: trend.Months[0].Month.Format("Jan 2006"), EndLabel: trend.Months[len(trend.Months)-1].Month.Format("Jan 2006"),
+			StartValue: trend.Months[0].Value.PlainString(), EndValue: trend.Months[len(trend.Months)-1].Value.PlainString(),
 			ChangeText:        changeText,
 			AccessibleSummary: strings.Join(values, "; ") + ". Overall direction: " + trendDirection(trend.Trendline) + ".",
-			Points:            chartPoints(trend.Months, trend.Trendline, false),
-			TrendlinePoints:   chartPoints(trend.Months, trend.Trendline, true),
+			Points:            points,
+			TrendlinePoints:   trendline,
+			Markers:           markers,
 		})
 	}
 	for _, record := range summary.Upcoming {
@@ -258,7 +272,7 @@ func financeView(summary finance.Summary, filter finance.ScopeFilter, csrf strin
 	return view
 }
 
-func chartPoints(months []finance.MonthlyValue, trendline []float64, useTrendline bool) string {
+func financeChartPoints(months []finance.MonthlyValue, trendline []float64) (string, string, []FinanceChartMarkerView) {
 	values := make([]float64, len(months))
 	minimum, maximum := 0.0, 0.0
 	for index, month := range months {
@@ -275,19 +289,24 @@ func chartPoints(months []finance.MonthlyValue, trendline []float64, useTrendlin
 		maximum = minimum + 1
 	}
 	points := make([]string, len(months))
+	trendlinePoints := make([]string, len(months))
+	markers := make([]FinanceChartMarkerView, len(months))
 	for index := range months {
-		value := values[index]
-		if useTrendline && index < len(trendline) {
-			value = trendline[index]
-		}
-		x := 12.0
+		x := 16.0
 		if len(months) > 1 {
-			x += 196 * float64(index) / float64(len(months)-1)
+			x += 208 * float64(index) / float64(len(months)-1)
 		}
-		y := 40 - ((value-minimum)/(maximum-minimum))*30
+		y := 68 - ((values[index]-minimum)/(maximum-minimum))*48
 		points[index] = fmt.Sprintf("%.1f,%.1f", x, y)
+		trendValue := values[index]
+		if index < len(trendline) {
+			trendValue = trendline[index]
+		}
+		trendY := 68 - ((trendValue-minimum)/(maximum-minimum))*48
+		trendlinePoints[index] = fmt.Sprintf("%.1f,%.1f", x, trendY)
+		markers[index] = FinanceChartMarkerView{X: fmt.Sprintf("%.1f", x), Y: fmt.Sprintf("%.1f", y), Label: months[index].Month.Format("January 2006"), Value: months[index].Value.PlainString(), Zero: values[index] == 0}
 	}
-	return strings.Join(points, " ")
+	return strings.Join(points, " "), strings.Join(trendlinePoints, " "), markers
 }
 
 func financeTrendRange(value string) int {
