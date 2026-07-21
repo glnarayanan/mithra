@@ -14,10 +14,12 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/glnarayanan/mithra/internal/database"
+	"github.com/glnarayanan/mithra/internal/demo"
 	"github.com/glnarayanan/mithra/internal/imports"
 	"github.com/glnarayanan/mithra/internal/installer"
 )
@@ -36,6 +38,45 @@ func TestWaitForHealthRetriesUntilReady(t *testing.T) {
 	}
 	if attempts != 2 {
 		t.Fatalf("waitForHealth() attempts = %d, want 2", attempts)
+	}
+}
+
+func TestResetDemoRestoresBackupWhenRestartedApplicationIsUnhealthy(t *testing.T) {
+	candidateHealth := errors.New("candidate is unhealthy")
+	stops, starts, restores := 0, 0, 0
+	dependencies := demoResetDependencies{
+		reset: func(context.Context, demo.Config) (demo.Receipt, error) {
+			return demo.Receipt{BackupArchive: "pre-reset.tar.gz"}, nil
+		},
+		quiesce: func(context.Context, string) (func() error, error) {
+			stops++
+			return func() error { starts++; return nil }, nil
+		},
+		ownership: func(string) (installer.RestoreOwnership, error) {
+			return installer.RestoreOwnership{UID: 1001, GID: 1001, Set: true}, nil
+		},
+		restore: func(_ installer.Paths, archive string, key []byte, owner installer.RestoreOwnership, health func() error) error {
+			restores++
+			if archive != "pre-reset.tar.gz" || len(key) != 32 || !owner.Set {
+				t.Fatalf("rollback inputs archive=%q key=%d owner=%+v", archive, len(key), owner)
+			}
+			return health()
+		},
+		wait: func(ctx context.Context, check func(context.Context) error) error { return check(ctx) },
+		local: func(context.Context, installer.Plan) error {
+			if restores == 0 {
+				return candidateHealth
+			}
+			return nil
+		},
+		web: func(context.Context, string) error { return nil },
+	}
+	_, err := resetDemo(context.Background(), installer.Plan{Options: installer.Options{Root: "/", Port: 8090}, Proxy: installer.AppOnly}, installer.Paths{Data: "/var/lib/mithra"}, bytes.Repeat([]byte{1}, 32), demo.Config{}, dependencies)
+	if !errors.Is(err, candidateHealth) {
+		t.Fatalf("reset demo error=%v", err)
+	}
+	if stops != 2 || starts != 2 || restores != 1 {
+		t.Fatalf("stops=%d starts=%d restores=%d", stops, starts, restores)
 	}
 }
 
@@ -75,6 +116,36 @@ func TestInstalledAllowlistFencesDemoAccounts(t *testing.T) {
 	allowed := installedAllowlist(path)
 	if !emailAllowed(allowed, "OWNER@example.com") || !emailAllowed(allowed, "partner@example.com") || emailAllowed(allowed, "unknown@example.com") {
 		t.Fatalf("installed allowlist = %#v", allowed)
+	}
+}
+
+func TestDemoPasswordFilesArePrivateAndBounded(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "owner-password")
+	if err := os.WriteFile(path, []byte("owner demo password\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		t.Skip("platform does not expose file ownership")
+	}
+	if stat.Uid != uint32(os.Geteuid()) {
+		t.Fatalf("fixture owner uid=%d, effective uid=%d", stat.Uid, os.Geteuid())
+	}
+	password, err := readDemoPasswordFile(path)
+	if err != nil || string(password) != "owner demo password" {
+		t.Fatalf("password=%q err=%v", password, err)
+	}
+	clear(password)
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readDemoPasswordFile(path); err == nil {
+		t.Fatal("world-readable demo password file was accepted")
 	}
 }
 
@@ -286,6 +357,10 @@ func TestPlanOperationAndRootValidationAreScoped(t *testing.T) {
 	}
 	if _, err := parseInstallerCommand([]string{"backup", "--root", root + "/../" + filepath.Base(root)}); err == nil {
 		t.Fatal("unclean root was accepted")
+	}
+	parsed, err = parseInstallerCommand([]string{"reset-demo", "--root", root, "--owner-email", "judge-owner@example.com", "--partner-email", "judge-partner@example.com", "--owner-password-file", "/root/owner-password", "--partner-password-file", "/root/partner-password"})
+	if err != nil || *parsed.flags.ownerPasswordPath != "/root/owner-password" || *parsed.flags.partnerPasswordPath != "/root/partner-password" {
+		t.Fatalf("reset-demo password files parsed=%+v err=%v", parsed, err)
 	}
 }
 

@@ -25,6 +25,7 @@
           </div>
           <form class="scope-filter" method="get" action="/finance" data-auto-submit>
             <label for="finance-scope">Records shown</label>
+            <input type="hidden" name="range" value="{{.Range}}">
             <select id="finance-scope" name="scope">
               <option value="all"{{if eq .Scope "all"}} selected{{end}}>Shared and only you</option>
               <option value="shared"{{if eq .Scope "shared"}} selected{{end}}>Shared</option>
@@ -50,23 +51,35 @@
           </div>
         </section>
 
-        {{if .Trends}}
         <section class="finance-section" aria-labelledby="finance-trends-title">
-          <div class="section-heading"><div><p class="eyebrow">Over time</p><h2 id="finance-trends-title">Recent changes</h2></div><p>Based on records with a date and number.</p></div>
+          <div class="section-heading"><div><p class="eyebrow">Over time</p><h2 id="finance-trends-title">Spending over time</h2></div><p>Based on dated records with a number.</p></div>
+          <nav class="analytics-range" aria-label="Spending period"><a href="/finance?scope={{.Scope}}&amp;range=3"{{if eq .Range 3}} aria-current="page"{{end}}>3 months</a><a href="/finance?scope={{.Scope}}&amp;range=6"{{if eq .Range 6}} aria-current="page"{{end}}>6 months</a><a href="/finance?scope={{.Scope}}&amp;range=12"{{if eq .Range 12}} aria-current="page"{{end}}>12 months</a></nav>
+          {{if .Trends}}
+          <p class="analytics-note">The solid line shows monthly totals. The dashed line shows the calculated direction. A zero point does not prove that a record was entered that month.</p>
+          <ul class="analytics-legend" role="list"><li><span class="analytics-legend-line analytics-legend-observed" aria-hidden="true"></span>Monthly total</li><li><span class="analytics-legend-line analytics-legend-trend" aria-hidden="true"></span>Calculated direction</li></ul>
           <div class="trend-list">
             {{range .Trends}}
-            <article class="trend-row">
-              <div><h3>{{.Category}}</h3><p>{{.PeriodLabel}}</p></div>
-              <p class="trend-change">{{.ChangeText}}</p>
-              <svg class="mini-chart" viewBox="0 0 220 46" role="img" aria-labelledby="trend-title-{{.ID}} trend-desc-{{.ID}}">
-                <title id="trend-title-{{.ID}}">{{.Category}} values</title><desc id="trend-desc-{{.ID}}">{{.AccessibleSummary}}</desc>
-                <polyline points="{{.Points}}" fill="none" vector-effect="non-scaling-stroke"></polyline>
-              </svg>
+            <article class="analytics-card">
+              <div class="analytics-card-heading"><div><h3>{{.Category}}</h3><p>{{.PeriodLabel}}</p></div><p class="analytics-change">{{.ChangeText}}</p></div>
+              <dl class="analytics-values"><div><dt>{{.StartLabel}}</dt><dd>{{.StartValue}}</dd></div><div><dt>{{.EndLabel}}</dt><dd>{{.EndValue}}</dd></div></dl>
+              <figure class="analytics-figure">
+                <svg class="analytics-chart" viewBox="0 0 240 84" role="img" aria-labelledby="trend-title-{{.ID}} trend-desc-{{.ID}}">
+                  <title id="trend-title-{{.ID}}">{{.Category}} monthly totals</title><desc id="trend-desc-{{.ID}}">{{.AccessibleSummary}}</desc>
+                  <g class="analytics-grid" aria-hidden="true"><line x1="16" y1="16" x2="224" y2="16"></line><line x1="16" y1="42" x2="224" y2="42"></line><line x1="16" y1="68" x2="224" y2="68"></line></g>
+                  <polyline class="analytics-trendline" points="{{.TrendlinePoints}}" fill="none" vector-effect="non-scaling-stroke"></polyline>
+                  <polyline class="analytics-observed-line" points="{{.Points}}" fill="none" vector-effect="non-scaling-stroke"></polyline>
+                  {{range .Markers}}<circle class="analytics-marker{{if .Zero}} analytics-marker-zero{{end}}" cx="{{.X}}" cy="{{.Y}}" r="3.25"><title>{{.Label}}: {{.Value}}</title></circle>{{end}}
+                </svg>
+                <figcaption><span>{{.StartLabel}}</span><span>{{.EndLabel}}</span></figcaption>
+              </figure>
+              <p class="analytics-source-note">Each total comes from the dated finance records below. <a href="#finance-records-title">View records and sources</a>.</p>
             </article>
             {{end}}
           </div>
+          {{else}}
+          <p class="quiet-copy">No dated spending records fall in this range. Choose a longer period to look back.</p>
+          {{end}}
         </section>
-        {{end}}
 
         {{if .Obligations}}
         <section class="finance-section" aria-labelledby="finance-obligations-title">

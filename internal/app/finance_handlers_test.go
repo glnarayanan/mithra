@@ -86,6 +86,53 @@ func TestFinanceLensKeepsErrorsGenericAndEscaped(t *testing.T) {
 	}
 }
 
+func TestFinanceTrendRangeDefaultsAndRendersServerLinks(t *testing.T) {
+	for raw, want := range map[string]int{"": 3, "3": 3, "6": 6, "12": 12, "2": 3, "six": 3} {
+		if got := financeTrendRange(raw); got != want {
+			t.Fatalf("range %q = %d, want %d", raw, got, want)
+		}
+	}
+	application, mailer := newAuthTestApp(t, "owner@example.com")
+	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
+	owner := ownerScope(t, application, session)
+	source, err := application.sources.Store(context.Background(), owner, []byte("spending"), storage.Metadata{Family: "text", Version: 1, Visibility: policy.Personal, LocatorKind: "source", LocatorValue: "capture"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, month := range []string{"2026-05-10", "2026-06-10", "2026-07-10"} {
+		if _, err := application.finance.Create(context.Background(), owner, finance.Draft{Kind: finance.Spending, Visibility: policy.Personal, Label: "Groceries", Category: "Groceries", Date: month, AmountText: "10", Provenance: finance.Provenance{SourceID: source.ID, SourceFamily: source.Family, SourceVersion: source.Version, LocatorKind: "source", LocatorValue: source.LocatorValue}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	page := serve(application, authenticatedFinanceRequest(session, "/finance?scope=personal&range=6"))
+	for _, text := range []string{`href="/finance?scope=personal&amp;range=3"`, `href="/finance?scope=personal&amp;range=6" aria-current="page"`, `class="analytics-chart"`, `May 2026`, `A zero point does not prove that a record was entered that month.`} {
+		if !strings.Contains(page.Body.String(), text) {
+			t.Fatalf("finance range missing %q: %s", text, page.Body.String())
+		}
+	}
+}
+
+func TestFinanceRangeControlsRemainVisibleWithoutPoints(t *testing.T) {
+	application := newTestApp(t)
+	response := httptest.NewRecorder()
+	application.renderFinance(context.Background(), response, FinanceView{Scope: "personal", Range: 3, HasRecords: true})
+	body := response.Body.String()
+	for _, required := range []string{`aria-label="Spending period"`, `href="/finance?scope=personal&amp;range=3" aria-current="page"`, `href="/finance?scope=personal&amp;range=12"`, "No dated spending records fall in this range."} {
+		if response.Code != http.StatusOK || !strings.Contains(body, required) {
+			t.Fatalf("missing no-points range control %q: %d %q", required, response.Code, body)
+		}
+	}
+}
+
+func TestFinanceAnalyticsEscapesTrendContent(t *testing.T) {
+	application := newTestApp(t)
+	response := httptest.NewRecorder()
+	application.renderFinance(context.Background(), response, FinanceView{Scope: "all", HasRecords: true, Trends: []FinanceTrendView{{ID: "1", Category: `<script>alert("private")</script>`, PeriodLabel: "May 2026 to July 2026", StartLabel: "May 2026", EndLabel: "July 2026", StartValue: "0", EndValue: "10", ChangeText: "+10", AccessibleSummary: "May 2026 0; July 2026 10.", Points: "16,68 224,16", TrendlinePoints: "16,68 224,16", Markers: []FinanceChartMarkerView{{X: "16", Y: "68", Label: "May 2026", Value: "0", Zero: true}}}}})
+	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), `<script>alert`) || !strings.Contains(response.Body.String(), "&lt;script&gt;") {
+		t.Fatalf("trend content was not escaped: %d %q", response.Code, response.Body.String())
+	}
+}
+
 func TestFinanceIssueCanBeCorrectedFromTheLens(t *testing.T) {
 	application, mailer := newAuthTestApp(t, "owner@example.com")
 	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)

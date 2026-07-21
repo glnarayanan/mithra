@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/glnarayanan/mithra/internal/health"
 	"github.com/glnarayanan/mithra/internal/policy"
@@ -83,6 +84,70 @@ func TestHealthLensEmptyAndCSRFBoundary(t *testing.T) {
 	response := serve(application, bad)
 	if response.Code != http.StatusForbidden {
 		t.Fatalf("missing CSRF status=%d", response.Code)
+	}
+}
+
+func TestHealthRangeFiltersChartsAndKeepsConflicts(t *testing.T) {
+	observation := func(date, value string) health.Observation {
+		parsed, err := health.ParseValue(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return health.Observation{ObservedOn: date, Value: parsed, Unit: "kg", SourceID: date}
+	}
+	summary := health.Summary{
+		Series: []health.Series{{Analyte: "Weight", Subject: "Alex", Unit: "kg", Observations: []health.Observation{
+			observation("2026-04-20", "70"), observation("2026-05-21", "71"), observation("2026-06-21", "72"), observation("2026-07-21", "73"),
+		}}},
+		Conflicts: []health.Conflict{{Analyte: "Glucose", Reason: "Units are not explicitly compatible; enter the correct value and unit.", SourceID: "conflict"}},
+	}
+	now := time.Date(2026, time.July, 21, 12, 0, 0, 0, time.UTC)
+	if healthRange("") != "3" || healthRange("bogus") != "3" || healthRange("all") != "all" {
+		t.Fatalf("health range validation failed")
+	}
+	defaultView := healthView(summary, health.AllRecords, "csrf", now, "bogus")
+	if defaultView.Range != "3" || len(defaultView.Series) != 1 || len(strings.Fields(defaultView.Series[0].Points)) != 3 {
+		t.Fatalf("default range view=%#v", defaultView)
+	}
+	if len(defaultView.Conflicts) != 1 {
+		t.Fatalf("range must retain mismatch correction path=%#v", defaultView.Conflicts)
+	}
+	for _, rangeValue := range []string{"6", "all"} {
+		view := healthView(summary, health.AllRecords, "csrf", now, rangeValue)
+		if len(view.Series) != 1 || len(strings.Fields(view.Series[0].Points)) != 4 || !view.Series[0].HasTrend || view.Series[0].Direction != "up" || view.Series[0].Trendline == "" {
+			t.Fatalf("%s month view=%#v", rangeValue, view)
+		}
+	}
+	for _, option := range healthRangeOptions("6", "personal") {
+		if !strings.Contains(option.URL, "scope=personal") || !strings.Contains(option.URL, "range=") {
+			t.Fatalf("range option lost scope or range: %#v", option)
+		}
+	}
+}
+
+func TestHealthRangeControlsRemainVisibleWithoutPoints(t *testing.T) {
+	application := newTestApp(t)
+	response := httptest.NewRecorder()
+	application.renderHealth(context.Background(), response, HealthView{Scope: "personal", Range: "3", HasRecords: true})
+	body := response.Body.String()
+	for _, required := range []string{`aria-label="Measurement range"`, `href="/health?range=3&amp;scope=personal" aria-current="page"`, `href="/health?range=12&amp;scope=personal"`, "No comparable measurements fall in this range."} {
+		if response.Code != http.StatusOK || !strings.Contains(body, required) {
+			t.Fatalf("missing no-points range control %q: %d %q", required, response.Code, body)
+		}
+	}
+}
+
+func TestHealthAnalyticsEscapesSeriesContent(t *testing.T) {
+	application := newTestApp(t)
+	response := httptest.NewRecorder()
+	application.renderHealth(context.Background(), response, HealthView{Scope: "all", HasRecords: true, Series: []HealthSeriesView{{ID: "1", Subject: "Alex", Analyte: `<script>alert("private")</script>`, FirstValue: "70", FirstDate: "1 May 2026", LatestValue: "72", LatestDate: "1 July 2026", Unit: "kg", AccessibleSummary: "Two reported values.", Points: "16,68 224,16", Trendline: "16,68 224,16", Markers: []HealthChartMarkerView{{X: "16", Y: "68", Label: "2026-05-01", Value: "70"}}, HasTrend: true, Direction: "up", Change: "2", EvidenceURL: "/sources/example"}}})
+	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), `<script>alert`) || !strings.Contains(response.Body.String(), "&lt;script&gt;") {
+		t.Fatalf("series content was not escaped: %d %q", response.Code, response.Body.String())
+	}
+	for _, text := range []string{"class=\"analytics-chart\"", "1 May 2026", "1 July 2026", "range=6"} {
+		if !strings.Contains(response.Body.String(), text) {
+			t.Fatalf("health analytics missing %q: %q", text, response.Body.String())
+		}
 	}
 }
 

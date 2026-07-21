@@ -110,9 +110,13 @@ sudo mithra-installer reset-demo \
 ```
 
 Both addresses must be current allowlist entries. Reset revokes their browser
-sessions and reset tokens, preserves established password hashes and account
-states, and restarts the service after the verified candidate completes. Judge
-credentials are delivered only through the private submission channel.
+sessions and reset tokens. It preserves the configured model provider and
+keeps established password hashes unless the operator supplies private
+root-owned password files. It restarts the service, checks both accounts and
+their privacy boundary, and reports success only after the application is
+healthy. If that check fails, reset restores the verified backup and previous
+service state. Judge credentials are delivered only through the private
+submission channel.
 
 ## Recovery ownership
 

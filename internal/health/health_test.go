@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/glnarayanan/mithra/internal/database"
 	"github.com/glnarayanan/mithra/internal/policy"
@@ -180,5 +181,35 @@ func TestAppointmentTimeMustMatchItsDate(t *testing.T) {
 	appointment, err := f.service.CreateAppointment(context.Background(), f.owner, draft)
 	if err != nil || appointment.ScheduledAt != draft.ScheduledAt {
 		t.Fatalf("valid appointment=%#v error=%v", appointment, err)
+	}
+}
+
+func TestSeriesSinceAndTrendKeepExactValues(t *testing.T) {
+	observation := func(date, value string) Observation {
+		parsed, err := ParseValue(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return Observation{ObservedOn: date, Value: parsed}
+	}
+	series := []Series{{Analyte: "Weight", Unit: "kg", Observations: []Observation{
+		observation("2026-04-01", "70.000001"),
+		observation("2026-05-01", "71.000002"),
+		observation("2026-06-01", "72.000003"),
+	}}}
+	filtered := SeriesSince(series, time.Date(2026, time.May, 1, 12, 0, 0, 0, time.UTC))
+	if len(filtered) != 1 || len(filtered[0].Observations) != 2 || filtered[0].Observations[0].ObservedOn != "2026-05-01" {
+		t.Fatalf("boundary-filtered series=%#v", filtered)
+	}
+	if len(series[0].Observations) != 3 {
+		t.Fatalf("filter mutated source series=%#v", series)
+	}
+	trend := SeriesTrend(filtered[0].Observations)
+	if trend.Direction != "up" || trend.Change != "+1.000001" || len(trend.Line) != 2 {
+		t.Fatalf("trend=%#v", trend)
+	}
+	steady := SeriesTrend([]Observation{observation("2026-06-01", "2"), observation("2026-06-02", "2.0")})
+	if steady.Direction != "steady" || steady.Change != "+0" {
+		t.Fatalf("steady trend=%#v", steady)
 	}
 }

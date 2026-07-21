@@ -29,7 +29,7 @@ var commandSpecs = []commandSpec{
 	{"backup", "create an encrypted backup", installer.Backup, nil},
 	{"restore", "restore an authenticated backup", installer.Restore, []string{"--domain", "--proxy", "--port", "--allowed-emails", "--archive"}},
 	{"status", "report Mithra status", installer.Status, []string{"--proxy", "--port"}},
-	{"reset-demo", "replace judge demo data (advanced)", "reset-demo", []string{"--owner-email", "--partner-email", "--master-key-file"}},
+	{"reset-demo", "replace judge demo data (advanced)", "reset-demo", []string{"--owner-email", "--partner-email", "--owner-password-file", "--partner-password-file", "--master-key-file"}},
 	{"uninstall", "remove Mithra runtime and preserve recovery data", installer.Uninstall, []string{"--proxy"}},
 	{"purge", "remove retained Mithra recovery data", installer.Purge, []string{"--proxy", "--confirm-purge"}},
 }
@@ -40,10 +40,10 @@ func (e usageError) Error() string { return e.err.Error() }
 func (e usageError) Unwrap() error { return e.err }
 
 type installerFlags struct {
-	root, domain, proxy, emails, archive, artifact, candidateInstaller, manifest, signature, releaseVersion, plunkPath, plunkFrom, ownerEmail, partnerEmail, masterKeyPath *string
-	port                                                                                                                                                                   *int
-	confirm                                                                                                                                                                *bool
-	help                                                                                                                                                                   *bool
+	root, domain, proxy, emails, archive, artifact, candidateInstaller, manifest, signature, releaseVersion, plunkPath, plunkFrom, ownerEmail, partnerEmail, ownerPasswordPath, partnerPasswordPath, masterKeyPath *string
+	port                                                                                                                                                                                                           *int
+	confirm                                                                                                                                                                                                        *bool
+	help                                                                                                                                                                                                           *bool
 }
 
 type parsedInstallerCommand struct {
@@ -103,7 +103,7 @@ func commandFlagSet(spec commandSpec) (installerFlags, *flag.FlagSet) {
 	set := flag.NewFlagSet("mithra-installer "+spec.name, flag.ContinueOnError)
 	set.SetOutput(io.Discard)
 	f := installerFlags{
-		domain: new(string), proxy: new(string), emails: new(string), archive: new(string), artifact: new(string), candidateInstaller: new(string), manifest: new(string), signature: new(string), releaseVersion: new(string), plunkPath: new(string), plunkFrom: new(string), ownerEmail: new(string), partnerEmail: new(string), masterKeyPath: new(string), port: new(int), confirm: new(bool),
+		domain: new(string), proxy: new(string), emails: new(string), archive: new(string), artifact: new(string), candidateInstaller: new(string), manifest: new(string), signature: new(string), releaseVersion: new(string), plunkPath: new(string), plunkFrom: new(string), ownerEmail: new(string), partnerEmail: new(string), ownerPasswordPath: new(string), partnerPasswordPath: new(string), masterKeyPath: new(string), port: new(int), confirm: new(bool),
 	}
 	*f.port = 8090
 	f.root = set.String("root", "/", "")
@@ -131,6 +131,10 @@ func commandFlagSet(spec commandSpec) (installerFlags, *flag.FlagSet) {
 			f.ownerEmail = set.String("owner-email", "", "")
 		case "--partner-email":
 			f.partnerEmail = set.String("partner-email", "", "")
+		case "--owner-password-file":
+			f.ownerPasswordPath = set.String("owner-password-file", "", "")
+		case "--partner-password-file":
+			f.partnerPasswordPath = set.String("partner-password-file", "", "")
 		case "--master-key-file":
 			f.masterKeyPath = set.String("master-key-file", "", "")
 		}

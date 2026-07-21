@@ -419,6 +419,9 @@ func before(now time.Time, value string) bool {
 	return err == nil && now.UTC().Before(at)
 }
 func tokenHash(token string) string {
+	// Reset, session, invitation, and CSRF tokens are 256-bit random
+	// capabilities, not user passwords. A fast digest is safe for indexed lookup.
+	// lgtm[go/weak-sensitive-data-hashing]
 	sum := sha256.Sum256([]byte(token))
 	return fmt.Sprintf("%x", sum[:])
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
@@ -30,6 +31,21 @@ var publisherKeyBase64 string
 
 // Set by the release build with -X main.buildVersion=... .
 var buildVersion = "dev"
+
+type demoResetDependencies struct {
+	reset     func(context.Context, demo.Config) (demo.Receipt, error)
+	quiesce   func(context.Context, string) (func() error, error)
+	ownership func(string) (installer.RestoreOwnership, error)
+	restore   func(installer.Paths, string, []byte, installer.RestoreOwnership, func() error) error
+	wait      func(context.Context, func(context.Context) error) error
+	local     func(context.Context, installer.Plan) error
+	web       func(context.Context, string) error
+}
+
+var installedDemoResetDependencies = demoResetDependencies{
+	reset: demo.Reset, quiesce: quiesce, ownership: serviceOwnership, restore: installer.RestoreGenerationWithOwnership,
+	wait: waitForHealth, local: localPlanHealth, web: webHealth,
+}
 
 func main() {
 	os.Exit(execute(context.Background(), os.Args[1:], os.Stdout, os.Stderr))
@@ -145,7 +161,7 @@ func runParsed(ctx context.Context, parsed parsedInstallerCommand, output io.Wri
 	if operation == installer.Upgrade && *artifactPath == "" && *candidateInstallerPath == "" && *manifestPath == "" && *signaturePath == "" && *releaseVersion == "" {
 		return runAutomaticUpgrade(ctx, parsed, output)
 	}
-	plunkPath, plunkFrom, ownerEmail, partnerEmail, masterKeyPath := f.plunkPath, f.plunkFrom, f.ownerEmail, f.partnerEmail, f.masterKeyPath
+	plunkPath, plunkFrom, ownerEmail, partnerEmail, ownerPasswordPath, partnerPasswordPath, masterKeyPath := f.plunkPath, f.plunkFrom, f.ownerEmail, f.partnerEmail, f.ownerPasswordPath, f.partnerPasswordPath, f.masterKeyPath
 	allowed := splitEmails(*emails)
 	basePaths := installer.OwnedPaths(*root, "")
 	configuredProxy, configuredDomain, configuredPort := installedRuntime(basePaths.Config)
@@ -186,18 +202,35 @@ func runParsed(ctx context.Context, parsed parsedInstallerCommand, output io.Wri
 		if *masterKeyPath == "" {
 			*masterKeyPath = paths.MasterKey
 		}
+		if (*ownerPasswordPath == "") != (*partnerPasswordPath == "") {
+			return errors.New("reset-demo requires both password files or neither")
+		}
+		var ownerPassword, partnerPassword []byte
+		if *ownerPasswordPath != "" {
+			var err error
+			ownerPassword, err = readDemoPasswordFile(*ownerPasswordPath)
+			if err != nil {
+				return err
+			}
+			defer clear(ownerPassword)
+			partnerPassword, err = readDemoPasswordFile(*partnerPasswordPath)
+			if err != nil {
+				return err
+			}
+			defer clear(partnerPassword)
+		}
 		key, err := readMasterKey(*masterKeyPath)
 		if err != nil {
 			return err
 		}
 		defer clear(key)
-		restart, err := quiesce(ctx, *root)
+		plan := installer.Plan{Options: installer.Options{Root: *root, Domain: *domain, Port: *port}, Proxy: installer.ProxyMode(*proxy)}
+		if plan.Proxy == "" {
+			plan.Proxy = installer.AppOnly
+		}
+		receipt, err := resetDemo(ctx, plan, paths, key, demo.Config{DatabasePath: paths.Database, SourceRoot: paths.Sources, BackupRoot: paths.Backups, OwnerEmail: *ownerEmail, PartnerEmail: *partnerEmail, OwnerPassword: ownerPassword, PartnerPassword: partnerPassword, MasterKey: key}, installedDemoResetDependencies)
 		if err != nil {
 			return err
-		}
-		receipt, err := demo.Reset(ctx, demo.Config{DatabasePath: paths.Database, SourceRoot: paths.Sources, BackupRoot: paths.Backups, OwnerEmail: *ownerEmail, PartnerEmail: *partnerEmail, MasterKey: key})
-		if restartErr := restart(); err != nil || restartErr != nil {
-			return errors.Join(err, restartErr)
 		}
 		return json.NewEncoder(output).Encode(receipt)
 	}
@@ -354,6 +387,59 @@ func runParsed(ctx context.Context, parsed parsedInstallerCommand, output io.Wri
 	default:
 		return fmt.Errorf("operation %q is not directly executable", operation)
 	}
+}
+
+// resetDemo treats a successful fixture write as provisional until the
+// restarted installed application answers its local health check. A failed
+// candidate is restored from the authenticated pre-reset generation.
+func resetDemo(ctx context.Context, plan installer.Plan, paths installer.Paths, key []byte, config demo.Config, dependencies demoResetDependencies) (demo.Receipt, error) {
+	if dependencies.reset == nil || dependencies.quiesce == nil || dependencies.ownership == nil || dependencies.restore == nil || dependencies.wait == nil || dependencies.local == nil || dependencies.web == nil {
+		return demo.Receipt{}, errors.New("demo reset dependencies are unavailable")
+	}
+	owner, err := dependencies.ownership(plan.Options.Root)
+	if err != nil {
+		return demo.Receipt{}, err
+	}
+	restart, err := dependencies.quiesce(ctx, plan.Options.Root)
+	if err != nil {
+		return demo.Receipt{}, err
+	}
+	receipt, resetErr := dependencies.reset(ctx, config)
+	if resetErr != nil {
+		return receipt, errors.Join(resetErr, restartAndCheckDemoHealth(ctx, plan, restart, dependencies))
+	}
+	if err := restartAndCheckDemoHealth(ctx, plan, restart, dependencies); err == nil {
+		return receipt, nil
+	} else {
+		candidateErr := err
+		rollbackRestart, quiesceErr := dependencies.quiesce(ctx, plan.Options.Root)
+		if quiesceErr != nil {
+			return receipt, errors.Join(candidateErr, quiesceErr)
+		}
+		rollbackErr := dependencies.restore(paths, receipt.BackupArchive, key, owner, func() error { return restartAndCheckDemoHealth(ctx, plan, rollbackRestart, dependencies) })
+		return receipt, errors.Join(candidateErr, rollbackErr)
+	}
+}
+
+func restartAndCheckDemoHealth(ctx context.Context, plan installer.Plan, restart func() error, dependencies demoResetDependencies) error {
+	if err := restart(); err != nil {
+		return err
+	}
+	return installedDemoHealth(ctx, plan, dependencies)
+}
+
+func installedDemoHealth(ctx context.Context, plan installer.Plan, dependencies demoResetDependencies) error {
+	if err := dependencies.wait(ctx, func(checkCtx context.Context) error {
+		return dependencies.local(checkCtx, plan)
+	}); err != nil {
+		return err
+	}
+	if plan.Proxy != installer.AppOnly && strings.TrimSpace(plan.Options.Domain) != "" {
+		return dependencies.wait(ctx, func(checkCtx context.Context) error {
+			return dependencies.web(checkCtx, "https://"+plan.Options.Domain+"/healthz")
+		})
+	}
+	return nil
 }
 
 // preflightPlanFacts reads existing recovery evidence only. Planning must not
@@ -918,6 +1004,28 @@ func readBounded(path string, limit int64) ([]byte, error) {
 		return nil, fmt.Errorf("invalid input file %s", path)
 	}
 	return os.ReadFile(path)
+}
+
+func readDemoPasswordFile(path string) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
+		return nil, errors.New("demo password file must be a private regular file")
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Uid != uint32(os.Geteuid()) {
+		return nil, errors.New("demo password file must be owned by the installer user")
+	}
+	raw, err := readBounded(path, 130)
+	if err != nil {
+		return nil, err
+	}
+	raw = bytes.TrimSuffix(raw, []byte("\n"))
+	raw = bytes.TrimSuffix(raw, []byte("\r"))
+	if len(raw) < 12 || len(raw) > 128 || bytes.IndexByte(raw, 0) >= 0 {
+		clear(raw)
+		return nil, errors.New("demo password must be 12 to 128 bytes")
+	}
+	return raw, nil
 }
 
 func signedRunningInstaller(manifest, signature []byte, publisherKey ed25519.PublicKey) (string, []byte, error) {

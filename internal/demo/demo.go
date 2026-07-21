@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/glnarayanan/mithra/internal/auth"
 	"github.com/glnarayanan/mithra/internal/capture"
 	"github.com/glnarayanan/mithra/internal/coaching"
 	"github.com/glnarayanan/mithra/internal/database"
@@ -38,6 +39,7 @@ var ErrUnsafeReset = errors.New("demo reset refused")
 type Config struct {
 	DatabasePath, SourceRoot, BackupRoot string
 	OwnerEmail, PartnerEmail             string
+	OwnerPassword, PartnerPassword       []byte
 	MasterKey                            []byte
 	BeforeComplete                       func() error // test seam after production services have written the candidate.
 }
@@ -49,6 +51,14 @@ type Receipt struct {
 
 type userState struct {
 	id, email, status, password string
+}
+
+type providerState struct {
+	encryptedAPIKey                         []byte
+	keyFingerprint, providerID, model, base string
+	updatedBy                               string
+	version                                 int
+	createdAt, updatedAt                    string
 }
 
 // Reset works only against the immutable marked household. It takes an
@@ -70,6 +80,10 @@ func Reset(ctx context.Context, cfg Config) (receipt Receipt, err error) {
 	if err != nil || ownerEmail == partnerEmail {
 		return receipt, ErrUnsafeReset
 	}
+	if err := validateCredentials(cfg.OwnerPassword, cfg.PartnerPassword); err != nil {
+		return receipt, err
+	}
+	defer clearCredentials(cfg.OwnerPassword, cfg.PartnerPassword)
 	lock, err := acquireLock(filepath.Join(filepath.Dir(filepath.Dir(databasePath)), ".mithra-demo-reset.lock"))
 	if err != nil {
 		return receipt, err
@@ -121,6 +135,7 @@ func Reset(ctx context.Context, cfg Config) (receipt Receipt, err error) {
 		})
 		return errors.Join(cause, closeErr, restoreErr)
 	}
+	seededAt := time.Now().UTC()
 	oldKeys, owner, partner, err := recreateIdentity(ctx, db, ownerEmail, partnerEmail)
 	if err != nil {
 		return receipt, rollback(err)
@@ -133,16 +148,14 @@ func Reset(ctx context.Context, cfg Config) (receipt Receipt, err error) {
 
 	ownerActor := policy.ActorScope{ActorID: owner.id, HouseholdID: HouseholdID, Role: "owner"}
 	partnerActor := policy.ActorScope{ActorID: partner.id, HouseholdID: HouseholdID, Role: "adult"}
-	if err := seedFinance(ctx, sources, importRecords, ownerActor, policy.Shared, sharedFinanceCSV(), sharedFinanceProposals()); err != nil {
+	if err := seedSampleTrends(ctx, sources, importRecords, ownerActor, seededAt); err != nil {
 		return receipt, rollback(err)
 	}
-	if err := seedFinance(ctx, sources, importRecords, partnerActor, policy.Personal, partnerFinanceCSV(), partnerFinanceProposals()); err != nil {
+	partnerSamples := shiftedFinanceSamples(partnerFinanceSamples, seededAt)
+	if err := seedFinance(ctx, sources, importRecords, partnerActor, policy.Personal, financeCSV(partnerSamples), financeProposals(partnerSamples)); err != nil {
 		return receipt, rollback(err)
 	}
-	if err := seedHealth(ctx, sources, importRecords, ownerActor); err != nil {
-		return receipt, rollback(err)
-	}
-	if err := seedPlanningCapture(ctx, captureRecords, ownerActor); err != nil {
+	if err := seedPlanningCaptures(ctx, captureRecords, ownerActor, seededAt); err != nil {
 		return receipt, rollback(err)
 	}
 	if cfg.BeforeComplete != nil {
@@ -150,11 +163,19 @@ func Reset(ctx context.Context, cfg Config) (receipt Receipt, err error) {
 			return receipt, rollback(err)
 		}
 	}
-	if err := verifyFixture(ctx, db, ownerActor, partnerActor, &receipt); err != nil {
+	if err := verifyFixture(ctx, db, ownerActor, partnerActor, seededAt, &receipt); err != nil {
 		return receipt, rollback(err)
+	}
+	if len(cfg.OwnerPassword) != 0 {
+		owner.status, partner.status = "active", "active"
 	}
 	if err := restoreAccessState(ctx, db, owner, partner); err != nil {
 		return receipt, rollback(err)
+	}
+	if len(cfg.OwnerPassword) != 0 {
+		if err := setCredentials(ctx, db, owner, partner, cfg.OwnerPassword, cfg.PartnerPassword); err != nil {
+			return receipt, rollback(err)
+		}
 	}
 	if err := closeDB(); err != nil {
 		return receipt, rollback(err)
@@ -170,6 +191,14 @@ func Reset(ctx context.Context, cfg Config) (receipt Receipt, err error) {
 		return receipt, rollback(err)
 	}
 	return receipt, nil
+}
+
+func seedSampleTrends(ctx context.Context, sources *storage.Service, service *imports.Service, actor policy.ActorScope, seededAt time.Time) error {
+	sharedSamples := shiftedFinanceSamples(sharedFinanceSamples, seededAt)
+	if err := seedFinance(ctx, sources, service, actor, policy.Shared, financeCSV(sharedSamples), financeProposals(sharedSamples)); err != nil {
+		return err
+	}
+	return seedHealth(ctx, sources, service, actor, seededAt)
 }
 
 func validatePaths(cfg Config) (string, string, string, error) {
@@ -242,7 +271,68 @@ func normalizeEmail(value string) (string, error) {
 	return value, nil
 }
 
+func validateCredentials(owner, partner []byte) error {
+	if len(owner) == 0 && len(partner) == 0 {
+		return nil
+	}
+	if len(owner) < 12 || len(owner) > 128 || len(partner) < 12 || len(partner) > 128 {
+		return ErrUnsafeReset
+	}
+	return nil
+}
+
+func clearCredentials(owner, partner []byte) {
+	for _, password := range [][]byte{owner, partner} {
+		for index := range password {
+			password[index] = 0
+		}
+	}
+}
+
+// setCredentials reuses the ordinary reset flow so the fixture receives the
+// same Argon2id hashes and session revocation as an interactive password reset.
+func setCredentials(ctx context.Context, db *sql.DB, owner, partner userState, ownerPassword, partnerPassword []byte) error {
+	service := auth.New(db, auth.Config{})
+	for _, account := range []struct {
+		user     userState
+		password []byte
+	}{
+		{owner, ownerPassword},
+		{partner, partnerPassword},
+	} {
+		throttleKey := "demo-reset:" + account.user.id
+		delivery, err := service.RequestPasswordReset(ctx, account.user.email, throttleKey)
+		if err != nil {
+			return err
+		}
+		if delivery == nil || delivery.Email != account.user.email {
+			return ErrUnsafeReset
+		}
+		session, err := service.SetPassword(ctx, delivery.Token, string(account.password), "")
+		if err != nil {
+			return err
+		}
+		if session.Scope.ActorID != account.user.id || session.Scope.HouseholdID != HouseholdID {
+			return ErrUnsafeReset
+		}
+		if err := service.RevokeSession(ctx, session.Cookie); err != nil {
+			return err
+		}
+		if _, err := db.ExecContext(ctx, `DELETE FROM auth_throttles WHERE throttle_key=?`, "reset:"+throttleKey); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func preflightIdentity(ctx context.Context, db *sql.DB, ownerEmail, partnerEmail string) error {
+	markedOwner, markedPartner, marked, err := markedDemoUsers(ctx, db)
+	if err != nil {
+		return err
+	}
+	if marked {
+		return preflightMarkedEmails(ctx, db, markedOwner, markedPartner, ownerEmail, partnerEmail)
+	}
 	owner, ownerFound, err := existingUser(ctx, db, ownerEmail)
 	if err != nil {
 		return err
@@ -270,23 +360,80 @@ func preflightIdentity(ctx context.Context, db *sql.DB, ownerEmail, partnerEmail
 			return err
 		}
 	}
-	var markerOwner, markerPartner string
-	markerErr := db.QueryRowContext(ctx, `SELECT owner_user_id,partner_user_id FROM demo_households WHERE household_id=? AND fixture_version=?`, HouseholdID, FixtureVersion).Scan(&markerOwner, &markerPartner)
-	if markerErr == nil {
-		if !ownerFound || !partnerFound || markerOwner != owner.id || markerPartner != partner.id {
-			return ErrUnsafeReset
-		}
-		return nil
-	}
-	if !errors.Is(markerErr, sql.ErrNoRows) {
-		return markerErr
-	}
 	var reserved int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM households WHERE id=?`, HouseholdID).Scan(&reserved); err != nil {
 		return err
 	}
 	if reserved != 0 {
 		return ErrUnsafeReset
+	}
+	return nil
+}
+
+// markedDemoUsers proves the immutable marker still points to exactly the two
+// accounts that belong to the fixture household. Resetting a marked fixture
+// may rotate their email addresses, but never substitutes different users.
+func markedDemoUsers(ctx context.Context, db *sql.DB) (owner, partner userState, marked bool, err error) {
+	var ownerID, partnerID string
+	err = db.QueryRowContext(ctx, `SELECT owner_user_id,partner_user_id FROM demo_households WHERE household_id=? AND fixture_version=?`, HouseholdID, FixtureVersion).Scan(&ownerID, &partnerID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return userState{}, userState{}, false, nil
+	}
+	if err != nil || ownerID == "" || partnerID == "" || ownerID == partnerID {
+		if err != nil {
+			return userState{}, userState{}, false, err
+		}
+		return userState{}, userState{}, false, ErrUnsafeReset
+	}
+	for _, candidate := range []struct {
+		id, role string
+		user     *userState
+	}{
+		{ownerID, "owner", &owner},
+		{partnerID, "adult", &partner},
+	} {
+		if err := db.QueryRowContext(ctx, `SELECT id,email,status,password_hash FROM users WHERE id=?`, candidate.id).Scan(&candidate.user.id, &candidate.user.email, &candidate.user.status, &candidate.user.password); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return userState{}, userState{}, false, ErrUnsafeReset
+			}
+			return userState{}, userState{}, false, err
+		}
+		var memberships int
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM household_members WHERE user_id=?`, candidate.id).Scan(&memberships); err != nil {
+			return userState{}, userState{}, false, err
+		}
+		var householdID, role string
+		if memberships != 1 {
+			return userState{}, userState{}, false, ErrUnsafeReset
+		}
+		if err := db.QueryRowContext(ctx, `SELECT household_id,role FROM household_members WHERE user_id=?`, candidate.id).Scan(&householdID, &role); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return userState{}, userState{}, false, ErrUnsafeReset
+			}
+			return userState{}, userState{}, false, err
+		}
+		if householdID != HouseholdID || role != candidate.role {
+			return userState{}, userState{}, false, ErrUnsafeReset
+		}
+	}
+	return owner, partner, true, nil
+}
+
+func preflightMarkedEmails(ctx context.Context, db *sql.DB, owner, partner userState, ownerEmail, partnerEmail string) error {
+	for _, candidate := range []struct {
+		email string
+		user  userState
+	}{
+		{ownerEmail, owner},
+		{partnerEmail, partner},
+	} {
+		existing, found, err := existingUser(ctx, db, candidate.email)
+		if err != nil {
+			return err
+		}
+		if found && existing.id != candidate.user.id {
+			return ErrUnsafeReset
+		}
 	}
 	return nil
 }
@@ -301,13 +448,19 @@ func existingUser(ctx context.Context, db *sql.DB, email string) (userState, boo
 }
 
 func recreateIdentity(ctx context.Context, db *sql.DB, ownerEmail, partnerEmail string) ([]string, userState, userState, error) {
-	owner, err := ensureUser(ctx, db, ownerEmail, ownerSeedID)
+	owner, partner, marked, err := markedDemoUsers(ctx, db)
 	if err != nil {
 		return nil, userState{}, userState{}, err
 	}
-	partner, err := ensureUser(ctx, db, partnerEmail, partnerSeedID)
-	if err != nil {
-		return nil, userState{}, userState{}, err
+	if !marked {
+		owner, err = ensureUser(ctx, db, ownerEmail, ownerSeedID)
+		if err != nil {
+			return nil, userState{}, userState{}, err
+		}
+		partner, err = ensureUser(ctx, db, partnerEmail, partnerSeedID)
+		if err != nil {
+			return nil, userState{}, userState{}, err
+		}
 	}
 	for _, user := range []userState{owner, partner} {
 		var household string
@@ -319,15 +472,7 @@ func recreateIdentity(ctx context.Context, db *sql.DB, ownerEmail, partnerEmail 
 			return nil, userState{}, userState{}, err
 		}
 	}
-	var markedOwner, markedPartner string
-	markerErr := db.QueryRowContext(ctx, `SELECT owner_user_id,partner_user_id FROM demo_households WHERE household_id=? AND fixture_version=?`, HouseholdID, FixtureVersion).Scan(&markedOwner, &markedPartner)
-	if markerErr == nil && (markedOwner != owner.id || markedPartner != partner.id) {
-		return nil, userState{}, userState{}, ErrUnsafeReset
-	}
-	if markerErr != nil && !errors.Is(markerErr, sql.ErrNoRows) {
-		return nil, userState{}, userState{}, markerErr
-	}
-	if errors.Is(markerErr, sql.ErrNoRows) {
+	if !marked {
 		var one int
 		if err := db.QueryRowContext(ctx, `SELECT 1 FROM households WHERE id=?`, HouseholdID).Scan(&one); err == nil {
 			return nil, userState{}, userState{}, ErrUnsafeReset
@@ -351,6 +496,10 @@ func recreateIdentity(ctx context.Context, db *sql.DB, ownerEmail, partnerEmail 
 	if err := rows.Close(); err != nil {
 		return nil, userState{}, userState{}, err
 	}
+	provider, err := savedProviderState(ctx, db)
+	if err != nil {
+		return nil, userState{}, userState{}, err
+	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, userState{}, userState{}, err
@@ -360,7 +509,12 @@ func recreateIdentity(ctx context.Context, db *sql.DB, ownerEmail, partnerEmail 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM households WHERE id=? AND EXISTS (SELECT 1 FROM demo_households WHERE household_id=households.id AND fixture_version=?)`, HouseholdID, FixtureVersion); err != nil {
 		return nil, userState{}, userState{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE users SET status='active',disabled_at=NULL,updated_at=? WHERE id IN (?,?)`, stamp, owner.id, partner.id); err != nil {
+	if marked {
+		if _, err := tx.ExecContext(ctx, `UPDATE users SET email=CASE id WHEN ? THEN ? WHEN ? THEN ? END,status='active',disabled_at=NULL,updated_at=? WHERE id IN (?,?)`, owner.id, ownerEmail, partner.id, partnerEmail, stamp, owner.id, partner.id); err != nil {
+			return nil, userState{}, userState{}, err
+		}
+		owner.email, partner.email = ownerEmail, partnerEmail
+	} else if _, err := tx.ExecContext(ctx, `UPDATE users SET status='active',disabled_at=NULL,updated_at=? WHERE id IN (?,?)`, stamp, owner.id, partner.id); err != nil {
 		return nil, userState{}, userState{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO households(id,status,owner_user_id,timezone,created_at,updated_at) VALUES(?,'active',?,'Asia/Kolkata',?,?)`, HouseholdID, owner.id, stamp, stamp); err != nil {
@@ -372,7 +526,28 @@ func recreateIdentity(ctx context.Context, db *sql.DB, ownerEmail, partnerEmail 
 	if _, err := tx.ExecContext(ctx, `INSERT INTO demo_households(household_id,fixture_version,owner_user_id,partner_user_id,created_at) VALUES(?,?,?,?,?)`, HouseholdID, FixtureVersion, owner.id, partner.id, stamp); err != nil {
 		return nil, userState{}, userState{}, err
 	}
+	if provider != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO household_openai_settings(household_id,encrypted_api_key,key_fingerprint,provider_id,provider_model,provider_base_url,updated_by_user_id,version,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, HouseholdID, provider.encryptedAPIKey, provider.keyFingerprint, provider.providerID, provider.model, provider.base, provider.updatedBy, provider.version, provider.createdAt, provider.updatedAt); err != nil {
+			return nil, userState{}, userState{}, err
+		}
+	}
 	return oldKeys, owner, partner, tx.Commit()
+}
+
+// savedProviderState retains the exact encrypted setting before the marked
+// household is replaced. The fixture keeps the same household and owner IDs,
+// so its associated encryption context and ownership remain valid.
+func savedProviderState(ctx context.Context, db *sql.DB) (*providerState, error) {
+	state := &providerState{}
+	err := db.QueryRowContext(ctx, `SELECT encrypted_api_key,key_fingerprint,provider_id,provider_model,provider_base_url,updated_by_user_id,version,created_at,updated_at FROM household_openai_settings WHERE household_id=?`, HouseholdID).Scan(&state.encryptedAPIKey, &state.keyFingerprint, &state.providerID, &state.model, &state.base, &state.updatedBy, &state.version, &state.createdAt, &state.updatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	state.encryptedAPIKey = append([]byte(nil), state.encryptedAPIKey...)
+	return state, nil
 }
 
 func ensureUser(ctx context.Context, db *sql.DB, email, fallbackID string) (userState, error) {
@@ -410,8 +585,9 @@ func seedFinance(ctx context.Context, sources *storage.Service, service *imports
 	return service.Commit(ctx, actor, review.ID, review.Version)
 }
 
-func seedHealth(ctx context.Context, sources *storage.Service, service *imports.Service, actor policy.ActorScope) error {
-	content := healthPDF()
+func seedHealth(ctx context.Context, sources *storage.Service, service *imports.Service, actor policy.ActorScope, seededAt time.Time) error {
+	samples := shiftedHealthSamples(healthSamples, seededAt)
+	content := healthPDFFor(samples)
 	document, err := imports.New(nil).Extract(ctx, imports.Input{Name: "health-report.pdf", ContentType: "application/pdf", Bytes: content})
 	if err != nil || len(document.Fragments) != 1 {
 		return errors.Join(errors.New("extract demo health PDF"), err)
@@ -420,12 +596,7 @@ func seedHealth(ctx context.Context, sources *storage.Service, service *imports.
 	if err != nil {
 		return err
 	}
-	proposals := imports.ProposalSet{Records: []imports.ProposedRecord{
-		{Family: "health", Locator: imports.Locator{Kind: "page", Value: "page:1"}, Health: &imports.HealthProposal{Subject: "Owner", Analyte: "Glucose", Specimen: "Blood", ReferenceContext: "fasting", ObservedOn: "2026-05-15", Value: "95", Unit: "mg/dL", ReferenceLow: "70", ReferenceHigh: "99", ReferenceUnit: "mg/dL"}},
-		{Family: "health", Locator: imports.Locator{Kind: "page", Value: "page:1"}, Health: &imports.HealthProposal{Subject: "Owner", Analyte: "Glucose", Specimen: "Blood", ReferenceContext: "fasting", ObservedOn: "2026-06-15", Value: "90", Unit: "mg/dL", ReferenceLow: "70", ReferenceHigh: "99", ReferenceUnit: "mg/dL"}},
-		{Family: "health", Locator: imports.Locator{Kind: "page", Value: "page:1"}, Health: &imports.HealthProposal{Subject: "Owner", Analyte: "Glucose", Specimen: "Blood", ReferenceContext: "post-meal", ObservedOn: "2026-06-20", Value: "140", Unit: "mg/dL", ReferenceLow: "70", ReferenceHigh: "140", ReferenceUnit: "mg/dL"}},
-		{Family: "health", Locator: imports.Locator{Kind: "page", Value: "page:1"}, Health: &imports.HealthProposal{Subject: "Owner", Analyte: "Glucose", Specimen: "Blood", ReferenceContext: "post-meal", ObservedOn: "2026-07-15", Value: "7.8", Unit: "mmol/L", ReferenceLow: "3.9", ReferenceHigh: "7.8", ReferenceUnit: "mmol/L"}},
-	}}
+	proposals := healthProposalsFor(samples)
 	review, err := service.Stage(ctx, actor, source, "health-report.pdf", proposals, "")
 	if err != nil || hasBlocker(review.Issues) {
 		return errors.Join(err, fmt.Errorf("demo health mapping did not validate: %+v", review.Issues))
@@ -433,15 +604,27 @@ func seedHealth(ctx context.Context, sources *storage.Service, service *imports.
 	return service.Commit(ctx, actor, review.ID, review.Version)
 }
 
-func seedPlanningCapture(ctx context.Context, service *capture.Service, actor policy.ActorScope) error {
-	receipt, err := service.SubmitText(ctx, actor, capture.TextRequest{
-		Text: "We agreed to review our travel documents together on Saturday morning.", Summary: "Travel document review added for Saturday.", Visibility: policy.Shared,
-		Proposal: capture.Proposal{Variant: capture.PlanningVariant, Planning: &capture.PlanningProposal{Title: "Review travel documents", Description: "Check passports and bookings together.", Location: "Home", StartsAt: "2026-07-25T10:00", EndsAt: "2026-07-25T10:45", Timezone: "Asia/Kolkata", Status: "planned"}},
-	})
-	if err != nil {
-		return err
+func seedPlanningCaptures(ctx context.Context, service *capture.Service, actor policy.ActorScope, seededAt time.Time) error {
+	samples := []capture.PlanningProposal{
+		{Title: "Quarterly finance review", Description: "Household finance review.", Location: "Home", StartsAt: "2026-04-26T10:00", EndsAt: "2026-04-26T11:00", Timezone: "Asia/Kolkata", Status: "completed"},
+		{Title: "Home maintenance visit", Description: "Scheduled home maintenance.", Location: "Home", StartsAt: "2026-05-17T09:00", EndsAt: "2026-05-17T10:00", Timezone: "Asia/Kolkata", Status: "completed"},
+		{Title: "Travel booking review", Description: "Travel booking details reviewed together.", Location: "Home", StartsAt: "2026-06-21T11:00", EndsAt: "2026-06-21T11:45", Timezone: "Asia/Kolkata", Status: "completed"},
+		{Title: "Review travel documents", Description: "Passports and bookings together.", Location: "Home", StartsAt: "2026-07-25T10:00", EndsAt: "2026-07-25T10:45", Timezone: "Asia/Kolkata", Status: "planned"},
+		{Title: "Insurance renewal review", Description: "Insurance renewal details.", Location: "Home", StartsAt: "2026-07-27T18:00", EndsAt: "2026-07-27T18:30", Timezone: "Asia/Kolkata", Status: "planned"},
+		{Title: "August household planning", Description: "Household dates and plans for August.", Location: "Home", StartsAt: "2026-08-02T10:00", EndsAt: "2026-08-02T10:45", Timezone: "Asia/Kolkata", Status: "planned"},
 	}
-	return service.Confirm(ctx, actor, receipt.ID)
+	for _, sample := range samples {
+		sample.StartsAt = shiftFixtureTimestamp(sample.StartsAt, seededAt)
+		sample.EndsAt = shiftFixtureTimestamp(sample.EndsAt, seededAt)
+		receipt, err := service.SubmitText(ctx, actor, capture.TextRequest{Text: sample.Title + ".", Summary: sample.Title + " added.", Visibility: policy.Shared, Proposal: capture.Proposal{Variant: capture.PlanningVariant, Planning: &sample}})
+		if err != nil {
+			return err
+		}
+		if err := service.Confirm(ctx, actor, receipt.ID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func hasBlocker(issues []imports.Issue) bool {
@@ -453,20 +636,48 @@ func hasBlocker(issues []imports.Issue) bool {
 	return false
 }
 
-func verifyFixture(ctx context.Context, db *sql.DB, owner, partner policy.ActorScope, receipt *Receipt) error {
+func verifyFixture(ctx context.Context, db *sql.DB, owner, partner policy.ActorScope, seededAt time.Time, receipt *Receipt) error {
 	coach := coaching.New(db)
-	ownerOverview, err := coach.Overview(ctx, owner, time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC))
+	ownerOverview, err := coach.Overview(ctx, owner, seededAt)
 	if err != nil {
 		return err
 	}
-	partnerOverview, err := coach.Week(ctx, partner, time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC))
-	if err != nil || !ownerOverview.HasRecords || !partnerOverview.HasRecords || len(ownerOverview.SharedContext.Facts) == 0 || len(ownerOverview.PersonalContext.Facts) == 0 || len(partnerOverview.PersonalContext.Facts) == 0 {
+	ownerReview, err := coach.Week(ctx, owner, seededAt)
+	if err != nil {
+		return err
+	}
+	partnerReview, err := coach.Week(ctx, partner, seededAt)
+	if err != nil || !ownerOverview.HasRecords || !ownerReview.HasRecords || !partnerReview.HasRecords || len(ownerOverview.SharedContext.Facts) == 0 || len(ownerOverview.PersonalContext.Facts) == 0 || len(partnerReview.Personal.Context.Facts) == 0 {
 		return errors.New("demo Family Brief or private Week in Review overlay is incomplete")
+	}
+	if ownerReview.Shared.Status.Label != "Mostly on track" || ownerReview.Shared.Observation.Title != "Groceries need attention, not overall spending" || !reviewHasTitles(ownerReview.Shared.Priorities, "Review travel documents", "Insurance renewal", "August household planning") {
+		return errors.New("demo shared Week in Review is incomplete")
+	}
+	if ownerReview.Personal.Status.Label != "Needs attention" || !reviewHasTitle(ownerReview.Personal.Issues, "Glucose record needs correction") || reviewHasTitle(partnerReview.Personal.Issues, "Glucose record needs correction") {
+		return errors.New("demo private Week in Review separation is incomplete")
 	}
 	receipt.SharedRecords = len(ownerOverview.SharedContext.Facts)
 	receipt.OwnerPersonal = len(ownerOverview.PersonalContext.Facts)
-	receipt.PartnerPersonal = len(partnerOverview.PersonalContext.Facts)
+	receipt.PartnerPersonal = len(partnerReview.Personal.Context.Facts)
 	return nil
+}
+
+func reviewHasTitles(events []coaching.ReviewEvent, titles ...string) bool {
+	for _, title := range titles {
+		if !reviewHasTitle(events, title) {
+			return false
+		}
+	}
+	return true
+}
+
+func reviewHasTitle(events []coaching.ReviewEvent, title string) bool {
+	for _, event := range events {
+		if event.Title == title {
+			return true
+		}
+	}
+	return false
 }
 
 func restoreAccessState(ctx context.Context, db *sql.DB, owner, partner userState) error {
@@ -493,28 +704,167 @@ func restoreAccessState(ctx context.Context, db *sql.DB, owner, partner userStat
 	return tx.Commit()
 }
 
-func sharedFinanceCSV() []byte {
-	return []byte("kind,label,category,date,status,amount\nincome,Household income,Income,2026-07-01,,180000\nspending,Groceries,Home,2026-07-10,,14500\nobligation,Insurance renewal,Insurance,2026-07-28,pending,24000\n")
+type financeSample struct{ kind, label, category, date, endDate, status, amount string }
+
+var sharedFinanceSamples = []financeSample{
+	{"income", "Household income", "Income", "2026-04-01", "", "", "180000"},
+	{"spending", "Groceries", "Groceries", "2026-04-08", "", "", "14000"},
+	{"spending", "Utilities", "Utilities", "2026-04-12", "", "", "6200"},
+	{"spending", "Dining out", "Dining", "2026-04-19", "", "", "4800"},
+	{"spending", "Home loan EMI", "Debt repayment", "2026-04-03", "", "", "21000"},
+	{"spending", "Transport", "Transport", "2026-04-10", "", "", "3500"},
+	{"spending", "Insurance", "Insurance", "2026-04-15", "", "", "2500"},
+	{"spending", "Healthcare", "Healthcare", "2026-04-17", "", "", "3500"},
+	{"income", "Household income", "Income", "2026-05-01", "", "", "182000"},
+	{"spending", "Groceries", "Groceries", "2026-05-09", "", "", "14800"},
+	{"spending", "Utilities", "Utilities", "2026-05-13", "", "", "5900"},
+	{"spending", "Dining out", "Dining", "2026-05-21", "", "", "5200"},
+	{"spending", "Home loan EMI", "Debt repayment", "2026-05-03", "", "", "21000"},
+	{"spending", "Transport", "Transport", "2026-05-10", "", "", "3700"},
+	{"spending", "Insurance", "Insurance", "2026-05-15", "", "", "2500"},
+	{"spending", "Healthcare", "Healthcare", "2026-05-17", "", "", "1800"},
+	{"income", "Household income", "Income", "2026-06-01", "", "", "185000"},
+	{"spending", "Groceries", "Groceries", "2026-06-08", "", "", "15200"},
+	{"spending", "Utilities", "Utilities", "2026-06-12", "", "", "6100"},
+	{"spending", "Dining out", "Dining", "2026-06-20", "", "", "6500"},
+	{"spending", "School fees", "Education", "2026-06-24", "", "", "25000"},
+	{"spending", "Home loan EMI", "Debt repayment", "2026-06-03", "", "", "21000"},
+	{"spending", "Transport", "Transport", "2026-06-10", "", "", "4200"},
+	{"spending", "Insurance", "Insurance", "2026-06-15", "", "", "2500"},
+	{"spending", "Healthcare", "Healthcare", "2026-06-17", "", "", "4500"},
+	{"income", "Household income", "Income", "2026-07-01", "", "", "188000"},
+	{"spending", "Groceries", "Groceries", "2026-07-08", "", "", "14500"},
+	{"spending", "Utilities", "Utilities", "2026-07-12", "", "", "6400"},
+	{"spending", "Dining out", "Dining", "2026-07-18", "", "", "4200"},
+	{"spending", "Home loan EMI", "Debt repayment", "2026-07-03", "", "", "21000"},
+	{"spending", "Transport", "Transport", "2026-07-10", "", "", "3800"},
+	{"spending", "Insurance", "Insurance", "2026-07-15", "", "", "2500"},
+	{"spending", "Healthcare", "Healthcare", "2026-07-17", "", "", "2200"},
+	{"budget", "July groceries budget", "Groceries", "2026-07-01", "2026-07-31", "", "18000"},
+	{"asset", "Emergency fund", "Savings", "2026-07-01", "", "", "450000"},
+	{"liability", "Home loan balance", "Home loan", "2026-07-01", "", "", "3200000"},
+	{"obligation", "Insurance renewal", "Insurance", "2026-07-28", "", "pending", "24000"},
+	{"obligation", "Vehicle insurance renewal", "Insurance", "2026-08-12", "", "pending", "12000"},
+	{"obligation", "Annual home maintenance", "Home", "2026-08-18", "", "pending", "8000"},
 }
 
-func partnerFinanceCSV() []byte {
-	return []byte("kind,label,category,date,status,amount\nspending,Course subscription,Learning,2026-07-12,,3200\n")
+var partnerFinanceSamples = []financeSample{
+	{"spending", "Course subscription", "Learning", "2026-04-12", "", "", "3200"},
+	{"spending", "Course subscription", "Learning", "2026-05-12", "", "", "3200"},
+	{"spending", "Course subscription", "Learning", "2026-06-12", "", "", "3200"},
+	{"spending", "Course subscription", "Learning", "2026-07-12", "", "", "3200"},
 }
 
-func sharedFinanceProposals() imports.ProposalSet {
-	return imports.ProposalSet{Records: []imports.ProposedRecord{
-		{Family: "finance", Locator: imports.Locator{Kind: "row", Value: "row:2"}, Finance: &imports.FinanceProposal{Kind: "income", Label: "Household income", Category: "Income", Date: "2026-07-01", Amount: "180000"}},
-		{Family: "finance", Locator: imports.Locator{Kind: "row", Value: "row:3"}, Finance: &imports.FinanceProposal{Kind: "spending", Label: "Groceries", Category: "Home", Date: "2026-07-10", Amount: "14500"}},
-		{Family: "finance", Locator: imports.Locator{Kind: "row", Value: "row:4"}, Finance: &imports.FinanceProposal{Kind: "obligation", Label: "Insurance renewal", Category: "Insurance", Date: "2026-07-28", Status: "pending", Amount: "24000"}},
-	}}
+func financeCSV(samples []financeSample) []byte {
+	var out strings.Builder
+	out.WriteString("kind,label,category,date,end_date,status,amount\n")
+	for _, sample := range samples {
+		fmt.Fprintf(&out, "%s,%s,%s,%s,%s,%s,%s\n", sample.kind, sample.label, sample.category, sample.date, sample.endDate, sample.status, sample.amount)
+	}
+	return []byte(out.String())
 }
 
-func partnerFinanceProposals() imports.ProposalSet {
-	return imports.ProposalSet{Records: []imports.ProposedRecord{{Family: "finance", Locator: imports.Locator{Kind: "row", Value: "row:2"}, Finance: &imports.FinanceProposal{Kind: "spending", Label: "Course subscription", Category: "Learning", Date: "2026-07-12", Amount: "3200"}}}}
+func financeProposals(samples []financeSample) imports.ProposalSet {
+	records := make([]imports.ProposedRecord, 0, len(samples))
+	for index, sample := range samples {
+		records = append(records, imports.ProposedRecord{Family: "finance", Locator: imports.Locator{Kind: "row", Value: fmt.Sprintf("row:%d", index+2)}, Finance: &imports.FinanceProposal{Kind: sample.kind, Label: sample.label, Category: sample.category, Date: sample.date, EndDate: sample.endDate, Status: sample.status, Amount: sample.amount}})
+	}
+	return imports.ProposalSet{Records: records}
 }
 
-func healthPDF() []byte {
-	stream := "BT /F1 11 Tf 72 720 Td (Health report - Owner) Tj 0 -18 Td (2026-05-15 fasting Glucose 95 mg/dL ref 70-99) Tj 0 -18 Td (2026-06-15 fasting Glucose 90 mg/dL ref 70-99) Tj 0 -18 Td (2026-06-20 post-meal Glucose 140 mg/dL ref 70-140) Tj 0 -18 Td (2026-07-15 post-meal Glucose 7.8 mmol/L ref 3.9-7.8) Tj ET\n"
+func sharedFinanceCSV() []byte                     { return financeCSV(sharedFinanceSamples) }
+func partnerFinanceCSV() []byte                    { return financeCSV(partnerFinanceSamples) }
+func sharedFinanceProposals() imports.ProposalSet  { return financeProposals(sharedFinanceSamples) }
+func partnerFinanceProposals() imports.ProposalSet { return financeProposals(partnerFinanceSamples) }
+
+var fixtureAnchor = time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)
+
+func shiftedFinanceSamples(samples []financeSample, seededAt time.Time) []financeSample {
+	shifted := append([]financeSample(nil), samples...)
+	for index := range shifted {
+		shifted[index].date = shiftFixtureDate(shifted[index].date, seededAt)
+		shifted[index].endDate = shiftFixtureDate(shifted[index].endDate, seededAt)
+	}
+	return shifted
+}
+
+func shiftedHealthSamples(samples []imports.HealthProposal, seededAt time.Time) []imports.HealthProposal {
+	shifted := append([]imports.HealthProposal(nil), samples...)
+	for index := range shifted {
+		shifted[index].ObservedOn = shiftFixtureDate(shifted[index].ObservedOn, seededAt)
+	}
+	return shifted
+}
+
+func shiftFixtureDate(value string, seededAt time.Time) string {
+	if value == "" {
+		return ""
+	}
+	parsed, err := time.Parse("2006-01-02", value)
+	if err != nil {
+		return value
+	}
+	return parsed.AddDate(0, 0, fixtureDayOffset(seededAt)).Format("2006-01-02")
+}
+
+func shiftFixtureTimestamp(value string, seededAt time.Time) string {
+	parsed, err := time.Parse("2006-01-02T15:04", value)
+	if err != nil {
+		return value
+	}
+	return parsed.AddDate(0, 0, fixtureDayOffset(seededAt)).Format("2006-01-02T15:04")
+}
+
+func fixtureDayOffset(seededAt time.Time) int {
+	location, err := time.LoadLocation("Asia/Kolkata")
+	if err != nil {
+		location = time.UTC
+	}
+	now := seededAt.In(location)
+	anchor := fixtureAnchor.In(location)
+	currentDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
+	anchorDay := time.Date(anchor.Year(), anchor.Month(), anchor.Day(), 0, 0, 0, 0, location)
+	return int(currentDay.Sub(anchorDay).Hours() / 24)
+}
+
+var healthSamples = []imports.HealthProposal{
+	{Subject: "Owner", Analyte: "Glucose", Specimen: "Blood", ReferenceContext: "fasting", ObservedOn: "2026-04-15", Value: "101", Unit: "mg/dL", ReferenceLow: "70", ReferenceHigh: "99", ReferenceUnit: "mg/dL"},
+	{Subject: "Owner", Analyte: "Glucose", Specimen: "Blood", ReferenceContext: "fasting", ObservedOn: "2026-05-15", Value: "98", Unit: "mg/dL", ReferenceLow: "70", ReferenceHigh: "99", ReferenceUnit: "mg/dL"},
+	{Subject: "Owner", Analyte: "Glucose", Specimen: "Blood", ReferenceContext: "fasting", ObservedOn: "2026-06-15", Value: "94", Unit: "mg/dL", ReferenceLow: "70", ReferenceHigh: "99", ReferenceUnit: "mg/dL"},
+	{Subject: "Owner", Analyte: "Glucose", Specimen: "Blood", ReferenceContext: "fasting", ObservedOn: "2026-07-15", Value: "91", Unit: "mg/dL", ReferenceLow: "70", ReferenceHigh: "99", ReferenceUnit: "mg/dL"},
+	{Subject: "Owner", Analyte: "Weight", ObservedOn: "2026-04-01", Value: "78.5", Unit: "kg"},
+	{Subject: "Owner", Analyte: "Weight", ObservedOn: "2026-05-01", Value: "77.8", Unit: "kg"},
+	{Subject: "Owner", Analyte: "Weight", ObservedOn: "2026-06-01", Value: "77.2", Unit: "kg"},
+	{Subject: "Owner", Analyte: "Weight", ObservedOn: "2026-07-01", Value: "76.7", Unit: "kg"},
+	{Subject: "Owner", Analyte: "Resting heart rate", ObservedOn: "2026-04-01", Value: "74", Unit: "bpm"},
+	{Subject: "Owner", Analyte: "Resting heart rate", ObservedOn: "2026-05-01", Value: "72", Unit: "bpm"},
+	{Subject: "Owner", Analyte: "Resting heart rate", ObservedOn: "2026-06-01", Value: "70", Unit: "bpm"},
+	{Subject: "Owner", Analyte: "Resting heart rate", ObservedOn: "2026-07-01", Value: "69", Unit: "bpm"},
+	{Subject: "Owner", Analyte: "Glucose", Specimen: "Blood", ReferenceContext: "post-meal", ObservedOn: "2026-06-20", Value: "140", Unit: "mg/dL", ReferenceLow: "70", ReferenceHigh: "140", ReferenceUnit: "mg/dL"},
+	{Subject: "Owner", Analyte: "Glucose", Specimen: "Blood", ReferenceContext: "post-meal", ObservedOn: "2026-07-15", Value: "7.8", Unit: "mmol/L", ReferenceLow: "3.9", ReferenceHigh: "7.8", ReferenceUnit: "mmol/L"},
+}
+
+func healthProposals() imports.ProposalSet { return healthProposalsFor(healthSamples) }
+
+func healthProposalsFor(samples []imports.HealthProposal) imports.ProposalSet {
+	records := make([]imports.ProposedRecord, 0, len(samples))
+	for index := range samples {
+		proposal := samples[index]
+		records = append(records, imports.ProposedRecord{Family: "health", Locator: imports.Locator{Kind: "page", Value: "page:1"}, Health: &proposal})
+	}
+	return imports.ProposalSet{Records: records}
+}
+
+func healthPDF() []byte { return healthPDFFor(healthSamples) }
+
+func healthPDFFor(samples []imports.HealthProposal) []byte {
+	var content strings.Builder
+	content.WriteString("BT /F1 9 Tf 54 750 Td (Health report - Owner) Tj")
+	for _, sample := range samples {
+		fmt.Fprintf(&content, " 0 -16 Td (%s %s %s %s) Tj", sample.ObservedOn, sample.Analyte, sample.Value, sample.Unit)
+	}
+	content.WriteString(" ET\n")
+	stream := content.String()
 	objects := []string{
 		"<< /Type /Catalog /Pages 2 0 R >>",
 		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
