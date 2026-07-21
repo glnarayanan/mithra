@@ -134,7 +134,7 @@ func (a *App) refreshCoaching(w http.ResponseWriter, r *http.Request, mode strin
 			continue
 		}
 		if err = a.coaching.Publish(r.Context(), scope, mode, visibility, input, output, model); err != nil {
-			logRequestError(a.logger, r.Context(), "coaching_"+string(visibility)+"_publish_failed")
+			logRequestError(a.logger, r.Context(), "coaching_"+string(visibility)+"_publish_"+coaching.PublishErrorCode(err))
 			failed++
 			failedScopes = append(failedScopes, coachingScopeLabel(visibility))
 		} else {

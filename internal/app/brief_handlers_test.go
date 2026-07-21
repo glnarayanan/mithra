@@ -55,12 +55,25 @@ func TestFamilyBriefLoadsWithoutAIThenRefreshesEvidenceAndKeepsPartnerPrivateOut
 			Facts []struct {
 				EvidenceID string `json:"evidence_id"`
 			} `json:"facts"`
+			Signals []struct {
+				Summary     string   `json:"summary"`
+				Period      string   `json:"period"`
+				EvidenceIDs []string `json:"evidence_ids"`
+			} `json:"signals"`
 		}
 		if json.Unmarshal([]byte(input), &contextPayload) != nil || contextPayload.Scope != "shared" || len(contextPayload.Facts) != 1 {
 			t.Fatalf("context payload = %s", input)
 		}
 		id := contextPayload.Facts[0].EvidenceID
-		output := `{"lead":{"title":"Salary needs a source correction","copy":"Salary is recorded with a value still to confirm.","when":"","evidence_ids":["` + id + `"]},"changes":[],"dates":[],"inconsistencies":[{"title":"Salary value","copy":"The recorded amount still needs confirmation.","when":"","evidence_ids":["` + id + `"]}],"priorities":[{"title":"Confirm salary value","copy":"Check the value against its source.","when":"","evidence_ids":["` + id + `"]}]}`
+		insight := `{"title":"Salary record","copy":"Salary is recorded.","when":"","evidence_ids":["` + id + `"]}`
+		if len(contextPayload.Signals) > 0 {
+			signal := contextPayload.Signals[0]
+			copyJSON, _ := json.Marshal(signal.Summary)
+			whenJSON, _ := json.Marshal(signal.Period)
+			evidenceJSON, _ := json.Marshal(signal.EvidenceIDs)
+			insight = `{"title":"Recorded pattern","copy":` + string(copyJSON) + `,"when":` + string(whenJSON) + `,"evidence_ids":` + string(evidenceJSON) + `}`
+		}
+		output := `{"lead":{"title":"Salary needs a source correction","copy":"Salary is recorded with a value still to confirm.","when":"","evidence_ids":["` + id + `"]},"insights":[` + insight + `],"changes":[],"dates":[],"inconsistencies":[{"title":"Salary value","copy":"The recorded amount still needs confirmation.","when":"","evidence_ids":["` + id + `"]}],"priorities":[{"title":"Confirm salary value","copy":"Check the value against its source.","when":"","evidence_ids":["` + id + `"]}]}`
 		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(captureProviderBody(output))), Request: request}, nil
 	})}
 

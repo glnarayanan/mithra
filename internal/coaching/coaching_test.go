@@ -3,6 +3,7 @@ package coaching
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -79,6 +80,16 @@ func healthProvenance(source storage.Source) health.Provenance {
 }
 func planningProvenance(source storage.Source) planning.Provenance {
 	return planning.Provenance{SourceID: source.ID, SourceFamily: source.Family, SourceVersion: source.Version, LocatorKind: "source", LocatorValue: "update", GeneratedBy: "application", SchemaVersion: "planning-v1"}
+}
+
+func narrativeWithTestInsight(n Narrative, facts []Fact, signals []Signal) Narrative {
+	if len(signals) > 0 {
+		signal := signals[0]
+		n.Insights = []Item{{Title: signalTitle(signal.Kind), Copy: signal.Summary, When: signal.Period, EvidenceIDs: signal.EvidenceIDs}}
+	} else if len(facts) > 0 {
+		n.Insights = []Item{factItem(facts[0])}
+	}
+	return n
 }
 
 func TestContextSeparatesSharedPersonalPartnerAndHousehold(t *testing.T) {
@@ -210,9 +221,319 @@ func TestSignalsUseVisibleTypedRecordsAndTrustOnlyFullyCitedNumbers(t *testing.T
 	if err := validateNarrative(Narrative{Lead: comparison}, allowed, financeSignal); err != nil {
 		t.Fatalf("factual signal comparison rejected: %v", err)
 	}
+	insight := Item{Title: "Spending comparison", Copy: financeSignal.Summary, When: financeSignal.Period, EvidenceIDs: financeSignal.EvidenceIDs}
+	natural := Narrative{Lead: Item{Title: "July spending rose", Copy: "Recorded spending rose from 10 to 20.0 between June and July.", EvidenceIDs: financeSignal.EvidenceIDs}, Insights: []Item{insight}}
+	if err := f.service.Publish(ctx, f.owner, "brief", policy.Shared, input, natural, "test-model"); err != nil {
+		t.Fatalf("natural, cited signal wording did not publish: %v", err)
+	}
+	if err := f.service.Publish(ctx, f.owner, "week", policy.Shared, input, Narrative{Lead: natural.Lead}, "test-model"); !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("lead-only narrative published: %v", err)
+	}
+	if len(financeSignal.EvidenceIDs) < 2 {
+		t.Fatalf("finance evidence is too short for normalization test: %#v", financeSignal)
+	}
+	reordered := []string{financeSignal.EvidenceIDs[1], financeSignal.EvidenceIDs[0]}
+	normalized := Narrative{Lead: natural.Lead, Insights: []Item{{Title: "Spending comparison", Copy: financeSignal.Summary, When: financeSignal.Period, EvidenceIDs: reordered}}}
+	if err := f.service.Publish(ctx, f.owner, "week", policy.Shared, input, normalized, "test-model"); err != nil {
+		t.Fatalf("reordered signal evidence did not normalize: %v", err)
+	}
+	var normalizedJSON string
+	if err := f.db.QueryRow(`SELECT content_json FROM coaching_cache WHERE household_id='home' AND mode='week' AND visibility='shared'`).Scan(&normalizedJSON); err != nil {
+		t.Fatal(err)
+	}
+	var normalizedStored Narrative
+	if err := json.Unmarshal([]byte(normalizedJSON), &normalizedStored); err != nil || len(normalizedStored.Insights) != 1 || strings.Join(normalizedStored.Insights[0].EvidenceIDs, ",") != strings.Join(financeSignal.EvidenceIDs, ",") {
+		t.Fatalf("normalized stored insight=%#v err=%v", normalizedStored, err)
+	}
+	unknown := normalized
+	unknown.Insights[0].EvidenceIDs = []string{"unknown"}
+	if err := f.service.Publish(ctx, f.owner, "week", policy.Shared, input, unknown, "test-model"); !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("unknown signal evidence published: %v", err)
+	}
+	differentCopy := normalized
+	differentCopy.Insights[0].Copy += " extra"
+	if err := f.service.Publish(ctx, f.owner, "week", policy.Shared, input, differentCopy, "test-model"); !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("changed signal summary published: %v", err)
+	}
+	sharedView := Narrative{Lead: Item{Title: "Monthly spending pattern", Copy: "Recent activity listed spending from 10 to 20 against prior records.", EvidenceIDs: financeSignal.EvidenceIDs}}
+	if err := validateNarrative(sharedView, allowed, financeSignal); err != nil {
+		t.Fatalf("realistic shared record-view wording rejected: %v", err)
+	}
+	var published int
+	if err := f.db.QueryRow(`SELECT COUNT(*) FROM coaching_cache WHERE household_id='home' AND mode='brief' AND visibility='shared'`).Scan(&published); err != nil || published != 1 {
+		t.Fatalf("published cache count=%d err=%v", published, err)
+	}
 	unsupportedComparison := Item{Title: "Rent increased", Copy: "Rent is higher.", EvidenceIDs: []string{"a"}}
 	if !errors.Is(validateNarrative(Narrative{Lead: unsupportedComparison}, map[string]Fact{"a": fact}), ErrUnsupported) {
 		t.Fatal("comparison without a fully cited signal accepted")
+	}
+	fabricated := Item{Title: "Emergency", Copy: "Mithra says an emergency is coming.", EvidenceIDs: []string{"a"}}
+	if !errors.Is(validateNarrative(Narrative{Lead: fabricated}, map[string]Fact{"a": fact}), ErrUnsupported) {
+		t.Fatal("fabricated nonnumeric claim with a valid citation accepted")
+	}
+}
+
+func TestDenseWeeklySignalUsesRepresentativeEvidenceWithoutCounts(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	asOf := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	facts := make([]Fact, 0, 15)
+	for i := 0; i < 8; i++ {
+		facts = append(facts, Fact{EvidenceID: fmt.Sprintf("current-%d", i), RecordID: fmt.Sprintf("current-record-%d", i), Family: "finance", Content: "Current record", CreatedAt: asOf.AddDate(0, 0, -i)})
+	}
+	for i := 0; i < 7; i++ {
+		facts = append(facts, Fact{EvidenceID: fmt.Sprintf("prior-%d", i), RecordID: fmt.Sprintf("prior-record-%d", i), Family: "finance", Content: "Prior record", CreatedAt: asOf.AddDate(0, 0, -7-i)})
+	}
+	tx, err := f.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	signals, err := querySignals(ctx, tx, f.owner, policy.Shared, facts, asOf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var week Signal
+	for _, signal := range signals {
+		if signal.Kind == "weekly_activity" {
+			week = signal
+		}
+	}
+	if week.Summary != "Visible records were added in both the current and prior seven-day periods." || len(week.EvidenceIDs) == 0 || len(week.EvidenceIDs) > 12 {
+		t.Fatalf("dense week signal = %#v", week)
+	}
+	current, prior := false, false
+	for _, id := range week.EvidenceIDs {
+		current = current || strings.HasPrefix(id, "current-")
+		prior = prior || strings.HasPrefix(id, "prior-")
+	}
+	if !current || !prior {
+		t.Fatalf("dense week evidence must represent both periods: %#v", week.EvidenceIDs)
+	}
+	weekNarrative := withSignals(Narrative{}, []Signal{week}, true)
+	if len(weekNarrative.Changes) != 1 || weekNarrative.Changes[0].Copy != week.Summary {
+		t.Fatalf("week narrative = %#v", weekNarrative)
+	}
+}
+
+func TestFinanceSignalUsesOneEvidenceIDPerSourceWithoutChangingTotals(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.service.now = func() time.Time { return time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC) }
+	first := f.source(t, f.owner, policy.Shared, "first-import")
+	second := f.source(t, f.owner, policy.Shared, "second-import")
+	for _, row := range []struct {
+		source storage.Source
+		date   string
+		amount string
+	}{
+		{first, "2026-06-20", "5"},
+		{first, "2026-07-10", "10"},
+		{first, "2026-07-20", "20"},
+		{second, "2026-07-18", "7"},
+	} {
+		if _, err := f.finance.Create(ctx, f.owner, finance.Draft{Kind: finance.Spending, Visibility: policy.Shared, Label: "Food", Category: "Food", Date: row.date, AmountText: row.amount, Provenance: financeProvenance(row.source)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	input, err := f.service.BuildContext(ctx, f.owner, policy.Shared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var signal Signal
+	for _, candidate := range input.Signals {
+		if candidate.Kind == "finance_monthly_spending" {
+			signal = candidate
+		}
+	}
+	if !strings.Contains(signal.Summary, "37") || !strings.Contains(signal.Summary, "5") || len(signal.EvidenceIDs) != 2 {
+		t.Fatalf("finance signal = %#v", signal)
+	}
+	sourceForEvidence := make(map[string]string, len(input.Facts))
+	for _, fact := range input.Facts {
+		sourceForEvidence[fact.EvidenceID] = fact.SourceID
+	}
+	seen := map[string]bool{}
+	for _, id := range signal.EvidenceIDs {
+		seen[sourceForEvidence[id]] = true
+	}
+	if !seen[first.ID] || !seen[second.ID] {
+		t.Fatalf("signal did not preserve both sources: %#v", signal.EvidenceIDs)
+	}
+}
+
+func TestFinanceSignalKeepsExactTotalsForManyRowsFromOneSource(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.service.now = func() time.Time { return time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC) }
+	source := f.source(t, f.owner, policy.Shared, "many-rows")
+	for i := 0; i < 13; i++ {
+		date, amount := "2026-07-20", "1"
+		if i == 0 {
+			date, amount = "2026-06-20", "5"
+		}
+		if _, err := f.finance.Create(ctx, f.owner, finance.Draft{Kind: finance.Spending, Visibility: policy.Shared, Label: "Food", Category: "Food", Date: date, AmountText: amount, Provenance: financeProvenance(source)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	input, err := f.service.BuildContext(ctx, f.owner, policy.Shared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, signal := range input.Signals {
+		if signal.Kind == "finance_monthly_spending" {
+			if !strings.Contains(signal.Summary, "12") || !strings.Contains(signal.Summary, "5") || len(signal.EvidenceIDs) != 1 {
+				t.Fatalf("many-row finance signal = %#v", signal)
+			}
+			return
+		}
+	}
+	t.Fatal("many-row finance signal missing")
+}
+
+func TestFinanceSignalOmitsIncompleteDistinctSourceEvidence(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.service.now = func() time.Time { return time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC) }
+	for i := 0; i < 13; i++ {
+		date, amount := "2026-07-20", "1"
+		if i == 0 {
+			date, amount = "2026-06-20", "5"
+		}
+		source := f.source(t, f.owner, policy.Shared, fmt.Sprintf("distinct-source-%d", i))
+		if _, err := f.finance.Create(ctx, f.owner, finance.Draft{Kind: finance.Spending, Visibility: policy.Shared, Label: "Food", Category: "Food", Date: date, AmountText: amount, Provenance: financeProvenance(source)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	input, err := f.service.BuildContext(ctx, f.owner, policy.Shared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, signal := range input.Signals {
+		if signal.Kind == "finance_monthly_spending" {
+			t.Fatalf("finance signal with incomplete source evidence = %#v", signal)
+		}
+	}
+}
+
+func TestPublishErrorCodeDoesNotExposeOutput(t *testing.T) {
+	for _, test := range []struct {
+		err  error
+		want string
+	}{
+		{ErrStale, "context_changed"},
+		{ErrUnsupported, "output_not_grounded"},
+		{ErrInvalid, "output_invalid"},
+		{errors.New("database details"), "storage_failed"},
+	} {
+		if got := PublishErrorCode(test.err); got != test.want {
+			t.Fatalf("PublishErrorCode(%v)=%q, want %q", test.err, got, test.want)
+		}
+	}
+}
+
+func TestNarrativeRejectsCommandsButAllowsFactualCheckLabels(t *testing.T) {
+	allowed := map[string]Fact{"a": {EvidenceID: "a", Content: "Insurance renewal Buy gold See doctor"}}
+	for _, copy := range []string{
+		"Check whether the insurance renewal is due.",
+		"Review the insurance renewal record.",
+		"Consider the insurance renewal.",
+		"Remember the insurance renewal.",
+		"Make sure the insurance renewal is recorded.",
+		"Follow up on the insurance renewal.",
+		"Contact the insurance provider.",
+		"Call about the insurance renewal.",
+		"Book an insurance renewal visit.",
+		"Pay the insurance renewal.",
+		"Update the insurance renewal.",
+		"The insurance renewal needs action.",
+		"The insurance renewal should be reviewed.",
+		"Please review the insurance renewal.",
+		"You need to call about the insurance renewal.",
+		"The insurance renewal must be paid.",
+		"The insurance renewal is required to be paid.",
+		"Could you check the insurance renewal?",
+		"Would you review the insurance renewal?",
+		"Can you buy gold?",
+		"Will you see doctor?",
+		"Buy gold.",
+		"See doctor.",
+	} {
+		item := Item{Title: "Insurance renewal", Copy: copy, EvidenceIDs: []string{"a"}}
+		if !errors.Is(validateNarrative(Narrative{Lead: item}, allowed), ErrUnsupported) {
+			t.Fatalf("command accepted: %q", copy)
+		}
+	}
+	factual := Item{Title: "Insurance renewal check", Copy: "Insurance renewal is recorded.", EvidenceIDs: []string{"a"}}
+	if err := validateNarrative(Narrative{Lead: factual}, allowed); err != nil {
+		t.Fatalf("factual check label rejected: %v", err)
+	}
+	worthChecking := Item{Title: "Insurance renewal", Copy: "Insurance renewal may be worth checking.", EvidenceIDs: []string{"a"}}
+	if err := validateNarrative(Narrative{Lead: worthChecking}, allowed); err != nil {
+		t.Fatalf("non-command worth-checking wording rejected: %v", err)
+	}
+}
+
+func TestNarrativeRejectsUnsupportedCertaintyUrgencyRiskCausationAndAdvice(t *testing.T) {
+	allowed := map[string]Fact{"a": {EvidenceID: "a", Content: "Insurance renewal"}}
+	for _, copy := range []string{
+		"Insurance renewal is guaranteed and urgent.",
+		"Insurance renewal is certain.",
+		"Insurance renewal is definitely safe.",
+		"Insurance renewal carries risk.",
+		"Insurance renewal caused a change.",
+		"Mithra recommends the insurance renewal.",
+	} {
+		item := Item{Title: "Insurance renewal", Copy: copy, EvidenceIDs: []string{"a"}}
+		if !errors.Is(validateNarrative(Narrative{Lead: item}, allowed), ErrUnsupported) {
+			t.Fatalf("unsupported claim accepted: %q", copy)
+		}
+	}
+}
+
+func TestPublishKeepsOnlyGroundedModelItems(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.service.now = func() time.Time { return time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC) }
+	for _, row := range []struct{ date, amount string }{{"2026-06-20", "10"}, {"2026-07-20", "20"}} {
+		source := f.source(t, f.owner, policy.Shared, row.date)
+		if _, err := f.finance.Create(ctx, f.owner, finance.Draft{Kind: finance.Spending, Visibility: policy.Shared, Label: "Food", Category: "Food", Date: row.date, AmountText: row.amount, Provenance: financeProvenance(source)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	input, err := f.service.BuildContext(ctx, f.owner, policy.Shared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var signal Signal
+	for _, candidate := range input.Signals {
+		if candidate.Kind == "finance_monthly_spending" {
+			signal = candidate
+		}
+	}
+	if len(signal.EvidenceIDs) == 0 {
+		t.Fatalf("missing finance signal: %#v", input.Signals)
+	}
+	valid := Item{Title: "Spending comparison", Copy: signal.Summary, When: signal.Period, EvidenceIDs: signal.EvidenceIDs}
+	invalid := Item{Title: "Emergency", Copy: "Mithra says an emergency is coming.", EvidenceIDs: []string{input.Facts[0].EvidenceID}}
+	mixed := Narrative{Lead: invalid, Insights: []Item{valid}, Priorities: []Item{invalid}}
+	if err := f.service.Publish(ctx, f.owner, "brief", policy.Shared, input, mixed, "test-model"); err != nil {
+		t.Fatalf("mixed model output did not publish: %v", err)
+	}
+	var encoded string
+	if err := f.db.QueryRow(`SELECT content_json FROM coaching_cache WHERE household_id='home' AND mode='brief' AND visibility='shared'`).Scan(&encoded); err != nil {
+		t.Fatal(err)
+	}
+	var published Narrative
+	if err := json.Unmarshal([]byte(encoded), &published); err != nil {
+		t.Fatal(err)
+	}
+	expectedLead := deterministic(input.Facts, f.service.now(), input.Signals...).Lead
+	if published.Lead.Title != expectedLead.Title || published.Lead.Copy != expectedLead.Copy || strings.Join(published.Lead.EvidenceIDs, ",") != strings.Join(expectedLead.EvidenceIDs, ",") || len(published.Insights) != 1 || published.Insights[0].Title != valid.Title || len(published.Priorities) != 0 {
+		t.Fatalf("published output retained rejected text: %#v", published)
+	}
+	if err := f.service.Publish(ctx, f.owner, "week", policy.Shared, input, Narrative{Lead: invalid}, "test-model"); !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("fully invalid output published: %v", err)
 	}
 }
 
@@ -228,8 +549,8 @@ func TestHistoryCapsAndKeepsPrivateSnapshotsScoped(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := 0; i < 13; i++ {
-		f.service.now = func() time.Time { return time.Date(2026, 7, 20, 0, 0, i, 0, time.UTC) }
-		if err := f.service.Publish(ctx, f.owner, "brief", policy.Personal, input, deterministic(input.Facts, time.Now()), "test-model"); err != nil {
+		output := narrativeWithTestInsight(deterministic(input.Facts, time.Now()), input.Facts, input.Signals)
+		if err := f.service.Publish(ctx, f.owner, "brief", policy.Personal, input, output, "test-model"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -323,7 +644,7 @@ func TestCacheStalesOnSharedRevisionButIgnoresPartnerPrivateAndHardInvalidatesDe
 	if err != nil {
 		t.Fatal(err)
 	}
-	output := deterministic(input.Facts, time.Date(2026, 7, 18, 0, 0, 0, 0, time.UTC))
+	output := narrativeWithTestInsight(deterministic(input.Facts, time.Date(2026, 7, 18, 0, 0, 0, 0, time.UTC)), input.Facts, input.Signals)
 	if err := f.service.Publish(ctx, f.owner, "brief", policy.Shared, input, output, "test-model"); err != nil {
 		t.Fatal(err)
 	}
@@ -385,7 +706,7 @@ func TestCacheRejectsOutdatedVersions(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			output := deterministic(input.Facts, time.Date(2026, 7, 18, 0, 0, 0, 0, time.UTC))
+			output := narrativeWithTestInsight(deterministic(input.Facts, time.Date(2026, 7, 18, 0, 0, 0, 0, time.UTC)), input.Facts, input.Signals)
 			if err := f.service.Publish(ctx, f.owner, "brief", policy.Shared, input, output, "test-model"); err != nil {
 				t.Fatal(err)
 			}

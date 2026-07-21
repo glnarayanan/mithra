@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	PromptVersion = "coaching-v3"
-	SchemaVersion = "coaching-v2"
+	PromptVersion = "coaching-v5"
+	SchemaVersion = "coaching-v3"
 )
 
 var (
@@ -64,8 +64,10 @@ type Signal struct {
 
 type amountRow struct {
 	coefficient, scale int64
-	evidence           string
+	evidence, source   string
 }
+
+type evidenceRef struct{ id, source string }
 
 type Item struct {
 	Title       string   `json:"title"`
@@ -260,7 +262,9 @@ func (s *Service) Publish(ctx context.Context, actor policy.ActorScope, mode str
 	for _, fact := range current.Facts {
 		allowed[fact.EvidenceID] = fact
 	}
-	if err := validateNarrative(output, allowed, current.Signals...); err != nil {
+	fallback := deterministic(current.Facts, s.now(), current.Signals...).Lead
+	output, err = sanitizeNarrative(output, allowed, fallback, current.Signals...)
+	if err != nil {
 		return err
 	}
 	content, _ := json.Marshal(output)
@@ -486,7 +490,7 @@ func querySignals(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visi
 			return nil, err
 		}
 		if fact, ok := byRecord[id]; ok {
-			months[month] = append(months[month], amountRow{coefficient, scale, fact.EvidenceID})
+			months[month] = append(months[month], amountRow{coefficient, scale, fact.EvidenceID, fact.SourceID})
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -495,14 +499,8 @@ func querySignals(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visi
 	}
 	rows.Close()
 	latestMonth, priorMonth := asOf.Format("2006-01"), asOf.AddDate(0, -1, 0).Format("2006-01")
-	if count := len(months[latestMonth]) + len(months[priorMonth]); count > 0 && count <= 12 {
-		evidence := make([]string, 0, 12)
-		for _, row := range months[latestMonth] {
-			evidence = appendEvidence(evidence, row.evidence, 12)
-		}
-		for _, row := range months[priorMonth] {
-			evidence = appendEvidence(evidence, row.evidence, 12)
-		}
+	if count := len(months[latestMonth]) + len(months[priorMonth]); count > 0 {
+		evidence := amountEvidence(append(months[latestMonth], months[priorMonth]...), 12)
 		if len(evidence) > 0 {
 			out = append(out, Signal{Kind: "finance_monthly_spending", Period: priorMonth + " to " + latestMonth, Summary: "Spending recorded for " + latestMonth + " is " + sumAmounts(months[latestMonth]) + " compared with " + sumAmounts(months[priorMonth]) + " for " + priorMonth + ".", EvidenceIDs: evidence})
 		}
@@ -510,7 +508,7 @@ func querySignals(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visi
 
 	// Health: compare the first and last values only within the same stored key
 	// and unit. This is a factual series, never a clinical interpretation.
-	type healthRow struct{ date, value, unit, evidence string }
+	type healthRow struct{ date, value, unit, evidence, source string }
 	series := map[string][]healthRow{}
 	rows, err = tx.QueryContext(ctx, `SELECT id,comparability_key,observed_on,value_original,unit FROM health_observations WHERE household_id=? AND visibility=? AND active=1`+ownerClause+` ORDER BY observed_on,id`, args...)
 	if err != nil {
@@ -523,7 +521,7 @@ func querySignals(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visi
 			return nil, err
 		}
 		if fact, ok := byRecord[id]; ok {
-			series[key] = append(series[key], healthRow{date, value, unit, fact.EvidenceID})
+			series[key] = append(series[key], healthRow{date, value, unit, fact.EvidenceID, fact.SourceID})
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -543,7 +541,11 @@ func querySignals(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visi
 			continue
 		}
 		first, last := points[0], points[len(points)-1]
-		out = append(out, Signal{Kind: "health_series", Period: first.date + " to " + last.date, Summary: "A comparable health measurement changed from " + first.value + " " + first.unit + " on " + first.date + " to " + last.value + " " + last.unit + " on " + last.date + ". This is a record comparison, not health advice.", EvidenceIDs: appendEvidence([]string{first.evidence}, last.evidence, 12)})
+		evidence := completeSourceEvidence([]evidenceRef{{first.evidence, first.source}, {last.evidence, last.source}}, 12)
+		if len(evidence) == 0 {
+			continue
+		}
+		out = append(out, Signal{Kind: "health_series", Period: first.date + " to " + last.date, Summary: "A comparable health measurement changed from " + first.value + " " + first.unit + " on " + first.date + " to " + last.value + " " + last.unit + " on " + last.date + ". This is a record comparison, not health advice.", EvidenceIDs: evidence})
 		healthSignals++
 		if healthSignals == 2 {
 			break
@@ -561,13 +563,12 @@ func querySignals(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visi
 			upcoming = append(upcoming, fact)
 		}
 	}
-	if len(upcoming) > 0 && len(upcoming) <= 12 {
+	if len(upcoming) > 0 {
 		sort.Slice(upcoming, func(i, j int) bool { return upcoming[i].Date < upcoming[j].Date })
-		evidence := make([]string, 0, len(upcoming))
-		for _, fact := range upcoming {
-			evidence = appendEvidence(evidence, fact.EvidenceID, 12)
+		evidence := completeFactEvidence(upcoming, 12)
+		if len(evidence) > 0 {
+			out = append(out, Signal{Kind: "planning_upcoming", Period: start.Format("2006-01-02") + " to " + end.Format("2006-01-02"), Summary: strconv.Itoa(len(upcoming)) + " dated planning records fall in the next 31 days, from " + upcoming[0].Date + " to " + upcoming[len(upcoming)-1].Date + ".", EvidenceIDs: evidence})
 		}
-		out = append(out, Signal{Kind: "planning_upcoming", Period: start.Format("2006-01-02") + " to " + end.Format("2006-01-02"), Summary: strconv.Itoa(len(upcoming)) + " dated planning records fall in the next 31 days, from " + upcoming[0].Date + " to " + upcoming[len(upcoming)-1].Date + ".", EvidenceIDs: evidence})
 	}
 
 	// Week comparison is available in both modes; Week in Review can explain it.
@@ -582,14 +583,99 @@ func querySignals(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visi
 			prior = append(prior, fact)
 		}
 	}
-	if len(current)+len(prior) > 0 && len(current)+len(prior) <= 12 {
-		evidence := make([]string, 0, len(current)+len(prior))
-		for _, fact := range append(current, prior...) {
-			evidence = appendEvidence(evidence, fact.EvidenceID, 12)
+	if len(current)+len(prior) > 0 {
+		evidence := completeFactEvidence(append(current, prior...), 12)
+		if len(current)+len(prior) > 12 {
+			evidence = representativeEvidence(current, prior, 12)
 		}
-		out = append(out, Signal{Kind: "weekly_activity", Period: priorStart.Format("2006-01-02") + " to " + day(asOf).Format("2006-01-02"), Summary: strconv.Itoa(len(current)) + " visible records were added in the current seven days, compared with " + strconv.Itoa(len(prior)) + " in the prior seven days.", EvidenceIDs: evidence})
+		if len(evidence) == 0 {
+			return out, nil
+		}
+		summary := strconv.Itoa(len(current)) + " visible records were added in the current seven days, compared with " + strconv.Itoa(len(prior)) + " in the prior seven days."
+		if len(current)+len(prior) > 12 {
+			switch {
+			case len(current) > 0 && len(prior) > 0:
+				summary = "Visible records were added in both the current and prior seven-day periods."
+			case len(current) > 0:
+				summary = "Visible records were added in the current seven-day period, with none visible in the prior period."
+			default:
+				summary = "Visible records were added in the prior seven-day period, with none visible in the current period."
+			}
+		}
+		out = append(out, Signal{Kind: "weekly_activity", Period: priorStart.Format("2006-01-02") + " to " + day(asOf).Format("2006-01-02"), Summary: summary, EvidenceIDs: evidence})
 	}
 	return out, nil
+}
+
+func representativeEvidence(first, second []Fact, limit int) []string {
+	refs := make([]evidenceRef, 0, len(first)+len(second))
+	for _, group := range [][]Fact{first, second} {
+		if len(group) > 0 {
+			refs = append(refs, evidenceRef{group[0].EvidenceID, group[0].SourceID})
+		}
+	}
+	for _, group := range [][]Fact{first, second} {
+		if len(group) == 0 {
+			continue
+		}
+		for _, fact := range group[1:] {
+			refs = append(refs, evidenceRef{fact.EvidenceID, fact.SourceID})
+		}
+	}
+	return representativeSourceEvidence(refs, limit)
+}
+
+func amountEvidence(rows []amountRow, limit int) []string {
+	refs := make([]evidenceRef, 0, len(rows))
+	for _, row := range rows {
+		refs = append(refs, evidenceRef{row.evidence, row.source})
+	}
+	return completeSourceEvidence(refs, limit)
+}
+
+func completeFactEvidence(facts []Fact, limit int) []string {
+	refs := make([]evidenceRef, 0, len(facts))
+	for _, fact := range facts {
+		refs = append(refs, evidenceRef{fact.EvidenceID, fact.SourceID})
+	}
+	return completeSourceEvidence(refs, limit)
+}
+
+func completeSourceEvidence(refs []evidenceRef, limit int) []string {
+	ids := make([]string, 0, limit)
+	sources := make(map[string]struct{}, len(refs))
+	for _, ref := range refs {
+		source := ref.source
+		if source == "" {
+			source = ref.id
+		}
+		if _, seen := sources[source]; seen {
+			continue
+		}
+		if len(ids) == limit {
+			return nil
+		}
+		sources[source] = struct{}{}
+		ids = appendEvidence(ids, ref.id, limit)
+	}
+	return ids
+}
+
+func representativeSourceEvidence(refs []evidenceRef, limit int) []string {
+	ids := make([]string, 0, limit)
+	sources := make(map[string]struct{}, len(refs))
+	for _, ref := range refs {
+		source := ref.source
+		if source == "" {
+			source = ref.id
+		}
+		if _, seen := sources[source]; seen {
+			continue
+		}
+		sources[source] = struct{}{}
+		ids = appendEvidence(ids, ref.id, limit)
+	}
+	return ids
 }
 
 func appendEvidence(ids []string, id string, limit int) []string {
@@ -711,7 +797,7 @@ func deterministic(facts []Fact, asOf time.Time, signals ...Signal) Narrative {
 		}
 		if f.Issue != "" {
 			issue := item
-			issue.Copy = "Check this update: " + f.Issue + "."
+			issue.Copy = "Recorded issue: " + f.Issue + "."
 			out.Inconsistencies = append(out.Inconsistencies, issue)
 		}
 		if d, err := time.Parse("2006-01-02", f.Date); err == nil && !d.Before(day(asOf)) && d.Before(day(asOf).AddDate(0, 0, 31)) {
@@ -801,33 +887,150 @@ func factItem(f Fact) Item {
 }
 
 func validateNarrative(n Narrative, allowed map[string]Fact, signals ...Signal) error {
+	if err := validateNarrativeShape(n); err != nil {
+		return err
+	}
+	for _, item := range narrativeItems(n) {
+		if err := validateItem(item, allowed, signals...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func sanitizeNarrative(n Narrative, allowed map[string]Fact, fallback Item, signals ...Signal) (Narrative, error) {
+	if err := validateNarrativeShape(n); err != nil {
+		return Narrative{}, err
+	}
+	var out Narrative
+	valid := false
+	if !emptyItem(n.Lead) && validateItem(n.Lead, allowed, signals...) == nil {
+		out.Lead = n.Lead
+		valid = true
+	}
+	keep := func(items []Item, normalizeSignalEvidence bool) []Item {
+		out := make([]Item, 0, len(items))
+		for _, item := range items {
+			if normalizeSignalEvidence {
+				item = normalizeSignalInsight(item, signals)
+			}
+			if emptyItem(item) || validateItem(item, allowed, signals...) != nil {
+				continue
+			}
+			out = append(out, item)
+			valid = true
+		}
+		return out
+	}
+	out.Insights = keep(n.Insights, true)
+	out.Changes = keep(n.Changes, false)
+	out.Dates = keep(n.Dates, false)
+	out.Inconsistencies = keep(n.Inconsistencies, false)
+	out.Priorities = keep(n.Priorities, false)
+	if len(out.Insights) == 0 {
+		return Narrative{}, ErrUnsupported
+	}
+	if len(signals) > 0 && !hasExactSignalInsight(out.Insights, signals) {
+		return Narrative{}, ErrUnsupported
+	}
+	if !valid {
+		return Narrative{}, ErrUnsupported
+	}
+	if emptyItem(out.Lead) {
+		if emptyItem(fallback) {
+			return Narrative{}, ErrUnsupported
+		}
+		out.Lead = fallback
+	}
+	return out, nil
+}
+
+func normalizeSignalInsight(item Item, signals []Signal) Item {
+	matched := -1
+	for index, signal := range signals {
+		if item.Copy != signal.Summary || !signalEvidenceSubset(item.EvidenceIDs, signal.EvidenceIDs) {
+			continue
+		}
+		if matched >= 0 {
+			return item
+		}
+		matched = index
+	}
+	if matched >= 0 {
+		item.EvidenceIDs = append([]string(nil), signals[matched].EvidenceIDs...)
+	}
+	return item
+}
+
+func signalEvidenceSubset(ids, signalIDs []string) bool {
+	if len(ids) == 0 || len(ids) > len(signalIDs) {
+		return false
+	}
+	allowed := make(map[string]struct{}, len(signalIDs))
+	for _, id := range signalIDs {
+		allowed[id] = struct{}{}
+	}
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		if _, ok := allowed[id]; !ok {
+			return false
+		}
+		if _, duplicate := seen[id]; duplicate {
+			return false
+		}
+		seen[id] = struct{}{}
+	}
+	return true
+}
+
+func hasExactSignalInsight(insights []Item, signals []Signal) bool {
+	for _, insight := range insights {
+		for _, signal := range signals {
+			if insight.Copy == signal.Summary && strings.Join(insight.EvidenceIDs, "\x00") == strings.Join(signal.EvidenceIDs, "\x00") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func validateNarrativeShape(n Narrative) error {
 	if len(n.Insights) > 5 || len(n.Priorities) > 3 || len(n.Changes) > 12 || len(n.Dates) > 12 || len(n.Inconsistencies) > 12 {
 		return ErrInvalid
 	}
+	return nil
+}
+
+func narrativeItems(n Narrative) []Item {
 	items := []Item{n.Lead}
 	items = append(items, n.Insights...)
 	items = append(items, n.Changes...)
 	items = append(items, n.Dates...)
 	items = append(items, n.Inconsistencies...)
-	items = append(items, n.Priorities...)
-	for _, item := range items {
-		if strings.TrimSpace(item.Title) == "" && strings.TrimSpace(item.Copy) == "" {
-			continue
-		}
-		if len(item.Title) > 256 || len(item.Copy) > 1200 || len(item.EvidenceIDs) == 0 || len(item.EvidenceIDs) > 12 || unsafeWording(item.Title+" "+item.Copy, fullyCitesSignal(item.EvidenceIDs, signals)) {
+	return append(items, n.Priorities...)
+}
+
+func emptyItem(item Item) bool {
+	return strings.TrimSpace(item.Title) == "" && strings.TrimSpace(item.Copy) == ""
+}
+
+func validateItem(item Item, allowed map[string]Fact, signals ...Signal) error {
+	if emptyItem(item) {
+		return nil
+	}
+	if len(item.Title) > 256 || len(item.Copy) > 1200 || len(item.EvidenceIDs) == 0 || len(item.EvidenceIDs) > 12 || imperativeWording(item.Title) || imperativeWording(item.Copy) || unsafeWording(item.Title+" "+item.Copy, fullyCitesSignal(item.EvidenceIDs, signals)) {
+		return ErrUnsupported
+	}
+	var cited []Fact
+	for _, id := range item.EvidenceIDs {
+		fact, ok := allowed[id]
+		if !ok {
 			return ErrUnsupported
 		}
-		var cited []Fact
-		for _, id := range item.EvidenceIDs {
-			fact, ok := allowed[id]
-			if !ok {
-				return ErrUnsupported
-			}
-			cited = append(cited, fact)
-		}
-		if !groundedWording(item.Title+" "+item.Copy+" "+item.When, cited, signals, item.EvidenceIDs) {
-			return ErrUnsupported
-		}
+		cited = append(cited, fact)
+	}
+	if !groundedWording(item.Title+" "+item.Copy+" "+item.When, cited, signals, item.EvidenceIDs) {
+		return ErrUnsupported
 	}
 	return nil
 }
@@ -840,13 +1043,55 @@ func unsafeWording(value string, allowComparison bool) bool {
 		}
 	}
 	if !allowComparison {
-		for _, term := range []string{" increased ", " decreased ", " higher ", " lower ", " rising ", " falling "} {
+		for _, term := range []string{" increased ", " decreased ", " higher ", " lower ", " rising ", " falling ", " rose ", " fell ", " dropped ", " grew ", " declined ", " more ", " less "} {
 			if strings.Contains(lower, term) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+func imperativeWording(value string) bool {
+	lower := strings.ToLower(strings.TrimSpace(value))
+	if lower == "" {
+		return false
+	}
+	for _, phrase := range []string{"needs action", "action needed", "should", "please", "need to", "needs to", "must", "have to", "required to"} {
+		if containsPhrase(lower, phrase) {
+			return true
+		}
+	}
+	for _, command := range imperativeCommands {
+		if startsCommand(lower, command) {
+			return true
+		}
+	}
+	for _, prefix := range []string{"could you ", "would you ", "can you ", "will you "} {
+		if strings.HasPrefix(lower, prefix) && startsAnyCommand(strings.TrimSpace(strings.TrimPrefix(lower, prefix))) {
+			return true
+		}
+	}
+	return false
+}
+
+var imperativeCommands = []string{"check", "review", "consider", "remember", "make sure", "follow up", "follow-up", "contact", "call", "book", "pay", "update", "confirm", "buy", "see", "sell", "take"}
+
+func startsAnyCommand(value string) bool {
+	for _, command := range imperativeCommands {
+		if startsCommand(value, command) {
+			return true
+		}
+	}
+	return false
+}
+
+func startsCommand(value, command string) bool {
+	return value == command || strings.HasPrefix(value, command+" ") || strings.HasPrefix(value, command+":")
+}
+
+func containsPhrase(value, phrase string) bool {
+	return strings.Contains(" "+value+" ", " "+phrase+" ") || strings.Contains(value, phrase+".") || strings.Contains(value, phrase+",") || strings.Contains(value, phrase+":")
 }
 
 func fullyCitesSignal(citedIDs []string, signals []Signal) bool {
@@ -913,16 +1158,113 @@ func groundedWording(wording string, facts []Fact, signals []Signal, citedIDs []
 	source := evidence.String()
 	lower := strings.ToLower(wording)
 	for _, number := range coachingNumber.FindAllString(lower, -1) {
-		if !strings.Contains(source, number) {
+		if !containsNumber(source, number) {
 			return false
 		}
 	}
-	for _, word := range coachingWord.FindAllString(lower, -1) {
-		if strings.Contains(source, strings.ToLower(word)) {
+	return allSubstantiveTermsGrounded(lower, source, fullyCitesSignal(citedIDs, signals))
+}
+
+func allSubstantiveTermsGrounded(wording, source string, allowComparison bool) bool {
+	sourceTerms := make(map[string]struct{})
+	for _, word := range coachingWord.FindAllString(source, -1) {
+		sourceTerms[word] = struct{}{}
+	}
+	for _, word := range coachingWord.FindAllString(wording, -1) {
+		if blockedCoachingWord[word] {
+			return false
+		}
+		if comparisonCoachingWord[word] {
+			if !allowComparison {
+				return false
+			}
+			continue
+		}
+		if neutralCoachingWord[word] {
+			continue
+		}
+		if _, ok := sourceTerms[word]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+var neutralCoachingWord = map[string]bool{
+	"about": true, "activity": true, "after": true, "alongside": true,
+	"appear": true, "appears": true, "been": true, "before": true, "between": true,
+	"calendar": true, "check": true, "checking": true, "comparison": true, "confirm": true,
+	"confirmation": true, "could": true, "current": true, "date": true, "dates": true,
+	"december": true,
+	"detail":   true, "details": true, "during": true, "each": true, "february": true,
+	"finance": true, "from": true, "have": true, "health": true, "household": true,
+	"entries": true, "entry": true, "individual": true, "information": true, "into": true,
+	"item": true, "items": true, "issue": true, "january": true, "july": true, "june": true,
+	"last": true, "listed": true, "listing": true, "march": true, "mixed": true,
+	"may": true, "might": true, "month": true, "months": true, "monthly": true,
+	"next": true, "november": true, "october": true, "pattern": true,
+	"patterns": true, "period": true, "periods": true, "planning": true, "plans": true,
+	"prior": true, "private": true, "recent": true, "record": true, "recorded": true,
+	"records": true, "repeated": true, "schedule": true, "scheduled": true, "shared": true,
+	"source": true, "sources": true, "still": true,
+	"that": true, "their": true, "there": true, "these": true, "this": true,
+	"those": true, "today": true, "tomorrow": true, "update": true, "updates": true,
+	"together": true, "total": true, "totals": true, "upcoming": true, "value": true,
+	"values": true, "view": true, "visible": true, "week": true, "weeks": true,
+	"were": true, "will": true, "with": true, "worth": true, "would": true,
+	"year": true, "years": true, "yesterday": true, "your": true,
+}
+
+var comparisonCoachingWord = map[string]bool{
+	"against": true, "comparison": true, "compared": true, "decreased": true, "declined": true,
+	"dropped": true, "falling": true, "fell": true, "grew": true, "higher": true,
+	"increased": true, "less": true, "lower": true, "more": true, "rising": true,
+	"rose": true,
+}
+
+var blockedCoachingWord = map[string]bool{
+	"abnormal": true, "advice": true, "advise": true, "always": true, "assured": true,
+	"better": true, "certain": true, "certainly": true, "clear": true, "clearly": true,
+	"critical": true, "danger": true, "dangerous": true, "definitely": true, "emergency": true,
+	"ensure": true, "guaranteed": true, "healthy": true, "immediate": true, "immediately": true,
+	"important": true, "improve": true, "improved": true, "improvement": true, "likely": true,
+	"normal": true, "possibly": true, "probably": true, "recommend": true, "recommended": true,
+	"recommendation": true, "risk": true, "risky": true, "safe": true, "suggest": true,
+	"suggested": true, "suggests": true, "uncertain": true, "unhealthy": true, "unsafe": true,
+	"urgent": true, "urgently": true, "warning": true, "warn": true, "worse": true,
+}
+
+func containsNumber(source, wanted string) bool {
+	target, ok := numberValue(wanted)
+	if !ok {
+		return false
+	}
+	for _, candidate := range coachingNumber.FindAllString(source, -1) {
+		value, ok := numberValue(candidate)
+		if ok && value.Cmp(target) == 0 {
 			return true
 		}
 	}
 	return false
+}
+
+func numberValue(value string) (*big.Rat, bool) {
+	parsed, ok := new(big.Rat).SetString(strings.ReplaceAll(value, ",", ""))
+	return parsed, ok
+}
+
+// PublishErrorCode is safe to log without exposing model wording or records.
+func PublishErrorCode(err error) string {
+	switch {
+	case errors.Is(err, ErrStale):
+		return "context_changed"
+	case errors.Is(err, ErrUnsupported):
+		return "output_not_grounded"
+	case errors.Is(err, ErrInvalid):
+		return "output_invalid"
+	default:
+		return "storage_failed"
+	}
 }
 
 func sameContext(a, b Context) bool {
