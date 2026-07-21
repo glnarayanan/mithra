@@ -468,13 +468,13 @@ func verifyFixture(ctx context.Context, db *sql.DB, owner, partner policy.ActorS
 	if err != nil {
 		return err
 	}
-	partnerOverview, err := coach.Week(ctx, partner, time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC))
-	if err != nil || !ownerOverview.HasRecords || !partnerOverview.HasRecords || len(ownerOverview.SharedContext.Facts) == 0 || len(ownerOverview.PersonalContext.Facts) == 0 || len(partnerOverview.PersonalContext.Facts) == 0 {
+	partnerReview, err := coach.Week(ctx, partner, time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC))
+	if err != nil || !ownerOverview.HasRecords || !partnerReview.HasRecords || len(ownerOverview.SharedContext.Facts) == 0 || len(ownerOverview.PersonalContext.Facts) == 0 || len(partnerReview.Personal.Context.Facts) == 0 {
 		return errors.New("demo Family Brief or private Week in Review overlay is incomplete")
 	}
 	receipt.SharedRecords = len(ownerOverview.SharedContext.Facts)
 	receipt.OwnerPersonal = len(ownerOverview.PersonalContext.Facts)
-	receipt.PartnerPersonal = len(partnerOverview.PersonalContext.Facts)
+	receipt.PartnerPersonal = len(partnerReview.Personal.Context.Facts)
 	return nil
 }
 

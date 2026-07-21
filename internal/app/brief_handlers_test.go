@@ -117,7 +117,7 @@ func TestFamilyBriefLoadsWithoutAIThenRefreshesEvidenceAndKeepsPartnerPrivateOut
 		t.Fatalf("follow-up code=%d calls=%d mail=%#v", followUp.Code, providerCalls, mailer.last(t))
 	}
 	week := serve(application, coachingGET("/review", ownerSession))
-	if week.Code != http.StatusOK || !strings.Contains(week.Body.String(), "Week in Review") || !strings.Contains(week.Body.String(), "What changed") || !strings.Contains(week.Body.String(), "Needs a look") || !strings.Contains(week.Body.String(), "Only you") || !strings.Contains(week.Body.String(), "Learn about privacy") || !strings.Contains(week.Body.String(), "Regenerate AI insights") {
+	if week.Code != http.StatusOK || !strings.Contains(week.Body.String(), "Week in Review") || !strings.Contains(week.Body.String(), "What changed") || !strings.Contains(week.Body.String(), "Needs a look") || !strings.Contains(week.Body.String(), "Only you") || !strings.Contains(week.Body.String(), "Learn about privacy") || !strings.Contains(week.Body.String(), "Regenerate AI insights") || strings.Contains(week.Body.String(), "Nothing looks inconsistent right now.") {
 		t.Fatalf("week=%d %q", week.Code, week.Body.String())
 	}
 }
@@ -202,6 +202,20 @@ func TestPrivateItemsDoNotRepeatOneFactAcrossSections(t *testing.T) {
 	})
 	if len(items) != 1 || items[0].Title != item.Title {
 		t.Fatalf("private items = %#v", items)
+	}
+}
+
+func TestWeekDoesNotCallPrivateValidationIssueConsistent(t *testing.T) {
+	application, mailer := newAuthTestApp(t, "owner@example.com")
+	session := activate(t, application, mailer, "owner@example.com", "owner secure password", nil)
+	scope := ownerScope(t, application, session)
+	source := coachingTestSource(t, application, scope, policy.Personal, "private incomplete")
+	if _, err := application.finance.Create(context.Background(), scope, finance.Draft{Kind: finance.Spending, Visibility: policy.Personal, Label: "Private record", Category: "Home", IncompleteNote: "amount needs correction", Provenance: coachingFinanceProvenance(source)}); err != nil {
+		t.Fatal(err)
+	}
+	week := serve(application, coachingGET("/review", session))
+	if week.Code != http.StatusOK || !strings.Contains(week.Body.String(), "A private record needs a look. It appears under Only you.") || strings.Contains(week.Body.String(), "Nothing looks inconsistent right now.") {
+		t.Fatalf("week=%d %q", week.Code, week.Body.String())
 	}
 }
 

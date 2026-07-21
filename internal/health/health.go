@@ -362,6 +362,22 @@ func (s *Service) Summarize(ctx context.Context, actor policy.ActorScope, filter
 		return Summary{}, err
 	}
 	defer tx.Rollback()
+	summary, err := s.SummarizeInTx(ctx, tx, actor, filter)
+	if err != nil {
+		return Summary{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Summary{}, err
+	}
+	return summary, nil
+}
+
+// SummarizeInTx applies the same series and unit checks inside a caller-owned
+// transaction so related reads share one snapshot.
+func (s *Service) SummarizeInTx(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, filter ScopeFilter) (Summary, error) {
+	if tx == nil {
+		return Summary{}, ErrInvalidRecord
+	}
 	if err := authorize(ctx, tx, actor); err != nil {
 		return Summary{}, err
 	}
@@ -379,9 +395,6 @@ func (s *Service) Summarize(ctx context.Context, actor policy.ActorScope, filter
 	}
 	routines, err := queryRoutines(ctx, tx, scopeSQL, args)
 	if err != nil {
-		return Summary{}, err
-	}
-	if err := tx.Commit(); err != nil {
 		return Summary{}, err
 	}
 	summary := Summary{Observations: observations, Appointments: appointments, Routines: routines}

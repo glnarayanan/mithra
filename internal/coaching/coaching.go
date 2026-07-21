@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/glnarayanan/mithra/internal/health"
 	"github.com/glnarayanan/mithra/internal/policy"
 )
 
@@ -33,15 +34,19 @@ var (
 )
 
 type Fact struct {
-	EvidenceID string            `json:"evidence_id"`
-	Family     string            `json:"family"`
-	RecordID   string            `json:"-"`
-	Content    string            `json:"content"`
-	Date       string            `json:"date,omitempty"`
-	Issue      string            `json:"issue,omitempty"`
-	SourceID   string            `json:"-"`
-	Visibility policy.Visibility `json:"visibility"`
-	CreatedAt  time.Time         `json:"created_at"`
+	EvidenceID   string            `json:"evidence_id"`
+	Family       string            `json:"family"`
+	Kind         string            `json:"-"`
+	RecordID     string            `json:"-"`
+	Content      string            `json:"content"`
+	Date         string            `json:"date,omitempty"`
+	Issue        string            `json:"issue,omitempty"`
+	SourceID     string            `json:"-"`
+	Visibility   policy.Visibility `json:"visibility"`
+	CreatedAt    time.Time         `json:"created_at"`
+	UpdatedAt    time.Time         `json:"-"`
+	Status       string            `json:"-"`
+	SupersedesID string            `json:"-"`
 }
 
 type Context struct {
@@ -51,6 +56,7 @@ type Context struct {
 	PersonalRevision  int64    `json:"personal_revision"`
 	SourceFingerprint string   `json:"source_fingerprint"`
 	Facts             []Fact   `json:"facts"`
+	ReviewFacts       []Fact   `json:"-"`
 	Signals           []Signal `json:"signals"`
 }
 
@@ -96,6 +102,31 @@ type Overview struct {
 	HasRecords                     bool
 	SharedCache, PersonalCache     CacheState
 	SharedHistory, PersonalHistory []History
+}
+
+// ReviewEvent is one typed record in one week-review section. It deliberately
+// does not reuse the Family Brief's Narrative sections.
+type ReviewEvent struct {
+	Fact       Fact
+	Title      string
+	Copy       string
+	When       string
+	EvidenceID string
+}
+
+type ReviewScope struct {
+	Changes, Upcoming, Issues []ReviewEvent
+	Insights                  []Item
+	Context                   Context
+	Cache                     CacheState
+	History                   []History
+}
+
+// WeeklyReview keeps the review's deterministic record classification separate
+// from the Family Brief. AI wording remains available as an optional insight.
+type WeeklyReview struct {
+	Shared, Personal ReviewScope
+	HasRecords       bool
 }
 
 type CacheState struct {
@@ -154,7 +185,16 @@ func (s *Service) buildContextTx(ctx context.Context, tx *sql.Tx, actor policy.A
 	if err != nil {
 		return Context{}, err
 	}
-	signals, err := querySignals(ctx, tx, actor, visibility, facts, s.now().UTC())
+	filter := health.SharedRecords
+	if visibility == policy.Personal {
+		filter = health.PersonalRecords
+	}
+	healthSummary, err := health.New(s.db).SummarizeInTx(ctx, tx, actor, filter)
+	if err != nil {
+		return Context{}, err
+	}
+	applyHealthConflicts(facts, healthSummary.Conflicts)
+	signals, err := querySignals(ctx, tx, actor, visibility, facts, healthSummary, s.now().UTC())
 	if err != nil {
 		return Context{}, err
 	}
@@ -163,7 +203,7 @@ func (s *Service) buildContextTx(ctx context.Context, tx *sql.Tx, actor policy.A
 	if visibility == policy.Shared {
 		personalKey = 0
 	}
-	return Context{HouseholdID: actor.HouseholdID, Scope: string(visibility), SharedRevision: shared, PersonalRevision: personalKey, SourceFingerprint: fingerprint, Facts: facts, Signals: signals}, nil
+	return Context{HouseholdID: actor.HouseholdID, Scope: string(visibility), SharedRevision: shared, PersonalRevision: personalKey, SourceFingerprint: fingerprint, Facts: coachingFacts(facts), ReviewFacts: facts, Signals: signals}, nil
 }
 
 func (s *Service) Overview(ctx context.Context, actor policy.ActorScope, asOf time.Time) (Overview, error) {
@@ -175,7 +215,7 @@ func (s *Service) Overview(ctx context.Context, actor policy.ActorScope, asOf ti
 	if err != nil {
 		return Overview{}, err
 	}
-	result := Overview{Shared: deterministic(shared.Facts, asOf, shared.Signals...), Personal: deterministic(personal.Facts, asOf, personal.Signals...), SharedContext: shared, PersonalContext: personal, HasRecords: len(shared.Facts)+len(personal.Facts) > 0}
+	result := Overview{Shared: deterministic(shared.ReviewFacts, asOf, shared.Signals...), Personal: deterministic(personal.ReviewFacts, asOf, personal.Signals...), SharedContext: shared, PersonalContext: personal, HasRecords: len(shared.ReviewFacts)+len(personal.ReviewFacts) > 0}
 	if cached, state, err := s.load(ctx, actor, "brief", policy.Shared, shared); err == nil && state.Found {
 		if state.Stale {
 			cached.Dates = result.Shared.Dates
@@ -203,40 +243,30 @@ func (s *Service) Overview(ctx context.Context, actor policy.ActorScope, asOf ti
 	return result, nil
 }
 
-func (s *Service) Week(ctx context.Context, actor policy.ActorScope, asOf time.Time) (Overview, error) {
+func (s *Service) Week(ctx context.Context, actor policy.ActorScope, asOf time.Time) (WeeklyReview, error) {
 	shared, err := s.BuildContext(ctx, actor, policy.Shared)
 	if err != nil {
-		return Overview{}, err
+		return WeeklyReview{}, err
 	}
 	personal, err := s.BuildContext(ctx, actor, policy.Personal)
 	if err != nil {
-		return Overview{}, err
+		return WeeklyReview{}, err
 	}
-	result := Overview{Shared: deterministic(shared.Facts, asOf, shared.Signals...), Personal: deterministic(personal.Facts, asOf, personal.Signals...), SharedContext: shared, PersonalContext: personal, HasRecords: len(shared.Facts)+len(personal.Facts) > 0}
+	result := WeeklyReview{Shared: weeklyScope(shared, asOf), Personal: weeklyScope(personal, asOf), HasRecords: len(shared.ReviewFacts)+len(personal.ReviewFacts) > 0}
 	if cached, state, err := s.load(ctx, actor, "week", policy.Shared, shared); err == nil && state.Found {
-		if state.Stale {
-			cached.Dates = result.Shared.Dates
-			cached.Inconsistencies = result.Shared.Inconsistencies
-			cached.Priorities = result.Shared.Priorities
-		}
-		cached = withSignals(cached, shared.Signals)
-		result.Shared, result.SharedCache = cached, state
+		result.Shared.Insights = reviewInsights(withSignals(cached, shared.Signals).Insights, result.Shared)
+		result.Shared.Cache = state
 	} else {
-		result.SharedCache = state
+		result.Shared.Cache = state
 	}
 	if cached, state, err := s.load(ctx, actor, "week", policy.Personal, personal); err == nil && state.Found {
-		if state.Stale {
-			cached.Dates = result.Personal.Dates
-			cached.Inconsistencies = result.Personal.Inconsistencies
-			cached.Priorities = result.Personal.Priorities
-		}
-		cached = withSignals(cached, personal.Signals)
-		result.Personal, result.PersonalCache = cached, state
+		result.Personal.Insights = reviewInsights(withSignals(cached, personal.Signals).Insights, result.Personal)
+		result.Personal.Cache = state
 	} else {
-		result.PersonalCache = state
+		result.Personal.Cache = state
 	}
-	result.SharedHistory, _ = s.history(ctx, actor, "week", policy.Shared, shared)
-	result.PersonalHistory, _ = s.history(ctx, actor, "week", policy.Personal, personal)
+	result.Shared.History, _ = s.history(ctx, actor, "week", policy.Shared, shared)
+	result.Personal.History, _ = s.history(ctx, actor, "week", policy.Personal, personal)
 	return result, nil
 }
 
@@ -389,54 +419,31 @@ func queryFacts(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visibi
 	ownerClause := ""
 	args := []any{actor.HouseholdID, string(visibility)}
 	if visibility == policy.Personal {
-		ownerClause = " AND se.owner_user_id=?"
+		ownerClause = " AND r.owner_user_id=?"
 		args = append(args, actor.ActorID)
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT se.record_family,se.record_id,se.content,se.visibility,el.source_id,el.created_at,
-	COALESCE(
-	 (SELECT received_on FROM finance_income WHERE id=se.record_id AND active=1),
-	 (SELECT spent_on FROM finance_spending WHERE id=se.record_id AND active=1),
-	 (SELECT observed_on FROM finance_assets WHERE id=se.record_id AND active=1),
-	 (SELECT observed_on FROM finance_liabilities WHERE id=se.record_id AND active=1),
-	 (SELECT starts_on FROM finance_budgets WHERE id=se.record_id AND active=1),
-	 (SELECT due_on FROM finance_obligations WHERE id=se.record_id AND active=1),
-	 (SELECT observed_on FROM health_observations WHERE id=se.record_id AND active=1),
-	 (SELECT scheduled_on FROM health_appointments WHERE id=se.record_id AND active=1),
-	 (SELECT next_due_on FROM health_care_routines WHERE id=se.record_id AND active=1),
-	 (SELECT target_on FROM planning_goals WHERE id=se.record_id AND active=1),
-	 (SELECT due_on FROM planning_milestones WHERE id=se.record_id AND active=1),
-	 (SELECT COALESCE(NULLIF(starts_on,''),substr(starts_at,1,10)) FROM planning_events WHERE id=se.record_id AND active=1),''),
-	COALESCE(
-	 (SELECT incomplete_reason FROM finance_income WHERE id=se.record_id AND active=1),
-	 (SELECT incomplete_reason FROM finance_spending WHERE id=se.record_id AND active=1),
-	 (SELECT incomplete_reason FROM finance_assets WHERE id=se.record_id AND active=1),
-	 (SELECT incomplete_reason FROM finance_liabilities WHERE id=se.record_id AND active=1),
-	 (SELECT incomplete_reason FROM finance_budgets WHERE id=se.record_id AND active=1),
-	 (SELECT incomplete_reason FROM finance_obligations WHERE id=se.record_id AND active=1),'')
-	FROM search_entries se
-	JOIN evidence_links el ON el.record_family=se.record_family AND el.record_id=se.record_id AND el.household_id=se.household_id AND el.visibility=se.visibility AND el.owner_user_id=se.owner_user_id
-	JOIN sources src ON src.id=el.source_id AND src.state='live' AND src.household_id=se.household_id
-	  AND ((se.visibility='shared' AND src.visibility='shared') OR (se.visibility='personal' AND (src.visibility='shared' OR (src.visibility='personal' AND src.owner_user_id=se.owner_user_id))))
-	WHERE se.household_id=? AND se.visibility=?`+ownerClause+`
-	AND (
-	 (se.record_family='finance' AND EXISTS (
-	  SELECT 1 FROM finance_income WHERE id=se.record_id AND active=1 UNION ALL
-	  SELECT 1 FROM finance_spending WHERE id=se.record_id AND active=1 UNION ALL
-	  SELECT 1 FROM finance_assets WHERE id=se.record_id AND active=1 UNION ALL
-	  SELECT 1 FROM finance_liabilities WHERE id=se.record_id AND active=1 UNION ALL
-	  SELECT 1 FROM finance_budgets WHERE id=se.record_id AND active=1 UNION ALL
-	  SELECT 1 FROM finance_obligations WHERE id=se.record_id AND active=1))
-	 OR (se.record_family='health' AND EXISTS (
-	  SELECT 1 FROM health_observations WHERE id=se.record_id AND active=1 UNION ALL
-	  SELECT 1 FROM health_appointments WHERE id=se.record_id AND active=1 UNION ALL
-	  SELECT 1 FROM health_care_routines WHERE id=se.record_id AND active=1))
-	 OR (se.record_family='planning' AND EXISTS (
-	  SELECT 1 FROM planning_goals WHERE id=se.record_id AND active=1 UNION ALL
-	  SELECT 1 FROM planning_plans WHERE id=se.record_id AND active=1 UNION ALL
-	  SELECT 1 FROM planning_milestones WHERE id=se.record_id AND active=1 UNION ALL
-	  SELECT 1 FROM planning_events WHERE id=se.record_id AND active=1))
+	rows, err := tx.QueryContext(ctx, `WITH records AS (
+	SELECT 'finance' family,'income' kind,id,household_id,owner_user_id,visibility,source_id,label title,received_on date,'' status,incomplete_reason issue,created_at,updated_at,COALESCE(supersedes_id,'') supersedes_id FROM finance_income WHERE active=1
+	UNION ALL SELECT 'finance','spending',id,household_id,owner_user_id,visibility,source_id,label,spent_on,'',incomplete_reason,created_at,updated_at,COALESCE(supersedes_id,'') FROM finance_spending WHERE active=1
+	UNION ALL SELECT 'finance','asset',id,household_id,owner_user_id,visibility,source_id,label,observed_on,'',incomplete_reason,created_at,updated_at,COALESCE(supersedes_id,'') FROM finance_assets WHERE active=1
+	UNION ALL SELECT 'finance','liability',id,household_id,owner_user_id,visibility,source_id,label,observed_on,'',incomplete_reason,created_at,updated_at,COALESCE(supersedes_id,'') FROM finance_liabilities WHERE active=1
+	UNION ALL SELECT 'finance','budget',id,household_id,owner_user_id,visibility,source_id,label,starts_on,'',incomplete_reason,created_at,updated_at,COALESCE(supersedes_id,'') FROM finance_budgets WHERE active=1
+	UNION ALL SELECT 'finance','obligation',id,household_id,owner_user_id,visibility,source_id,label,due_on,status,incomplete_reason,created_at,updated_at,COALESCE(supersedes_id,'') FROM finance_obligations WHERE active=1
+	UNION ALL SELECT 'health','observation',id,household_id,owner_user_id,visibility,source_id,TRIM(analyte || CASE WHEN subject<>'' THEN ' for ' || subject ELSE '' END),observed_on,'','',created_at,updated_at,COALESCE(supersedes_id,'') FROM health_observations WHERE active=1
+	UNION ALL SELECT 'health','appointment',id,household_id,owner_user_id,visibility,source_id,label,scheduled_on,status,'',created_at,updated_at,'' FROM health_appointments WHERE active=1
+	UNION ALL SELECT 'health','routine',id,household_id,owner_user_id,visibility,source_id,label,next_due_on,status,'',created_at,updated_at,'' FROM health_care_routines WHERE active=1
+	UNION ALL SELECT 'planning','goal',id,household_id,owner_user_id,visibility,source_id,title,target_on,status,'',created_at,updated_at,'' FROM planning_goals WHERE active=1
+	UNION ALL SELECT 'planning','plan',id,household_id,owner_user_id,visibility,source_id,title,'',status,'',created_at,updated_at,'' FROM planning_plans WHERE active=1
+	UNION ALL SELECT 'planning','milestone',id,household_id,owner_user_id,visibility,source_id,title,due_on,status,'',created_at,updated_at,'' FROM planning_milestones WHERE active=1
+	UNION ALL SELECT 'planning','event',id,household_id,owner_user_id,visibility,source_id,title,COALESCE(NULLIF(starts_on,''),substr(starts_at,1,10)),status,'',created_at,updated_at,'' FROM planning_events WHERE active=1
 	)
-	GROUP BY se.record_family,se.record_id,se.content,se.visibility,el.source_id,el.created_at ORDER BY el.created_at,se.record_family,se.record_id`, args...)
+	SELECT DISTINCT r.family,r.kind,r.id,r.title,r.date,r.status,r.issue,r.visibility,el.source_id,r.created_at,r.updated_at,r.supersedes_id
+	FROM records r
+	JOIN evidence_links el ON el.record_family=r.family AND el.record_id=r.id AND el.household_id=r.household_id AND el.visibility=r.visibility AND el.owner_user_id=r.owner_user_id AND el.source_id=r.source_id
+	JOIN sources src ON src.id=el.source_id AND src.state='live' AND src.household_id=r.household_id
+	 AND ((r.visibility='shared' AND src.visibility='shared') OR (r.visibility='personal' AND (src.visibility='shared' OR (src.visibility='personal' AND src.owner_user_id=r.owner_user_id))))
+	WHERE r.household_id=? AND r.visibility=?`+ownerClause+`
+	ORDER BY r.created_at,r.family,r.id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -444,12 +451,13 @@ func queryFacts(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visibi
 	var out []Fact
 	for rows.Next() {
 		var f Fact
-		var created, visible string
-		if err := rows.Scan(&f.Family, &f.RecordID, &f.Content, &visible, &f.SourceID, &created, &f.Date, &f.Issue); err != nil {
+		var created, updated, visible string
+		if err := rows.Scan(&f.Family, &f.Kind, &f.RecordID, &f.Content, &f.Date, &f.Status, &f.Issue, &visible, &f.SourceID, &created, &updated, &f.SupersedesID); err != nil {
 			return nil, err
 		}
 		f.Visibility = policy.Visibility(visible)
 		f.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+		f.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)
 		f.EvidenceID = evidenceID(actor.HouseholdID, f)
 		out = append(out, f)
 	}
@@ -468,10 +476,12 @@ func queryFacts(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visibi
 // querySignals builds bounded summaries only from records already present in
 // the actor-scoped fact set. The model gets these facts, not a request to infer
 // calculations from prose.
-func querySignals(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visibility policy.Visibility, facts []Fact, asOf time.Time) ([]Signal, error) {
+func querySignals(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visibility policy.Visibility, facts []Fact, healthSummary health.Summary, asOf time.Time) ([]Signal, error) {
 	byRecord := make(map[string]Fact, len(facts))
 	for _, fact := range facts {
-		byRecord[fact.RecordID] = fact
+		if fact.Issue == "" {
+			byRecord[fact.RecordID] = fact
+		}
 	}
 	ownerClause, args := "", []any{actor.HouseholdID, string(visibility)}
 	if visibility == policy.Personal {
@@ -522,7 +532,7 @@ func querySignals(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visi
 		if len(evidence) > 0 {
 			latestCutoff := latestStart.AddDate(0, 0, cutoff-1).Format("2006-01-02")
 			priorCutoff := priorStart.AddDate(0, 0, cutoff-1).Format("2006-01-02")
-			out = append(out, Signal{Kind: "finance_month_to_date", Period: priorMonth + " to " + latestMonth, Summary: "Spending recorded from " + latestStart.Format("2006-01-02") + " through " + latestCutoff + " is " + sumAmounts(latestRows) + ", compared with " + sumAmounts(priorRows) + " from " + priorStart.Format("2006-01-02") + " through " + priorCutoff + ".", EvidenceIDs: evidence})
+			out = append(out, Signal{Kind: "finance_month_to_date", Period: displayDate(priorStart.Format("2006-01-02")) + " to " + displayDate(latestCutoff), Summary: "Spending recorded from " + displayDate(latestStart.Format("2006-01-02")) + " through " + displayDate(latestCutoff) + " is " + sumAmounts(latestRows) + ", compared with " + sumAmounts(priorRows) + " from " + displayDate(priorStart.Format("2006-01-02")) + " through " + displayDate(priorCutoff) + ".", EvidenceIDs: evidence})
 		}
 	}
 
@@ -543,7 +553,7 @@ func querySignals(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visi
 			spent, limit := scaledAmountTotal(categoryRows), scaledAmountTotal([]amountRow{budget})
 			if len(evidence) > 0 && limit.Sign() > 0 {
 				remaining := new(big.Int).Sub(new(big.Int).Set(limit), spent)
-				out = append(out, Signal{Kind: "finance_budget", Period: latestMonth, Summary: "Spending recorded in " + budgetCategory + " through " + day(asOf).Format("2006-01-02") + " is " + formatScaledAmount(spent) + " against the " + formatScaledAmount(limit) + " budget recorded as " + budgetLabel + ", leaving " + formatScaledAmount(remaining) + ". This is " + formatPercent(spent, limit) + " of the recorded budget.", EvidenceIDs: evidence})
+				out = append(out, Signal{Kind: "finance_budget", Period: latestStart.Format("Jan 2006"), Summary: "Spending recorded in " + budgetCategory + " through " + displayDate(day(asOf).Format("2006-01-02")) + " is " + formatScaledAmount(spent) + " against the " + formatScaledAmount(limit) + " budget recorded as " + budgetLabel + ", leaving " + formatScaledAmount(remaining) + ". This is " + formatPercent(spent, limit) + " of the recorded budget.", EvidenceIDs: evidence})
 			}
 		}
 	}
@@ -579,50 +589,29 @@ func querySignals(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visi
 				label = "obligation"
 				verb = "is"
 			}
-			out = append(out, Signal{Kind: "finance_obligations", Period: start.Format("2006-01-02") + " to " + end.AddDate(0, 0, -1).Format("2006-01-02"), Summary: strconv.Itoa(len(obligations)) + " pending finance " + label + " totaling " + sumAmounts(obligations) + " " + verb + " dated in the next 31 days, from " + obligations[0].date + " to " + obligations[len(obligations)-1].date + ".", EvidenceIDs: evidence})
+			out = append(out, Signal{Kind: "finance_obligations", Period: displayDate(start.Format("2006-01-02")) + " to " + displayDate(end.AddDate(0, 0, -1).Format("2006-01-02")), Summary: strconv.Itoa(len(obligations)) + " pending finance " + label + " totaling " + sumAmounts(obligations) + " " + verb + " dated in the next 31 days, from " + displayDate(obligations[0].date) + " to " + displayDate(obligations[len(obligations)-1].date) + ".", EvidenceIDs: evidence})
 		}
 	}
 
-	// Health: compare the first and last values only within the same stored key
-	// and unit. This is a factual series, never a clinical interpretation.
-	type healthRow struct{ date, value, unit, evidence, source string }
-	series := map[string][]healthRow{}
-	rows, err = tx.QueryContext(ctx, `SELECT id,comparability_key,observed_on,value_original,unit FROM health_observations WHERE household_id=? AND visibility=? AND active=1`+ownerClause+` ORDER BY observed_on,id`, args...)
-	if err != nil {
-		return nil, err
-	}
-	for rows.Next() {
-		var id, key, date, value, unit string
-		if err := rows.Scan(&id, &key, &date, &value, &unit); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		if fact, ok := byRecord[id]; ok {
-			series[key] = append(series[key], healthRow{date, value, unit, fact.EvidenceID, fact.SourceID})
-		}
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return nil, err
-	}
-	rows.Close()
-	seriesKeys := make([]string, 0, len(series))
-	for key := range series {
-		seriesKeys = append(seriesKeys, key)
-	}
-	sort.Strings(seriesKeys)
+	// Health uses the Health service's unit and comparability rules. Conflicting
+	// observations never reach this loop because they are absent from Series.
 	healthSignals := 0
-	for _, key := range seriesKeys {
-		points := series[key]
-		if len(points) < 2 {
+	for _, series := range healthSummary.Series {
+		if len(series.Observations) < 2 {
 			continue
 		}
-		first, last := points[0], points[len(points)-1]
-		evidence := completeSourceEvidence([]evidenceRef{{first.evidence, first.source}, {last.evidence, last.source}}, 12)
+		first, last := series.Observations[0], series.Observations[len(series.Observations)-1]
+		firstFact, firstOK := byRecord[first.ID]
+		lastFact, lastOK := byRecord[last.ID]
+		if !firstOK || !lastOK {
+			continue
+		}
+		evidence := completeSourceEvidence([]evidenceRef{{firstFact.EvidenceID, firstFact.SourceID}, {lastFact.EvidenceID, lastFact.SourceID}}, 12)
 		if len(evidence) == 0 {
 			continue
 		}
-		out = append(out, Signal{Kind: "health_series", Period: first.date + " to " + last.date, Summary: "A comparable health measurement changed from " + first.value + " " + first.unit + " on " + first.date + " to " + last.value + " " + last.unit + " on " + last.date + ". This is a record comparison, not health advice.", EvidenceIDs: evidence})
+		period := displayDate(first.ObservedOn) + " to " + displayDate(last.ObservedOn)
+		out = append(out, Signal{Kind: "health_series", Period: period, Summary: series.Analyte + " for " + series.Subject + " changed from " + first.Value.PlainString() + " " + series.Unit + " on " + displayDate(first.ObservedOn) + " to " + last.Value.PlainString() + " " + series.Unit + " on " + displayDate(last.ObservedOn) + ". This is a record comparison, not health advice.", EvidenceIDs: evidence})
 		healthSignals++
 		if healthSignals == 3 {
 			break
@@ -633,7 +622,7 @@ func querySignals(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visi
 	upcoming := make([]Fact, 0, 6)
 	start, end = day(asOf), day(asOf).AddDate(0, 0, 31)
 	for _, fact := range facts {
-		if fact.Family != "planning" {
+		if fact.Family != "planning" || fact.Issue != "" {
 			continue
 		}
 		if date, err := time.Parse("2006-01-02", fact.Date); err == nil && !date.Before(start) && date.Before(end) {
@@ -644,7 +633,7 @@ func querySignals(ctx context.Context, tx *sql.Tx, actor policy.ActorScope, visi
 		sort.Slice(upcoming, func(i, j int) bool { return upcoming[i].Date < upcoming[j].Date })
 		evidence := completeFactEvidence(upcoming, 12)
 		if len(evidence) > 0 {
-			out = append(out, Signal{Kind: "planning_upcoming", Period: start.Format("2006-01-02") + " to " + end.Format("2006-01-02"), Summary: strconv.Itoa(len(upcoming)) + " dated planning records fall in the next 31 days, from " + upcoming[0].Date + " to " + upcoming[len(upcoming)-1].Date + ".", EvidenceIDs: evidence})
+			out = append(out, Signal{Kind: "planning_upcoming", Period: displayDate(start.Format("2006-01-02")) + " to " + displayDate(end.AddDate(0, 0, -1).Format("2006-01-02")), Summary: strconv.Itoa(len(upcoming)) + " dated planning records fall in the next 31 days, from " + displayDate(upcoming[0].Date) + " to " + displayDate(upcoming[len(upcoming)-1].Date) + ".", EvidenceIDs: evidence})
 		}
 	}
 
@@ -747,6 +736,7 @@ func formatScaledAmount(total *big.Int) string {
 		raw = "0" + raw
 	}
 	whole, fraction := raw[:len(raw)-6], strings.TrimRight(raw[len(raw)-6:], "0")
+	whole = groupedNumber(whole)
 	if fraction != "" {
 		whole += "." + fraction
 	}
@@ -756,16 +746,33 @@ func formatScaledAmount(total *big.Int) string {
 	return whole
 }
 
+func groupedNumber(value string) string {
+	if len(value) <= 3 {
+		return value
+	}
+	first := len(value) % 3
+	if first == 0 {
+		first = 3
+	}
+	var out strings.Builder
+	out.WriteString(value[:first])
+	for index := first; index < len(value); index += 3 {
+		out.WriteByte(',')
+		out.WriteString(value[index : index+3])
+	}
+	return out.String()
+}
+
 func formatPercent(value, total *big.Int) string {
 	if total.Sign() <= 0 {
 		return "0%"
 	}
 	negative := value.Sign() < 0
 	numerator := new(big.Int).Abs(new(big.Int).Set(value))
-	numerator.Mul(numerator, big.NewInt(10_000))
+	numerator.Mul(numerator, big.NewInt(1_000))
 	numerator.Add(numerator, new(big.Int).Quo(new(big.Int).Set(total), big.NewInt(2)))
-	basisPoints := numerator.Quo(numerator, total)
-	whole, fraction := new(big.Int).QuoRem(basisPoints, big.NewInt(100), new(big.Int))
+	tenths := numerator.Quo(numerator, total)
+	whole, fraction := new(big.Int).QuoRem(tenths, big.NewInt(10), new(big.Int))
 	if fraction.Sign() == 0 {
 		if negative {
 			return "-" + whole.String() + "%"
@@ -776,7 +783,7 @@ func formatPercent(value, total *big.Int) string {
 	if negative {
 		prefix = "-"
 	}
-	return prefix + whole.String() + "." + fmt.Sprintf("%02d", fraction.Int64()) + "%"
+	return prefix + whole.String() + "." + fmt.Sprintf("%d", fraction.Int64()) + "%"
 }
 
 func markConflicts(ctx context.Context, tx *sql.Tx, householdID string, facts []Fact) error {
@@ -793,26 +800,7 @@ func markConflicts(ctx context.Context, tx *sql.Tx, householdID string, facts []
 		facts[a].Issue = joinIssue(facts[a].Issue, message)
 		facts[b].Issue = joinIssue(facts[b].Issue, message)
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT a.id,b.id FROM health_observations a JOIN health_observations b ON b.household_id=a.household_id AND b.id>a.id AND b.subject=a.subject AND b.analyte=a.analyte AND b.unit<>a.unit WHERE a.household_id=? AND a.active=1 AND b.active=1`, householdID)
-	if err != nil {
-		return err
-	}
-	for rows.Next() {
-		var first, second string
-		if err := rows.Scan(&first, &second); err != nil {
-			rows.Close()
-			return err
-		}
-		mark("health", first, second, "reported units differ")
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return err
-	}
-	if err := rows.Close(); err != nil {
-		return err
-	}
-	rows, err = tx.QueryContext(ctx, `SELECT DISTINCT a.id,b.id FROM planning_events a JOIN planning_events b ON b.household_id=a.household_id AND b.id>a.id JOIN planning_event_owners ao ON ao.event_id=a.id JOIN planning_event_owners bo ON bo.event_id=b.id AND bo.user_id=ao.user_id WHERE a.household_id=? AND a.active=1 AND b.active=1 AND a.status='planned' AND b.status='planned' AND COALESCE(NULLIF(a.starts_on,''),a.starts_at)<COALESCE(date(NULLIF(b.ends_on,''),'+1 day'),date(NULLIF(b.starts_on,''),'+1 day'),NULLIF(b.ends_at,'')) AND COALESCE(NULLIF(b.starts_on,''),b.starts_at)<COALESCE(date(NULLIF(a.ends_on,''),'+1 day'),date(NULLIF(a.starts_on,''),'+1 day'),NULLIF(a.ends_at,''))`, householdID)
+	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT a.id,b.id FROM planning_events a JOIN planning_events b ON b.household_id=a.household_id AND b.id>a.id JOIN planning_event_owners ao ON ao.event_id=a.id JOIN planning_event_owners bo ON bo.event_id=b.id AND bo.user_id=ao.user_id WHERE a.household_id=? AND a.active=1 AND b.active=1 AND a.status='planned' AND b.status='planned' AND COALESCE(NULLIF(a.starts_on,''),a.starts_at)<COALESCE(date(NULLIF(b.ends_on,''),'+1 day'),date(NULLIF(b.starts_on,''),'+1 day'),NULLIF(b.ends_at,'')) AND COALESCE(NULLIF(b.starts_on,''),b.starts_at)<COALESCE(date(NULLIF(a.ends_on,''),'+1 day'),date(NULLIF(a.starts_on,''),'+1 day'),NULLIF(a.ends_at,''))`, householdID)
 	if err != nil {
 		return err
 	}
@@ -831,6 +819,33 @@ func markConflicts(ctx context.Context, tx *sql.Tx, householdID string, facts []
 	return rows.Close()
 }
 
+func applyHealthConflicts(facts []Fact, conflicts []health.Conflict) {
+	byRecord := make(map[string]int, len(facts))
+	for index, fact := range facts {
+		byRecord[fact.RecordID] = index
+	}
+	for _, conflict := range conflicts {
+		if index, ok := byRecord[conflict.RecordID]; ok {
+			reason := conflict.Reason
+			if strings.HasPrefix(reason, "Units ") {
+				reason = "reported units differ and cannot be compared; enter the correct value and unit."
+			}
+			facts[index].Issue = joinIssue(facts[index].Issue, reason)
+		}
+	}
+}
+
+func coachingFacts(facts []Fact) []Fact {
+	out := make([]Fact, 0, len(facts))
+	for _, fact := range facts {
+		if fact.Family == "health" && fact.Issue != "" {
+			continue
+		}
+		out = append(out, fact)
+	}
+	return out
+}
+
 func joinIssue(current, next string) string {
 	if current == "" {
 		return next
@@ -839,6 +854,148 @@ func joinIssue(current, next string) string {
 		return current
 	}
 	return current + "; " + next
+}
+
+func weeklyScope(context Context, asOf time.Time) ReviewScope {
+	if asOf.IsZero() {
+		asOf = time.Now().UTC()
+	}
+	asOf = asOf.UTC()
+	facts := context.ReviewFacts
+	if facts == nil {
+		facts = context.Facts
+	}
+	scope := ReviewScope{Context: context, Insights: deterministic(facts, asOf, context.Signals...).Insights}
+	for _, fact := range facts {
+		event := ReviewEvent{Fact: fact, Title: fact.Content, When: fact.Date, EvidenceID: fact.EvidenceID}
+		switch weeklySection(fact, asOf) {
+		case "issue":
+			event.Copy = "Mithra cannot use this record yet: " + strings.TrimSuffix(fact.Issue, ".") + "."
+			scope.Issues = append(scope.Issues, event)
+		case "upcoming":
+			event.Copy = "Dated for " + displayDate(fact.Date) + "."
+			scope.Upcoming = append(scope.Upcoming, event)
+		case "change":
+			event.Copy = changeCopy(fact, asOf)
+			scope.Changes = append(scope.Changes, event)
+		}
+	}
+	sortReviewEvents(scope.Issues, false)
+	sortReviewEvents(scope.Upcoming, true)
+	sortReviewEvents(scope.Changes, false)
+	scope.Issues = limitReviewEvents(scope.Issues, 6)
+	scope.Upcoming = limitReviewEvents(scope.Upcoming, 6)
+	scope.Changes = limitReviewEvents(scope.Changes, 6)
+	scope.Insights = reviewInsights(scope.Insights, scope)
+	return scope
+}
+
+func weeklySection(f Fact, asOf time.Time) string {
+	if f.Issue != "" {
+		return "issue"
+	}
+	today := day(asOf)
+	start := today.AddDate(0, 0, -6)
+	eventDate, hasDate := time.Parse("2006-01-02", f.Date)
+	if f.SupersedesID != "" && !f.CreatedAt.Before(start) {
+		return "change"
+	}
+	if f.Status == "completed" || f.Status == "cancelled" {
+		if f.UpdatedAt.After(f.CreatedAt) && !f.UpdatedAt.Before(start) {
+			return "change"
+		}
+		if hasDate == nil && !eventDate.Before(start) && !f.CreatedAt.Before(start) {
+			return "change"
+		}
+		return ""
+	}
+	if f.UpdatedAt.After(f.CreatedAt) && !f.UpdatedAt.Before(start) {
+		return "change"
+	}
+	if hasDate == nil {
+		if openStatus(f.Status) && !eventDate.Before(today) && eventDate.Before(today.AddDate(0, 0, 31)) {
+			return "upcoming"
+		}
+		if !eventDate.Before(start) && eventDate.Before(today) {
+			return "change"
+		}
+		if eventDate.Before(today) && openStatus(f.Status) && !eventDate.Before(start) {
+			return "change"
+		}
+	}
+	return ""
+}
+
+func reviewInsights(items []Item, scope ReviewScope) []Item {
+	used := make(map[string]struct{}, len(scope.Changes)+len(scope.Upcoming)+len(scope.Issues))
+	for _, events := range [][]ReviewEvent{scope.Changes, scope.Upcoming, scope.Issues} {
+		for _, event := range events {
+			used[event.EvidenceID] = struct{}{}
+		}
+	}
+	out := make([]Item, 0, len(items))
+	for _, item := range items {
+		duplicate := false
+		for _, evidence := range item.EvidenceIDs {
+			if _, exists := used[evidence]; exists {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+func displayDate(value string) string {
+	date, err := time.Parse("2006-01-02", value)
+	if err != nil {
+		return value
+	}
+	return date.Format("2 Jan 2006")
+}
+
+func openStatus(status string) bool {
+	return status == "" || status == "planned" || status == "pending" || status == "active"
+}
+
+func changeCopy(f Fact, asOf time.Time) string {
+	switch {
+	case f.SupersedesID != "":
+		return "Corrected this week."
+	case f.Status == "completed":
+		return "Marked completed this week."
+	case f.Status == "cancelled":
+		return "Marked cancelled this week."
+	case f.UpdatedAt.After(f.CreatedAt):
+		return "Updated this week."
+	}
+	if eventDate, err := time.Parse("2006-01-02", f.Date); err == nil && eventDate.Before(day(asOf)) && openStatus(f.Status) {
+		return "Past its recorded date and still open."
+	}
+	return "Recorded for " + displayDate(f.Date) + "."
+}
+
+func sortReviewEvents(events []ReviewEvent, ascending bool) {
+	sort.Slice(events, func(i, j int) bool {
+		if ascending {
+			return events[i].When < events[j].When
+		}
+		left, right := events[i].Fact.UpdatedAt, events[j].Fact.UpdatedAt
+		if left.Equal(right) {
+			return events[i].Title < events[j].Title
+		}
+		return left.After(right)
+	})
+}
+
+func limitReviewEvents(events []ReviewEvent, max int) []ReviewEvent {
+	if len(events) > max {
+		return events[:max]
+	}
+	return events
 }
 
 func deterministic(facts []Fact, asOf time.Time, signals ...Signal) Narrative {

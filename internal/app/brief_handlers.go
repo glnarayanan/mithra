@@ -33,6 +33,7 @@ type WeekReviewView struct {
 	Navigation                                                     []NavigationItem
 	CSRF, Status, Period, PrivateFreshness                         string
 	Stale, PrivateStale, CanRefresh                                bool
+	HasIssues                                                      bool
 	Changes, Dates, Inconsistencies, Priorities, OnlyYou, Insights []CoachingItemView
 	InsightHistory                                                 []CoachingHistoryView
 	InsightGenerated, InsightModel                                 string
@@ -205,37 +206,46 @@ func (a *App) renderBrief(r *http.Request, w http.ResponseWriter, scope policy.A
 	if view.Status == "" && view.Stale {
 		view.Status = "A newer update is available. Dates and sources are still up to date."
 	}
-	view.Nudges = a.nudgeViews(r.Context(), scope, append(overview.SharedContext.Facts, overview.PersonalContext.Facts...))
+	view.Nudges = a.nudgeViews(r.Context(), scope, append(contextReviewFacts(overview.SharedContext), contextReviewFacts(overview.PersonalContext)...))
 	a.renderTemplate(r.Context(), w, "brief.html", view)
 }
 
 func (a *App) renderWeek(r *http.Request, w http.ResponseWriter, scope policy.ActorScope, csrf, status string) {
 	now := time.Now().UTC()
-	overview, err := a.coaching.Week(r.Context(), scope, now)
+	review, err := a.coaching.Week(r.Context(), scope, now)
 	if err != nil {
 		logRequestError(a.logger, r.Context(), "week_build_failed")
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
 	configured, _ := a.providerSettings.Configured(r.Context(), scope)
-	evidence := evidenceMap(overview.SharedContext, overview.PersonalContext)
+	evidence := evidenceMap(review.Shared.Context, review.Personal.Context)
 	from := now.AddDate(0, 0, -6)
-	view := WeekReviewView{Navigation: navigationForPath("/review"), CSRF: csrf, Status: status, Period: from.Format("2 Jan") + " – " + now.Format("2 Jan 2006"), PrivateFreshness: freshness(overview.PersonalCache, "Up to date"), Stale: overview.SharedCache.Stale, PrivateStale: overview.PersonalCache.Stale, CanRefresh: configured && overview.HasRecords && csrf != "", Insights: itemViews(overview.Shared.Insights, evidence), InsightHistory: historyViews(overview.SharedHistory), InsightGenerated: insightGenerated(overview.SharedCache), InsightModel: overview.SharedCache.Model, Changes: itemViews(overview.Shared.Changes, evidence), Dates: itemViews(overview.Shared.Dates, evidence), Inconsistencies: itemViews(overview.Shared.Inconsistencies, evidence), Priorities: itemViews(overview.Shared.Priorities, evidence), OnlyYou: itemViews(privateItems(overview.Personal), evidence)}
+	privateItems := reviewEventViews(append(append(review.Personal.Issues, review.Personal.Upcoming...), review.Personal.Changes...), evidence)
+	privateItems = append(privateItems, itemViews(review.Personal.Insights, evidence)...)
+	view := WeekReviewView{Navigation: navigationForPath("/review"), CSRF: csrf, Status: status, Period: from.Format("2 Jan") + " – " + now.Format("2 Jan 2006"), PrivateFreshness: freshness(review.Personal.Cache, "Up to date"), Stale: review.Shared.Cache.Stale, PrivateStale: review.Personal.Cache.Stale, CanRefresh: configured && review.HasRecords && csrf != "", HasIssues: len(review.Shared.Issues)+len(review.Personal.Issues) > 0, Insights: itemViews(review.Shared.Insights, evidence), InsightHistory: historyViews(review.Shared.History), InsightGenerated: insightGenerated(review.Shared.Cache), InsightModel: review.Shared.Cache.Model, Changes: reviewEventViews(review.Shared.Changes, evidence), Dates: reviewEventViews(review.Shared.Upcoming, evidence), Inconsistencies: reviewEventViews(review.Shared.Issues, evidence), OnlyYou: privateItems}
 	if view.Status == "" && view.Stale {
 		view.Status = "A newer update is available. Dates and sources are still up to date."
 	}
-	view.Nudges = a.nudgeViews(r.Context(), scope, append(overview.SharedContext.Facts, overview.PersonalContext.Facts...))
+	view.Nudges = a.nudgeViews(r.Context(), scope, append(review.Shared.Context.ReviewFacts, review.Personal.Context.ReviewFacts...))
 	a.renderTemplate(r.Context(), w, "review.html", view)
 }
 
 func evidenceMap(contexts ...coaching.Context) map[string]coaching.Fact {
 	out := map[string]coaching.Fact{}
 	for _, c := range contexts {
-		for _, f := range c.Facts {
+		for _, f := range contextReviewFacts(c) {
 			out[f.EvidenceID] = f
 		}
 	}
 	return out
+}
+
+func contextReviewFacts(context coaching.Context) []coaching.Fact {
+	if context.ReviewFacts != nil {
+		return context.ReviewFacts
+	}
+	return context.Facts
 }
 func itemView(item coaching.Item, evidence map[string]coaching.Fact) CoachingItemView {
 	view := CoachingItemView{Title: item.Title, Copy: item.Copy, When: item.When}
@@ -253,6 +263,25 @@ func itemViews(items []coaching.Item, evidence map[string]coaching.Fact) []Coach
 		out = append(out, itemView(item, evidence))
 	}
 	return out
+}
+func reviewEventViews(events []coaching.ReviewEvent, evidence map[string]coaching.Fact) []CoachingItemView {
+	out := make([]CoachingItemView, 0, len(events))
+	for _, event := range events {
+		view := CoachingItemView{Title: event.Title, Copy: event.Copy, When: reviewDate(event.When)}
+		if fact, ok := evidence[event.EvidenceID]; ok {
+			view.EvidenceURL = sourceURL(fact.SourceID)
+			view.EvidenceLabel = "View original"
+		}
+		out = append(out, view)
+	}
+	return out
+}
+func reviewDate(value string) string {
+	date, err := time.Parse("2006-01-02", value)
+	if err != nil {
+		return value
+	}
+	return date.Format("2 Jan 2006")
 }
 func historyViews(history []coaching.History) []CoachingHistoryView {
 	out := make([]CoachingHistoryView, 0, len(history))
@@ -308,7 +337,11 @@ func (a *App) ensureCoachingNudge(ctx context.Context, scope policy.ActorScope) 
 		if err != nil {
 			continue
 		}
-		for _, fact := range input.Facts {
+		facts := input.ReviewFacts
+		if facts == nil {
+			facts = input.Facts
+		}
+		for _, fact := range facts {
 			if strings.TrimSpace(fact.Issue) == "" {
 				continue
 			}

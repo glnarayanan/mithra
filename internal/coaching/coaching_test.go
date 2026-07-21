@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -163,6 +164,176 @@ func TestDeterministicOverviewCapsPrioritiesAndRejectsUnsafeUnsupportedOutput(t 
 	}
 }
 
+func TestWeekClassifiesTypedRecordsOnceAndKeepsPrivateRecordsOut(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	asOf := time.Now().UTC()
+	date := func(days int) string { return asOf.AddDate(0, 0, days).Format("2006-01-02") }
+
+	oldSource := f.source(t, f.owner, policy.Shared, "old import")
+	old, err := f.finance.Create(ctx, f.owner, finance.Draft{Kind: finance.Spending, Visibility: policy.Shared, Label: "April groceries", Category: "Food", Date: date(-90), AmountText: "1200", Provenance: financeProvenance(oldSource)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldCancelledSource := f.source(t, f.owner, policy.Shared, "old cancelled import")
+	oldCancelled, err := f.planning.CreateEvent(ctx, f.owner, planning.EventDraft{Visibility: policy.Shared, Title: "Old cancelled trip", AllDay: true, StartsOn: date(-90), Status: "cancelled", Provenance: planningProvenance(oldCancelledSource)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	futureSource := f.source(t, f.owner, policy.Shared, "future event")
+	future, err := f.planning.CreateEvent(ctx, f.owner, planning.EventDraft{Visibility: policy.Shared, Title: "School meeting", AllDay: true, StartsOn: date(4), Status: "planned", Provenance: planningProvenance(futureSource)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	completedSource := f.source(t, f.owner, policy.Shared, "completion")
+	completed, err := f.planning.CreateEvent(ctx, f.owner, planning.EventDraft{Visibility: policy.Shared, Title: "Renew insurance", AllDay: true, StartsOn: date(-10), Status: "planned", Provenance: planningProvenance(completedSource)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.planning.CompleteEvent(ctx, f.owner, completed.ID, completed.Version); err != nil {
+		t.Fatal(err)
+	}
+
+	cancelledSource := f.source(t, f.owner, policy.Shared, "cancellation")
+	cancelled, err := f.planning.CreateEvent(ctx, f.owner, planning.EventDraft{Visibility: policy.Shared, Title: "Cancelled visit", AllDay: true, StartsOn: date(-2), Status: "cancelled", Provenance: planningProvenance(cancelledSource)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	baseSource := f.source(t, f.owner, policy.Shared, "correction")
+	base, err := f.finance.Create(ctx, f.owner, finance.Draft{Kind: finance.Spending, Visibility: policy.Shared, Label: "Corrected purchase", Category: "Home", Date: date(-14), AmountText: "20", Provenance: financeProvenance(baseSource)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	corrected, err := f.finance.Correct(ctx, f.owner, finance.Spending, base.ID, base.Version, finance.Draft{Visibility: policy.Shared, Label: "Corrected purchase", Category: "Home", Date: date(-14), AmountText: "25", Provenance: financeProvenance(baseSource)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	firstSource := f.source(t, f.owner, policy.Shared, "glucose one")
+	secondSource := f.source(t, f.owner, policy.Shared, "glucose two")
+	for _, row := range []struct {
+		source     storage.Source
+		date, unit string
+	}{{firstSource, date(-2), "mg/dL"}, {secondSource, date(-1), "mmol/L"}} {
+		if _, err := f.health.CreateObservation(ctx, f.owner, health.ObservationDraft{Visibility: policy.Shared, Subject: "Owner", Analyte: "Glucose", ObservedOn: row.date, Value: "5", Unit: row.unit, Provenance: healthProvenance(row.source)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	privateSource := f.source(t, f.partner, policy.Personal, "partner private")
+	if _, err := f.finance.Create(ctx, f.partner, finance.Draft{Kind: finance.Spending, Visibility: policy.Personal, Label: "Partner private", Category: "Private", Date: "2026-07-18", AmountText: "7", Provenance: financeProvenance(privateSource)}); err != nil {
+		t.Fatal(err)
+	}
+	labelSource := f.source(t, f.owner, policy.Shared, "label")
+	if _, err := f.finance.Create(ctx, f.owner, finance.Draft{Kind: finance.Obligation, Visibility: policy.Shared, Label: "Insurance renewal", Category: "Insurance", Date: date(10), AmountText: "5000", Status: "pending", Provenance: financeProvenance(labelSource)}); err != nil {
+		t.Fatal(err)
+	}
+
+	review, err := f.service.Week(ctx, f.owner, asOf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sections := map[string]string{}
+	for _, section := range []struct {
+		name   string
+		events []ReviewEvent
+	}{{"change", review.Shared.Changes}, {"upcoming", review.Shared.Upcoming}, {"issue", review.Shared.Issues}} {
+		for _, event := range section.events {
+			if previous, exists := sections[event.Fact.RecordID]; exists {
+				t.Fatalf("record %s appears in %s and %s", event.Title, previous, section.name)
+			}
+			sections[event.Fact.RecordID] = section.name
+		}
+	}
+	for _, insight := range review.Shared.Insights {
+		for _, evidenceID := range insight.EvidenceIDs {
+			for _, section := range []struct {
+				name   string
+				events []ReviewEvent
+			}{{"change", review.Shared.Changes}, {"upcoming", review.Shared.Upcoming}, {"issue", review.Shared.Issues}} {
+				for _, event := range section.events {
+					if event.EvidenceID == evidenceID {
+						t.Fatalf("evidence %s appears in insights and %s", evidenceID, section.name)
+					}
+				}
+			}
+		}
+	}
+	if _, exists := sections[old.ID]; exists {
+		t.Fatalf("old import appeared in %q", sections[old.ID])
+	}
+	if _, exists := sections[oldCancelled.ID]; exists {
+		t.Fatalf("old cancelled import appeared in %q", sections[oldCancelled.ID])
+	}
+	if sections[future.ID] != "upcoming" {
+		t.Fatalf("future event section = %q", sections[future.ID])
+	}
+	if sections[completed.ID] != "change" || sections[cancelled.ID] != "change" || sections[corrected.ID] != "change" {
+		t.Fatalf("completion/cancellation sections = %#v", sections)
+	}
+	if len(review.Shared.Issues) == 0 {
+		t.Fatal("incompatible health units did not produce a deterministic issue")
+	}
+	for _, signal := range review.Shared.Context.Signals {
+		if signal.Kind == "health_series" {
+			t.Fatalf("incompatible health measurements reached a comparison: %#v", signal)
+		}
+	}
+	foundHumanTitle := false
+	for _, event := range review.Shared.Upcoming {
+		if event.Title == "Insurance renewal" {
+			foundHumanTitle = true
+		}
+		if strings.Contains(event.Title, "Insurance renewal Insurance") {
+			t.Fatalf("malformed title = %q", event.Title)
+		}
+	}
+	if !foundHumanTitle {
+		t.Fatalf("typed finance title missing: %#v", review.Shared.Upcoming)
+	}
+	for _, fact := range review.Shared.Context.ReviewFacts {
+		if strings.Contains(fact.Content, "Partner private") {
+			t.Fatalf("shared review leaked private record: %#v", fact)
+		}
+	}
+}
+
+func TestWeekFormatsNumbersAndPercentagesWithoutCurrency(t *testing.T) {
+	if got := formatScaledAmount(big.NewInt(1_234_500_000)); got != "1,234.5" {
+		t.Fatalf("formatted number = %q", got)
+	}
+	if got := formatPercent(big.NewInt(2), big.NewInt(3)); got != "66.7%" {
+		t.Fatalf("formatted percentage = %q", got)
+	}
+}
+
+func TestWeekHealthComparisonNamesTheMeasurement(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	asOf := time.Now().UTC()
+	for index, value := range []string{"5", "6"} {
+		source := f.source(t, f.owner, policy.Shared, "reading")
+		if _, err := f.health.CreateObservation(ctx, f.owner, health.ObservationDraft{Visibility: policy.Shared, Subject: "Owner", Analyte: "Glucose", ObservedOn: asOf.AddDate(0, 0, -2+index).Format("2006-01-02"), Value: value, Unit: "mg/dL", Provenance: healthProvenance(source)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	review, err := f.service.Week(ctx, f.owner, asOf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, signal := range review.Shared.Context.Signals {
+		if signal.Kind == "health_series" {
+			if !strings.Contains(signal.Summary, "Glucose for Owner") || !strings.Contains(signal.Summary, "mg/dL") {
+				t.Fatalf("health signal = %#v", signal)
+			}
+			return
+		}
+	}
+	t.Fatal("missing named health comparison")
+}
+
 func TestSignalsUseVisibleTypedRecordsAndTrustOnlyFullyCitedNumbers(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
@@ -215,7 +386,7 @@ func TestSignalsUseVisibleTypedRecordsAndTrustOnlyFullyCitedNumbers(t *testing.T
 	if !strings.Contains(kinds["finance_budget"].Summary, "80") || !strings.Contains(kinds["finance_budget"].Summary, "20%") {
 		t.Fatalf("budget signal = %#v", kinds["finance_budget"])
 	}
-	if !strings.Contains(kinds["finance_obligations"].Summary, "30") || !strings.Contains(kinds["finance_obligations"].Summary, "2026-07-28") {
+	if !strings.Contains(kinds["finance_obligations"].Summary, "30") || !strings.Contains(kinds["finance_obligations"].Summary, "28 Jul 2026") {
 		t.Fatalf("obligation signal = %#v", kinds["finance_obligations"])
 	}
 	fact := Fact{EvidenceID: "a", Content: "Rent", Date: "2026-07-20"}
@@ -341,7 +512,7 @@ func TestMonthToDateUsesAValidSharedCutoffAndSkipsInvalidDates(t *testing.T) {
 					summary = signal.Summary
 				}
 			}
-			if !strings.Contains(summary, test.currentCutoff) || !strings.Contains(summary, test.priorCutoff) || !strings.Contains(summary, "is 20, compared with 10") || strings.Contains(summary, "120") || strings.Contains(summary, "999") {
+			if !strings.Contains(summary, displayDate(test.currentCutoff)) || !strings.Contains(summary, displayDate(test.priorCutoff)) || !strings.Contains(summary, "is 20, compared with 10") || strings.Contains(summary, "120") || strings.Contains(summary, "999") {
 				t.Fatalf("month-to-date summary=%q", summary)
 			}
 		})
@@ -731,7 +902,7 @@ func TestVisibleUnitAndCalendarConflictsAreExplainedWithoutPrivateInfluence(t *t
 		t.Fatal(err)
 	}
 	unitIssues, calendarIssues := 0, 0
-	for _, fact := range context.Facts {
+	for _, fact := range context.ReviewFacts {
 		if strings.Contains(fact.Issue, "units differ") {
 			unitIssues++
 		}
@@ -740,7 +911,12 @@ func TestVisibleUnitAndCalendarConflictsAreExplainedWithoutPrivateInfluence(t *t
 		}
 	}
 	if unitIssues != 2 || calendarIssues != 2 {
-		t.Fatalf("conflicts units=%d calendar=%d facts=%#v", unitIssues, calendarIssues, context.Facts)
+		t.Fatalf("conflicts units=%d calendar=%d facts=%#v", unitIssues, calendarIssues, context.ReviewFacts)
+	}
+	for _, fact := range context.Facts {
+		if fact.Family == "health" {
+			t.Fatalf("invalid health record reached coaching input: %#v", fact)
+		}
 	}
 }
 
