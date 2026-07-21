@@ -980,10 +980,22 @@ func reviewInsights(items []Item, scope ReviewScope) []Item {
 		}
 		if !duplicate {
 			item.Title = reviewInsightTitle(item)
+			item.Copy = reviewInsightCopy(item)
 			out = append(out, item)
 		}
 	}
 	return out
+}
+
+func reviewInsightCopy(item Item) string {
+	if item.Title == "Health record comparison" || strings.Contains(item.Copy, " changed from ") {
+		if before, after, found := strings.Cut(item.Copy, " changed from "); found {
+			if measurement, _, hasSubject := strings.Cut(before, " for "); hasSubject {
+				return measurement + " changed from " + after
+			}
+		}
+	}
+	return item.Copy
 }
 
 func reviewInsightTitle(item Item) string {
@@ -1391,11 +1403,11 @@ func reviewStatus(scope ReviewScope) ReviewStatus {
 	if len(scope.Priorities) > 0 || hasBudgetRisk(scope.Context.Signals) {
 		parts := make([]string, 0, 3)
 		for _, event := range scope.Priorities {
-			parts = append(parts, strings.ToLower(event.Title))
+			parts = append(parts, event.Title)
 		}
 		copy := "A few recorded items need attention next."
 		if len(parts) > 0 {
-			copy = "Next: " + strings.Join(parts, ", ") + "."
+			copy = "Next: " + joinReviewNames(parts) + "."
 		}
 		if category := budgetRiskCategory(scope.Context.Signals); category != "" {
 			copy = category + " spending is close to the recorded budget. " + copy
@@ -1408,9 +1420,22 @@ func reviewStatus(scope ReviewScope) ReviewStatus {
 func reviewPriorityNames(events []ReviewEvent) string {
 	parts := make([]string, 0, len(events))
 	for _, event := range events {
-		parts = append(parts, strings.ToLower(event.Title))
+		parts = append(parts, event.Title)
 	}
-	return strings.Join(parts, ", ")
+	return joinReviewNames(parts)
+}
+
+func joinReviewNames(parts []string) string {
+	switch len(parts) {
+	case 0:
+		return ""
+	case 1:
+		return parts[0]
+	case 2:
+		return parts[0] + " and " + parts[1]
+	default:
+		return strings.Join(parts[:len(parts)-1], ", ") + ", and " + parts[len(parts)-1]
+	}
 }
 
 func hasBudgetRisk(signals []Signal) bool {

@@ -410,6 +410,9 @@ func TestWeekHealthComparisonNamesTheMeasurement(t *testing.T) {
 	}
 	for _, insight := range review.Shared.Insights {
 		if insight.Title == "Glucose" {
+			if strings.Contains(insight.Copy, "for Owner") {
+				t.Fatalf("health comparison exposed fixture subject in copy: %q", insight.Copy)
+			}
 			return
 		}
 	}
