@@ -68,10 +68,23 @@ type Service struct {
 }
 
 func New(db *sql.DB, root string, masterKey []byte) (*Service, error) {
+	return newForOwner(db, root, masterKey, os.Geteuid(), os.Getegid())
+}
+
+// NewForOwner opens a stopped service's source tree while a root-owned
+// maintenance command retains process control.
+func NewForOwner(db *sql.DB, root string, masterKey []byte, uid, gid int) (*Service, error) {
+	if uid < 0 || gid < 0 {
+		return nil, ErrInvalidInput
+	}
+	return newForOwner(db, root, masterKey, uid, gid)
+}
+
+func newForOwner(db *sql.DB, root string, masterKey []byte, uid, gid int) (*Service, error) {
 	if db == nil {
 		return nil, ErrInvalidInput
 	}
-	root, err := prepareRoot(root)
+	root, err := prepareRoot(root, uid, gid)
 	if err != nil {
 		return nil, err
 	}
@@ -355,7 +368,7 @@ func (s *Service) lookup(ctx context.Context, scope policy.ActorScope, sourceID 
 	return source, nil
 }
 
-func prepareRoot(root string) (string, error) {
+func prepareRoot(root string, uid, gid int) (string, error) {
 	if strings.TrimSpace(root) == "" || !filepath.IsAbs(root) || filepath.Clean(root) != root {
 		return "", ErrInvalidInput
 	}
@@ -367,7 +380,7 @@ func prepareRoot(root string) (string, error) {
 		return "", ErrInvalidInput
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || stat.Uid != uint32(os.Geteuid()) {
+	if !ok || stat.Uid != uint32(uid) || stat.Gid != uint32(gid) {
 		return "", ErrInvalidInput
 	}
 	if err := os.Chmod(root, 0o700); err != nil {

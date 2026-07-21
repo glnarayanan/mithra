@@ -7,11 +7,33 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/glnarayanan/mithra/internal/database"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+func TestOpenForOwnerUsesConfiguredServiceIdentity(t *testing.T) {
+	directory := t.TempDir()
+	info, err := os.Stat(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		t.Skip("platform does not expose file ownership")
+	}
+	path := filepath.Join(directory, "mithra.sqlite3")
+	db, err := database.OpenForOwner(context.Background(), path, int(stat.Uid), int(stat.Gid))
+	if err != nil {
+		t.Fatalf("open for configured owner: %v", err)
+	}
+	_ = db.Close()
+	if _, err := database.OpenForOwner(context.Background(), path, int(stat.Uid)+1, int(stat.Gid)); err == nil {
+		t.Fatal("open accepted a directory owned by a different identity")
+	}
+}
 
 func TestOpenAppliesEmbeddedMigrationsAndReopens(t *testing.T) {
 	t.Parallel()

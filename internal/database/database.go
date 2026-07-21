@@ -47,16 +47,33 @@ type AppliedMigration struct {
 // Open initializes the SQLite connection, applies the embedded migration set,
 // and confirms that the resulting database is safe to serve.
 func Open(ctx context.Context, path string) (*sql.DB, error) {
+	return open(ctx, path, os.Geteuid(), os.Getegid())
+}
+
+// OpenForOwner opens a stopped service's database while a root-owned
+// maintenance command retains process control.
+func OpenForOwner(ctx context.Context, path string, uid, gid int) (*sql.DB, error) {
+	if uid < 0 || gid < 0 {
+		return nil, errors.New("SQLite service ownership is invalid")
+	}
+	return open(ctx, path, uid, gid)
+}
+
+func open(ctx context.Context, path string, uid, gid int) (*sql.DB, error) {
 	set, err := EmbeddedMigrations()
 	if err != nil {
 		return nil, err
 	}
-	return OpenWithMigrations(ctx, path, set)
+	return openWithMigrations(ctx, path, set, uid, gid)
 }
 
 // OpenWithMigrations exists for migration verification and focused tests. The
 // application itself always uses the embedded migration set through Open.
 func OpenWithMigrations(ctx context.Context, path string, set []Migration) (*sql.DB, error) {
+	return openWithMigrations(ctx, path, set, os.Geteuid(), os.Getegid())
+}
+
+func openWithMigrations(ctx context.Context, path string, set []Migration, uid, gid int) (*sql.DB, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, errors.New("SQLite database path is required")
 	}
@@ -65,7 +82,7 @@ func OpenWithMigrations(ctx context.Context, path string, set []Migration) (*sql
 		return nil, err
 	}
 	if fileBacked {
-		if err := preparePrivateDatabaseFile(databasePath); err != nil {
+		if err := preparePrivateDatabaseFile(databasePath, uid, gid); err != nil {
 			return nil, err
 		}
 		if err := restrictDatabaseFiles(databasePath); err != nil {
@@ -103,8 +120,8 @@ func databaseFilePath(path string) (string, bool, error) {
 	return path, true, nil
 }
 
-func preparePrivateDatabaseFile(path string) error {
-	if err := ensurePrivateParentDirectory(path); err != nil {
+func preparePrivateDatabaseFile(path string, uid, gid int) error {
+	if err := ensurePrivateParentDirectory(path, uid, gid); err != nil {
 		return err
 	}
 
@@ -187,7 +204,7 @@ func initialize(ctx context.Context, db *sql.DB, set []Migration) error {
 	return nil
 }
 
-func ensurePrivateParentDirectory(path string) error {
+func ensurePrivateParentDirectory(path string, uid, gid int) error {
 	directory := filepath.Dir(path)
 	if err := os.MkdirAll(directory, 0o750); err != nil {
 		return fmt.Errorf("create SQLite directory: %w", err)
@@ -206,8 +223,8 @@ func ensurePrivateParentDirectory(path string) error {
 	if !ok {
 		return errors.New("SQLite parent directory ownership is unavailable")
 	}
-	if stat.Uid != uint32(os.Geteuid()) {
-		return fmt.Errorf("SQLite parent directory %q is not owned by the service user", directory)
+	if stat.Uid != uint32(uid) || stat.Gid != uint32(gid) {
+		return fmt.Errorf("SQLite parent directory %q is not owned by the service identity", directory)
 	}
 	return nil
 }

@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -55,6 +56,7 @@ func TestResetDemoRestoresBackupWhenRestartedApplicationIsUnhealthy(t *testing.T
 		ownership: func(string) (installer.RestoreOwnership, error) {
 			return installer.RestoreOwnership{UID: 1001, GID: 1001, Set: true}, nil
 		},
+		apply: func(installer.Paths, installer.RestoreOwnership) error { return nil },
 		restore: func(_ installer.Paths, archive string, key []byte, owner installer.RestoreOwnership, health func() error) error {
 			restores++
 			if archive != "pre-reset.tar.gz" || len(key) != 32 || !owner.Set {
@@ -77,6 +79,217 @@ func TestResetDemoRestoresBackupWhenRestartedApplicationIsUnhealthy(t *testing.T
 	}
 	if stops != 2 || starts != 2 || restores != 1 {
 		t.Fatalf("stops=%d starts=%d restores=%d", stops, starts, restores)
+	}
+}
+
+func TestResetDemoAppliesServiceOwnershipBeforeCandidateHealth(t *testing.T) {
+	serviceOwner := installer.RestoreOwnership{UID: os.Geteuid() + 1, GID: os.Getegid() + 1, Set: true}
+	owned, restarted := false, false
+	dependencies := demoResetDependencies{
+		reset: func(_ context.Context, cfg demo.Config) (demo.Receipt, error) {
+			if cfg.Ownership != serviceOwner {
+				t.Fatalf("reset ownership=%+v, want %+v", cfg.Ownership, serviceOwner)
+			}
+			return demo.Receipt{BackupArchive: "pre-reset.mbackup"}, nil
+		},
+		quiesce: func(context.Context, string) (func() error, error) {
+			return func() error { restarted = true; return nil }, nil
+		},
+		ownership: func(string) (installer.RestoreOwnership, error) { return serviceOwner, nil },
+		apply: func(_ installer.Paths, owner installer.RestoreOwnership) error {
+			if owner != serviceOwner {
+				t.Fatalf("applied ownership=%+v, want %+v", owner, serviceOwner)
+			}
+			owned = true
+			return nil
+		},
+		restore: func(installer.Paths, string, []byte, installer.RestoreOwnership, func() error) error {
+			t.Fatal("healthy candidate must not restore the backup")
+			return nil
+		},
+		wait: func(ctx context.Context, check func(context.Context) error) error { return check(ctx) },
+		local: func(context.Context, installer.Plan) error {
+			if !owned || !restarted {
+				return fmt.Errorf("health ran before ownership=%t restart=%t", owned, restarted)
+			}
+			return nil
+		},
+		web: func(context.Context, string) error { return nil },
+	}
+
+	_, err := resetDemo(context.Background(), installer.Plan{Options: installer.Options{Root: "/", Port: 8090}, Proxy: installer.AppOnly}, installer.Paths{Data: "/var/lib/mithra"}, bytes.Repeat([]byte{1}, 32), demo.Config{}, dependencies)
+	if err != nil {
+		t.Fatalf("resetDemo() error=%v", err)
+	}
+	if !owned || !restarted {
+		t.Fatalf("owned=%t restarted=%t", owned, restarted)
+	}
+}
+
+func TestResetDemoRestoresBackupWhenServiceOwnershipFails(t *testing.T) {
+	ownershipErr := errors.New("ownership failed")
+	serviceOwner := installer.RestoreOwnership{UID: 1001, GID: 1001, Set: true}
+	restored, restarted := false, false
+	dependencies := demoResetDependencies{
+		reset: func(context.Context, demo.Config) (demo.Receipt, error) {
+			return demo.Receipt{BackupArchive: "pre-reset.mbackup"}, nil
+		},
+		quiesce: func(context.Context, string) (func() error, error) {
+			return func() error { restarted = true; return nil }, nil
+		},
+		ownership: func(string) (installer.RestoreOwnership, error) { return serviceOwner, nil },
+		apply:     func(installer.Paths, installer.RestoreOwnership) error { return ownershipErr },
+		restore: func(_ installer.Paths, archive string, key []byte, owner installer.RestoreOwnership, health func() error) error {
+			if archive != "pre-reset.mbackup" || len(key) != 32 || owner != serviceOwner {
+				t.Fatalf("rollback inputs archive=%q key=%d owner=%+v", archive, len(key), owner)
+			}
+			restored = true
+			return health()
+		},
+		wait: func(ctx context.Context, check func(context.Context) error) error { return check(ctx) },
+		local: func(context.Context, installer.Plan) error {
+			if !restored || !restarted {
+				return errors.New("rollback health ran too early")
+			}
+			return nil
+		},
+		web: func(context.Context, string) error { return nil },
+	}
+
+	_, err := resetDemo(context.Background(), installer.Plan{Options: installer.Options{Root: "/", Port: 8090}, Proxy: installer.AppOnly}, installer.Paths{Data: "/var/lib/mithra"}, bytes.Repeat([]byte{1}, 32), demo.Config{}, dependencies)
+	if !errors.Is(err, ownershipErr) || !restored || !restarted {
+		t.Fatalf("error=%v restored=%t restarted=%t", err, restored, restarted)
+	}
+}
+
+func TestResetDemoRepairsOwnershipBeforeRestartAfterResetFailure(t *testing.T) {
+	resetErr := errors.New("reset failed before backup")
+	serviceOwner := installer.RestoreOwnership{UID: os.Geteuid() + 1, GID: os.Getegid() + 1, Set: true}
+	owned, restarted := false, false
+	dependencies := demoResetDependencies{
+		reset: func(context.Context, demo.Config) (demo.Receipt, error) {
+			return demo.Receipt{}, resetErr
+		},
+		quiesce: func(context.Context, string) (func() error, error) {
+			return func() error { restarted = true; return nil }, nil
+		},
+		ownership: func(string) (installer.RestoreOwnership, error) { return serviceOwner, nil },
+		apply: func(_ installer.Paths, owner installer.RestoreOwnership) error {
+			if owner != serviceOwner {
+				t.Fatalf("applied ownership=%+v, want %+v", owner, serviceOwner)
+			}
+			owned = true
+			return nil
+		},
+		restore: func(installer.Paths, string, []byte, installer.RestoreOwnership, func() error) error {
+			t.Fatal("a pre-backup failure has no archive to restore")
+			return nil
+		},
+		wait: func(ctx context.Context, check func(context.Context) error) error { return check(ctx) },
+		local: func(context.Context, installer.Plan) error {
+			if !owned || !restarted {
+				return errors.New("health ran before ownership repair and restart")
+			}
+			return nil
+		},
+		web: func(context.Context, string) error { return nil },
+	}
+
+	_, err := resetDemo(context.Background(), installer.Plan{Options: installer.Options{Root: "/", Port: 8090}, Proxy: installer.AppOnly}, installer.Paths{Data: "/var/lib/mithra"}, bytes.Repeat([]byte{1}, 32), demo.Config{}, dependencies)
+	if !errors.Is(err, resetErr) || !owned || !restarted {
+		t.Fatalf("error=%v owned=%t restarted=%t", err, owned, restarted)
+	}
+}
+
+func TestResetDemoRealServiceOwnedTree(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("requires root to create a fixture owned by a different service identity")
+	}
+	ctx := context.Background()
+	root := t.TempDir()
+	paths := installer.OwnedPaths(root, installer.AppOnly)
+	if err := os.MkdirAll(paths.Sources, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(paths.Backups, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	db, err := database.Open(ctx, paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stamp := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err := db.ExecContext(ctx, `INSERT INTO users(id,email,status,password_hash,created_at,updated_at) VALUES('unrelated-owner','unrelated@example.com','active','hash',?,?); INSERT INTO households(id,status,owner_user_id,created_at,updated_at) VALUES('unrelated-household','active','unrelated-owner',?,?); INSERT INTO household_members(household_id,user_id,role,created_at) VALUES('unrelated-household','unrelated-owner','owner',?)`, stamp, stamp, stamp, stamp, stamp); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	serviceOwner := installer.RestoreOwnership{UID: 65534, GID: 65534, Set: true}
+	if err := installer.ApplyDataOwnership(paths, serviceOwner); err != nil {
+		t.Fatal(err)
+	}
+	key := bytes.Repeat([]byte{7}, 32)
+	restarted := false
+	dependencies := demoResetDependencies{
+		reset: demo.Reset,
+		quiesce: func(context.Context, string) (func() error, error) {
+			return func() error { restarted = true; return nil }, nil
+		},
+		ownership: func(string) (installer.RestoreOwnership, error) { return serviceOwner, nil },
+		apply:     installer.ApplyDataOwnership,
+		restore:   installer.RestoreGenerationWithOwnership,
+		wait:      func(ctx context.Context, check func(context.Context) error) error { return check(ctx) },
+		local: func(context.Context, installer.Plan) error {
+			if !restarted {
+				return errors.New("candidate health ran before restart")
+			}
+			if err := filepath.Walk(paths.Data, func(path string, info os.FileInfo, walkErr error) error {
+				if walkErr != nil {
+					return walkErr
+				}
+				stat, ok := info.Sys().(*syscall.Stat_t)
+				if !ok || int(stat.Uid) != serviceOwner.UID || int(stat.Gid) != serviceOwner.GID {
+					return fmt.Errorf("%s owner=%v, want %d:%d", path, info.Sys(), serviceOwner.UID, serviceOwner.GID)
+				}
+				wantMode := os.FileMode(0o600)
+				if info.IsDir() {
+					wantMode = 0o750
+				}
+				if info.Mode().Perm() != wantMode {
+					return fmt.Errorf("%s mode=%#o, want %#o", path, info.Mode().Perm(), wantMode)
+				}
+				return nil
+			}); err != nil {
+				return err
+			}
+			healthDB, err := database.OpenForOwner(ctx, paths.Database, serviceOwner.UID, serviceOwner.GID)
+			if err != nil {
+				return err
+			}
+			return healthDB.Close()
+		},
+		web: func(context.Context, string) error { return nil },
+	}
+	config := demo.Config{
+		DatabasePath:    paths.Database,
+		SourceRoot:      paths.Sources,
+		BackupRoot:      paths.Backups,
+		OwnerEmail:      "judge-owner@example.com",
+		PartnerEmail:    "judge-partner@example.com",
+		OwnerPassword:   []byte("owner demo password"),
+		PartnerPassword: []byte("partner demo password"),
+		MasterKey:       key,
+	}
+	plan := installer.Plan{Options: installer.Options{Root: root, Port: 8090}, Proxy: installer.AppOnly}
+	receipt, err := resetDemo(ctx, plan, paths, key, config, dependencies)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !restarted || receipt.HouseholdID != demo.HouseholdID || receipt.SharedRecords == 0 {
+		t.Fatalf("restarted=%t receipt=%+v", restarted, receipt)
 	}
 }
 

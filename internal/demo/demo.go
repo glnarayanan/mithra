@@ -41,6 +41,7 @@ type Config struct {
 	OwnerEmail, PartnerEmail             string
 	OwnerPassword, PartnerPassword       []byte
 	MasterKey                            []byte
+	Ownership                            installer.RestoreOwnership
 	BeforeComplete                       func() error // test seam after production services have written the candidate.
 }
 
@@ -90,7 +91,12 @@ func Reset(ctx context.Context, cfg Config) (receipt Receipt, err error) {
 	}
 	defer releaseLock(lock)
 
-	db, err := database.Open(ctx, databasePath)
+	var db *sql.DB
+	if cfg.Ownership.Set {
+		db, err = database.OpenForOwner(ctx, databasePath, cfg.Ownership.UID, cfg.Ownership.GID)
+	} else {
+		db, err = database.Open(ctx, databasePath)
+	}
 	if err != nil {
 		return receipt, err
 	}
@@ -109,7 +115,12 @@ func Reset(ctx context.Context, cfg Config) (receipt Receipt, err error) {
 	if err := preflightIdentity(ctx, db, ownerEmail, partnerEmail); err != nil {
 		return receipt, err
 	}
-	sources, err := storage.New(db, sourceRoot, cfg.MasterKey)
+	var sources *storage.Service
+	if cfg.Ownership.Set {
+		sources, err = storage.NewForOwner(db, sourceRoot, cfg.MasterKey, cfg.Ownership.UID, cfg.Ownership.GID)
+	} else {
+		sources, err = storage.New(db, sourceRoot, cfg.MasterKey)
+	}
 	if err != nil {
 		return receipt, err
 	}
@@ -130,7 +141,7 @@ func Reset(ctx context.Context, cfg Config) (receipt Receipt, err error) {
 
 	rollback := func(cause error) error {
 		closeErr := closeDB()
-		restoreErr := installer.RestoreGeneration(paths, archive, cfg.MasterKey, func() error {
+		restoreErr := installer.RestoreGenerationWithOwnership(paths, archive, cfg.MasterKey, cfg.Ownership, func() error {
 			return installer.DatabasePreflight(ctx, databasePath)
 		})
 		return errors.Join(cause, closeErr, restoreErr)
