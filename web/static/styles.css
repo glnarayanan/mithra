@@ -2238,6 +2238,8 @@ button:disabled {
 
 .finance-totals strong {
   color: var(--ink);
+  font-size: clamp(1.5rem, 7vw, 1.75rem);
+  letter-spacing: -0.03em;
 }
 
 .health-safety-note {
