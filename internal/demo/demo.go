@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/glnarayanan/mithra/internal/auth"
 	"github.com/glnarayanan/mithra/internal/capture"
 	"github.com/glnarayanan/mithra/internal/coaching"
 	"github.com/glnarayanan/mithra/internal/database"
@@ -38,6 +39,7 @@ var ErrUnsafeReset = errors.New("demo reset refused")
 type Config struct {
 	DatabasePath, SourceRoot, BackupRoot string
 	OwnerEmail, PartnerEmail             string
+	OwnerPassword, PartnerPassword       []byte
 	MasterKey                            []byte
 	BeforeComplete                       func() error // test seam after production services have written the candidate.
 }
@@ -70,6 +72,10 @@ func Reset(ctx context.Context, cfg Config) (receipt Receipt, err error) {
 	if err != nil || ownerEmail == partnerEmail {
 		return receipt, ErrUnsafeReset
 	}
+	if err := validateCredentials(cfg.OwnerPassword, cfg.PartnerPassword); err != nil {
+		return receipt, err
+	}
+	defer clearCredentials(cfg.OwnerPassword, cfg.PartnerPassword)
 	lock, err := acquireLock(filepath.Join(filepath.Dir(filepath.Dir(databasePath)), ".mithra-demo-reset.lock"))
 	if err != nil {
 		return receipt, err
@@ -152,6 +158,11 @@ func Reset(ctx context.Context, cfg Config) (receipt Receipt, err error) {
 	}
 	if err := restoreAccessState(ctx, db, owner, partner); err != nil {
 		return receipt, rollback(err)
+	}
+	if len(cfg.OwnerPassword) != 0 {
+		if err := setCredentials(ctx, db, owner, partner, cfg.OwnerPassword, cfg.PartnerPassword); err != nil {
+			return receipt, rollback(err)
+		}
 	}
 	if err := closeDB(); err != nil {
 		return receipt, rollback(err)
@@ -244,6 +255,60 @@ func normalizeEmail(value string) (string, error) {
 		return "", ErrUnsafeReset
 	}
 	return value, nil
+}
+
+func validateCredentials(owner, partner []byte) error {
+	if len(owner) == 0 && len(partner) == 0 {
+		return nil
+	}
+	if len(owner) < 12 || len(owner) > 128 || len(partner) < 12 || len(partner) > 128 {
+		return ErrUnsafeReset
+	}
+	return nil
+}
+
+func clearCredentials(owner, partner []byte) {
+	for _, password := range [][]byte{owner, partner} {
+		for index := range password {
+			password[index] = 0
+		}
+	}
+}
+
+// setCredentials reuses the ordinary reset flow so the fixture receives the
+// same Argon2id hashes and session revocation as an interactive password reset.
+func setCredentials(ctx context.Context, db *sql.DB, owner, partner userState, ownerPassword, partnerPassword []byte) error {
+	service := auth.New(db, auth.Config{})
+	for _, account := range []struct {
+		user     userState
+		password []byte
+	}{
+		{owner, ownerPassword},
+		{partner, partnerPassword},
+	} {
+		throttleKey := "demo-reset:" + account.user.id
+		delivery, err := service.RequestPasswordReset(ctx, account.user.email, throttleKey)
+		if err != nil {
+			return err
+		}
+		if delivery == nil || delivery.Email != account.user.email {
+			return ErrUnsafeReset
+		}
+		session, err := service.SetPassword(ctx, delivery.Token, string(account.password), "")
+		if err != nil {
+			return err
+		}
+		if session.Scope.ActorID != account.user.id || session.Scope.HouseholdID != HouseholdID {
+			return ErrUnsafeReset
+		}
+		if err := service.RevokeSession(ctx, session.Cookie); err != nil {
+			return err
+		}
+		if _, err := db.ExecContext(ctx, `DELETE FROM auth_throttles WHERE throttle_key=?`, "reset:"+throttleKey); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func preflightIdentity(ctx context.Context, db *sql.DB, ownerEmail, partnerEmail string) error {

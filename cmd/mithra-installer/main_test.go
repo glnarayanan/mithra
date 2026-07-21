@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -75,6 +76,36 @@ func TestInstalledAllowlistFencesDemoAccounts(t *testing.T) {
 	allowed := installedAllowlist(path)
 	if !emailAllowed(allowed, "OWNER@example.com") || !emailAllowed(allowed, "partner@example.com") || emailAllowed(allowed, "unknown@example.com") {
 		t.Fatalf("installed allowlist = %#v", allowed)
+	}
+}
+
+func TestDemoPasswordFilesArePrivateAndBounded(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "owner-password")
+	if err := os.WriteFile(path, []byte("owner demo password\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		t.Skip("platform does not expose file ownership")
+	}
+	if stat.Uid != uint32(os.Geteuid()) {
+		t.Fatalf("fixture owner uid=%d, effective uid=%d", stat.Uid, os.Geteuid())
+	}
+	password, err := readDemoPasswordFile(path)
+	if err != nil || string(password) != "owner demo password" {
+		t.Fatalf("password=%q err=%v", password, err)
+	}
+	clear(password)
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readDemoPasswordFile(path); err == nil {
+		t.Fatal("world-readable demo password file was accepted")
 	}
 }
 
@@ -286,6 +317,10 @@ func TestPlanOperationAndRootValidationAreScoped(t *testing.T) {
 	}
 	if _, err := parseInstallerCommand([]string{"backup", "--root", root + "/../" + filepath.Base(root)}); err == nil {
 		t.Fatal("unclean root was accepted")
+	}
+	parsed, err = parseInstallerCommand([]string{"reset-demo", "--root", root, "--owner-email", "judge-owner@example.com", "--partner-email", "judge-partner@example.com", "--owner-password-file", "/root/owner-password", "--partner-password-file", "/root/partner-password"})
+	if err != nil || *parsed.flags.ownerPasswordPath != "/root/owner-password" || *parsed.flags.partnerPasswordPath != "/root/partner-password" {
+		t.Fatalf("reset-demo password files parsed=%+v err=%v", parsed, err)
 	}
 }
 

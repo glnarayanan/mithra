@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
@@ -145,7 +146,7 @@ func runParsed(ctx context.Context, parsed parsedInstallerCommand, output io.Wri
 	if operation == installer.Upgrade && *artifactPath == "" && *candidateInstallerPath == "" && *manifestPath == "" && *signaturePath == "" && *releaseVersion == "" {
 		return runAutomaticUpgrade(ctx, parsed, output)
 	}
-	plunkPath, plunkFrom, ownerEmail, partnerEmail, masterKeyPath := f.plunkPath, f.plunkFrom, f.ownerEmail, f.partnerEmail, f.masterKeyPath
+	plunkPath, plunkFrom, ownerEmail, partnerEmail, ownerPasswordPath, partnerPasswordPath, masterKeyPath := f.plunkPath, f.plunkFrom, f.ownerEmail, f.partnerEmail, f.ownerPasswordPath, f.partnerPasswordPath, f.masterKeyPath
 	allowed := splitEmails(*emails)
 	basePaths := installer.OwnedPaths(*root, "")
 	configuredProxy, configuredDomain, configuredPort := installedRuntime(basePaths.Config)
@@ -186,6 +187,23 @@ func runParsed(ctx context.Context, parsed parsedInstallerCommand, output io.Wri
 		if *masterKeyPath == "" {
 			*masterKeyPath = paths.MasterKey
 		}
+		if (*ownerPasswordPath == "") != (*partnerPasswordPath == "") {
+			return errors.New("reset-demo requires both password files or neither")
+		}
+		var ownerPassword, partnerPassword []byte
+		if *ownerPasswordPath != "" {
+			var err error
+			ownerPassword, err = readDemoPasswordFile(*ownerPasswordPath)
+			if err != nil {
+				return err
+			}
+			defer clear(ownerPassword)
+			partnerPassword, err = readDemoPasswordFile(*partnerPasswordPath)
+			if err != nil {
+				return err
+			}
+			defer clear(partnerPassword)
+		}
 		key, err := readMasterKey(*masterKeyPath)
 		if err != nil {
 			return err
@@ -195,7 +213,7 @@ func runParsed(ctx context.Context, parsed parsedInstallerCommand, output io.Wri
 		if err != nil {
 			return err
 		}
-		receipt, err := demo.Reset(ctx, demo.Config{DatabasePath: paths.Database, SourceRoot: paths.Sources, BackupRoot: paths.Backups, OwnerEmail: *ownerEmail, PartnerEmail: *partnerEmail, MasterKey: key})
+		receipt, err := demo.Reset(ctx, demo.Config{DatabasePath: paths.Database, SourceRoot: paths.Sources, BackupRoot: paths.Backups, OwnerEmail: *ownerEmail, PartnerEmail: *partnerEmail, OwnerPassword: ownerPassword, PartnerPassword: partnerPassword, MasterKey: key})
 		if restartErr := restart(); err != nil || restartErr != nil {
 			return errors.Join(err, restartErr)
 		}
@@ -918,6 +936,28 @@ func readBounded(path string, limit int64) ([]byte, error) {
 		return nil, fmt.Errorf("invalid input file %s", path)
 	}
 	return os.ReadFile(path)
+}
+
+func readDemoPasswordFile(path string) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
+		return nil, errors.New("demo password file must be a private regular file")
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Uid != uint32(os.Geteuid()) {
+		return nil, errors.New("demo password file must be owned by the installer user")
+	}
+	raw, err := readBounded(path, 130)
+	if err != nil {
+		return nil, err
+	}
+	raw = bytes.TrimSuffix(raw, []byte("\n"))
+	raw = bytes.TrimSuffix(raw, []byte("\r"))
+	if len(raw) < 12 || len(raw) > 128 || bytes.IndexByte(raw, 0) >= 0 {
+		clear(raw)
+		return nil, errors.New("demo password must be 12 to 128 bytes")
+	}
+	return raw, nil
 }
 
 func signedRunningInstaller(manifest, signature []byte, publisherKey ed25519.PublicKey) (string, []byte, error) {

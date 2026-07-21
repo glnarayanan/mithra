@@ -8,9 +8,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/glnarayanan/mithra/internal/auth"
 	"github.com/glnarayanan/mithra/internal/database"
 	"github.com/glnarayanan/mithra/internal/imports"
 )
@@ -109,6 +111,61 @@ func TestResetRefusesUnmarkedReservedHousehold(t *testing.T) {
 	if err := db.QueryRow(`SELECT owner_user_id FROM households WHERE id=?`, HouseholdID).Scan(&owner); err != nil || owner != "ordinary-owner" {
 		t.Fatalf("unmarked household changed owner=%q err=%v", owner, err)
 	}
+}
+
+func TestResetSetsPrivateJudgeCredentialsAndRevokesBootstrapSessions(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	cfg := Config{
+		DatabasePath:    filepath.Join(root, "data", "mithra.sqlite3"),
+		SourceRoot:      filepath.Join(root, "data", "sources"),
+		BackupRoot:      filepath.Join(root, "backups"),
+		OwnerEmail:      "judge-owner@example.com",
+		PartnerEmail:    "judge-partner@example.com",
+		OwnerPassword:   []byte("owner demo password"),
+		PartnerPassword: []byte("partner demo password"),
+		MasterKey:       testKey(),
+	}
+	seedUnrelatedHousehold(t, ctx, cfg.DatabasePath)
+	if _, err := Reset(ctx, cfg); err != nil {
+		t.Fatal(err)
+	}
+	// Reset clears the credential buffers; reload the known synthetic values to
+	// prove a repeated hosted-demo reset remains usable.
+	cfg.OwnerPassword = []byte("owner demo password")
+	cfg.PartnerPassword = []byte("partner demo password")
+	if _, err := Reset(ctx, cfg); err != nil {
+		t.Fatalf("repeat reset with credentials: %v", err)
+	}
+	db, err := database.Open(ctx, cfg.DatabasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	service := auth.New(db, auth.Config{})
+	for _, account := range []struct {
+		email, password, role string
+	}{
+		{"judge-owner@example.com", "owner demo password", "owner"},
+		{"judge-partner@example.com", "partner demo password", "adult"},
+	} {
+		session, err := service.Login(ctx, account.email, account.password, "demo-credential-test:"+account.email)
+		if err != nil || session.Scope.HouseholdID != HouseholdID || session.Scope.Role != account.role {
+			t.Fatalf("login %s scope=%+v err=%v", account.email, session.Scope, err)
+		}
+		if err := service.RevokeSession(ctx, session.Cookie); err != nil {
+			t.Fatal(err)
+		}
+		var hash string
+		if err := db.QueryRowContext(ctx, `SELECT password_hash FROM users WHERE email=?`, account.email).Scan(&hash); err != nil || hash == account.password || !strings.HasPrefix(hash, "$argon2id$") {
+			t.Fatalf("stored password hash for %s = %q err=%v", account.email, hash, err)
+		}
+	}
+	var activeBootstrapSessions int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM browser_sessions WHERE user_id IN (?,?) AND revoked_at IS NULL`, ownerSeedID, partnerSeedID).Scan(&activeBootstrapSessions); err != nil || activeBootstrapSessions != 0 {
+		t.Fatalf("active bootstrap sessions=%d err=%v", activeBootstrapSessions, err)
+	}
+	assertFixtureAndUnrelated(t, ctx, cfg.DatabasePath)
 }
 
 type stateSnapshot struct {
