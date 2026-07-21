@@ -1,21 +1,22 @@
 # OpenAI Build Week submission
 
-Verified against the official [OpenAI Build Week rules](https://openai.devpost.com/rules)
-and [FAQ](https://openai.devpost.com/details/faqs) on 2026-07-18. The submission
-deadline is 2026-07-21 at 5:00 PM Pacific. Recheck the live pages before the
-final submission because Devpost controls the requirements.
+Verified against the official [OpenAI Build Week rules](https://openai.devpost.com/rules),
+live submission form, and host announcements on 2026-07-21. The submission
+deadline is 2026-07-21 at 5:00 PM Pacific, or 2026-07-22 at 5:30 AM IST.
 
 ## Current release truth
 
 - **Hosted app:** <https://mithrahq.com> (`/healthz` returned `ready` on
-  2026-07-19).
+  2026-07-21).
 - **Public repository:** <https://github.com/glnarayanan/mithra> with an MIT
   license.
-- **Release:** [`v1.0.3`](https://github.com/glnarayanan/mithra/releases/tag/v1.0.3)
-  from commit `43c84e0`, including signed application and installer artifacts.
+- **Release:** [`v1.5.0`](https://github.com/glnarayanan/mithra/releases/tag/v1.5.0)
+  from commit `8dc10ca`, including signed application and installer artifacts.
 - **Email provider:** Plunk; Resend is not part of the deployed application.
-- **Devpost draft:** <https://devpost.com/software/mithra> with the project
-  description, stack, hosted URL, and repository populated.
+- **Devpost project:** <https://devpost.com/software/mithra> with the name,
+  tagline, description, stack, hosted URL, repository, and current product
+  images populated. The demo video and final green **Submitted** confirmation
+  remain pending.
 
 ## Submission draft
 
@@ -26,9 +27,9 @@ final submission because Devpost controls the requirements.
   finance, health trends, planning, imports, conversational updates, calendar
   views, a Family Brief, and a private Week in Review. It converts text, voice,
   CSV, XLSX, and PDF inputs into typed, evidence-linked records that users review
-  and correct. Deterministic views work without AI; optional OpenAI coaching is
-  factual, evidence-bound, private by scope, and never medical advice,
-  relationship judgment, spending, booking, or record-changing automation.
+  and correct. Deterministic views work without AI; optional model-provider
+  coaching is factual, evidence-bound, private by scope, and never medical
+  advice, relationship judgment, spending, booking, or record-changing automation.
   Mithra ships as a low-dependency Go binary with embedded UI, SQLite, encrypted
   sources and backups, invitation-only two-adult households, and an Arivu-safe
   shared-VPS installer.
@@ -57,30 +58,39 @@ Primary Codex build task: `019f7561-247d-7d60-b17e-e046156f8fdf`.
 | `c483cf4` | GPT-5.6 Sol review drove encrypted backups, deletion-journal reconciliation, exact rollback errors, symlink defenses, Caddy ownership, and Arivu baseline verification. |
 | `83c187d` | Fixture-only reset, arbitrary-household restart acceptance, judge path, browser QA, deployment receipt, and submission audit. |
 | `930bbcd`–`43c84e0` | Plunk delivery, public release artifacts, safe startup diagnostics, private systemd credentials, and bounded activation readiness landed before the live VPS deployment. |
+| `d1e25f6`–`9b4dec5` | Codex rebuilt the authenticated UI around the licensed Navy design direction, then checked navigation, copy, keyboard use, responsive layouts, and browser behavior. |
+| `62da1fa`–`8d97bc4` | Codex improved capture, source previews, finance corrections, timed planning, import review, diagnostics, and the seeded browser path from direct product feedback. |
+| `96d2dd4`–`63d52ac` | GPT-5.6 Terra implemented the model-provider registry and Settings picker; GPT-5.6 Sol fixed provider-switch key reuse, custom-endpoint network access, schema handling, and provider data-boundary copy. |
 
 GPT-5.6 Sol was used for high-rigor consolidated review and root-cause fixes;
-GPT-5.6 Luna assisted implementation and debugging. The product owner made the
+GPT-5.6 Luna and Terra assisted implementation and debugging. The product owner made the
 defining scope and privacy decisions. GPT-5.6 is meaningful build evidence and
-is not represented as an in-product runtime requirement. Mithra's optional
-runtime models are `gpt-5.4-mini` and `gpt-4o-mini-transcribe`.
+is not represented as an in-product runtime requirement. Mithra supports
+multiple optional text model providers; voice and visual-PDF reading remain
+OpenAI-only.
 
 ## Required final fields and access
 
-- [ ] `https://mithrahq.com` remains free and available through the end of judging.
+- [x] `https://mithrahq.com` is free and available; keep it running through the
+  end of judging.
 - [ ] Private testing instructions contain two judge accounts and the four
   workflows in `demo-script.md`; credentials appear nowhere public.
 - [x] Repository URL is public with an appropriate license.
 - [ ] Public YouTube video is 3:00 or shorter, has clear audio, demonstrates the
   working product, and specifically explains Codex and GPT-5.6 contributions.
-- [ ] Devpost text description and **Apps for Your Life** category are set.
+- [x] Devpost text description is set and updated for the v1.5.0 provider model.
+- [x] Current product screenshots cover Family Brief, finance, health, planning,
+  and Week in Review without personal data.
+- [ ] **Apps for Your Life** is selected in the final submission form.
 - [ ] The `/feedback` Codex Session ID is generated in the primary build task
   and pasted into Devpost; a thread ID is not substituted for it.
-- [x] README setup/sample-data/testing and Codex/GPT-5.6 sections match the
-  deployed commit.
+- [x] README setup, sample-data, testing, and Codex/GPT-5.6 sections match the
+  current release.
 - [ ] No third-party trademarks, unlicensed music, real personal data, or
   credentials appear in public artifacts.
-- [ ] Final external check is repeated after service restart and immediately
-  before submission; commit and binary SHA-256 values match the local receipt.
+- [ ] Final external check is repeated after the v1.5.0 service restart and
+  immediately before submission; commit and binary SHA-256 values match the
+  local receipt.
 
 ## Go/no-go commands
 
