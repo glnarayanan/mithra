@@ -51,8 +51,9 @@ A clean local run starts empty. The checked-in acceptance path creates a safe
 sample household through the same import, capture, evidence, and privacy code
 used by ordinary households. See
 [`internal/app/acceptance_test.go`](internal/app/acceptance_test.go) and the
-[judge path](documentation/demo-script.md). An installed marked demo household
-can be restored with:
+[judge path](documentation/demo-script.md). The sample has four monthly points
+covering the prior three months and the current month for finance and health
+trends. An installed marked demo household can be restored with:
 
 ```bash
 sudo mithra-installer reset-demo \

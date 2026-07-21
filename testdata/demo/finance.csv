@@ -1,4 +1,22 @@
-kind,label,category,date,status,amount
-income,Household income,Income,2026-07-01,,180000
-spending,Groceries,Home,2026-07-10,,14500
-obligation,Insurance renewal,Insurance,2026-07-28,pending,24000
+kind,label,category,date,end_date,status,amount
+income,Household income,Income,2026-04-01,,,180000
+spending,Groceries,Groceries,2026-04-08,,,14000
+spending,Utilities,Utilities,2026-04-12,,,6200
+spending,Dining out,Dining,2026-04-19,,,4800
+income,Household income,Income,2026-05-01,,,182000
+spending,Groceries,Groceries,2026-05-09,,,14800
+spending,Utilities,Utilities,2026-05-13,,,5900
+spending,Dining out,Dining,2026-05-21,,,5200
+income,Household income,Income,2026-06-01,,,185000
+spending,Groceries,Groceries,2026-06-08,,,15200
+spending,Utilities,Utilities,2026-06-12,,,6100
+spending,Dining out,Dining,2026-06-20,,,6500
+spending,School fees,Education,2026-06-24,,,25000
+income,Household income,Income,2026-07-01,,,188000
+spending,Groceries,Groceries,2026-07-08,,,14500
+spending,Utilities,Utilities,2026-07-12,,,6400
+spending,Dining out,Dining,2026-07-18,,,4200
+budget,July household budget,Household,2026-07-01,2026-07-31,,85000
+asset,Emergency fund,Savings,2026-07-01,,,450000
+liability,Home loan balance,Home loan,2026-07-01,,,3200000
+obligation,Insurance renewal,Insurance,2026-07-28,,pending,24000

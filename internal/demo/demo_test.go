@@ -168,7 +168,7 @@ func assertFixtureAndUnrelated(t *testing.T, ctx context.Context, path string) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	var fixture, unrelated, comparable, mismatchKinds int
+	var fixture, unrelated, comparable, mismatchKinds, weights, heartRates, sharedSpending int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM demo_households WHERE household_id=? AND fixture_version=?`, HouseholdID, FixtureVersion).Scan(&fixture); err != nil {
 		t.Fatal(err)
 	}
@@ -181,8 +181,17 @@ func assertFixtureAndUnrelated(t *testing.T, ctx context.Context, path string) {
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT unit) FROM health_observations WHERE household_id=? AND reference_context='post-meal'`, HouseholdID).Scan(&mismatchKinds); err != nil {
 		t.Fatal(err)
 	}
-	if fixture != 1 || unrelated != 1 || comparable != 2 || mismatchKinds != 2 {
-		t.Fatalf("fixture=%d unrelated=%d comparable=%d mismatch-kinds=%d", fixture, unrelated, comparable, mismatchKinds)
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM health_observations WHERE household_id=? AND analyte='Weight'`, HouseholdID).Scan(&weights); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM health_observations WHERE household_id=? AND analyte='Resting heart rate'`, HouseholdID).Scan(&heartRates); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM finance_spending WHERE household_id=? AND visibility='shared'`, HouseholdID).Scan(&sharedSpending); err != nil {
+		t.Fatal(err)
+	}
+	if fixture != 1 || unrelated != 1 || comparable != 4 || mismatchKinds != 2 || weights != 4 || heartRates != 4 || sharedSpending != 13 {
+		t.Fatalf("fixture=%d unrelated=%d fasting=%d mismatch-kinds=%d weights=%d heart-rates=%d spending=%d", fixture, unrelated, comparable, mismatchKinds, weights, heartRates, sharedSpending)
 	}
 }
 
