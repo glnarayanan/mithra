@@ -42,7 +42,8 @@ type Config struct {
 	OwnerPassword, PartnerPassword       []byte
 	MasterKey                            []byte
 	Ownership                            installer.RestoreOwnership
-	BeforeComplete                       func() error // test seam after production services have written the candidate.
+	BeforeComplete                       func() error     // test seam after production services have written the candidate.
+	Now                                  func() time.Time // test seam for the reset instant; nil uses time.Now.
 }
 
 type Receipt struct {
@@ -147,6 +148,9 @@ func Reset(ctx context.Context, cfg Config) (receipt Receipt, err error) {
 		return errors.Join(cause, closeErr, restoreErr)
 	}
 	seededAt := time.Now().UTC()
+	if cfg.Now != nil {
+		seededAt = cfg.Now().UTC()
+	}
 	oldKeys, owner, partner, err := recreateIdentity(ctx, db, ownerEmail, partnerEmail)
 	if err != nil {
 		return receipt, rollback(err)
@@ -625,6 +629,9 @@ func seedPlanningCaptures(ctx context.Context, service *capture.Service, actor p
 		{Title: "August household planning", Description: "Household dates and plans for August.", Location: "Home", StartsAt: "2026-08-02T10:00", EndsAt: "2026-08-02T10:45", Timezone: "Asia/Kolkata", Status: "planned"},
 	}
 	for _, sample := range samples {
+		day := sample.StartsAt[:len("2006-01-02")]
+		sample.Title = shiftFixtureLabel(sample.Title, day, seededAt)
+		sample.Description = shiftFixtureLabel(sample.Description, day, seededAt)
 		sample.StartsAt = shiftFixtureTimestamp(sample.StartsAt, seededAt)
 		sample.EndsAt = shiftFixtureTimestamp(sample.EndsAt, seededAt)
 		receipt, err := service.SubmitText(ctx, actor, capture.TextRequest{Text: sample.Title + ".", Summary: sample.Title + " added.", Visibility: policy.Shared, Proposal: capture.Proposal{Variant: capture.PlanningVariant, Planning: &sample}})
@@ -648,7 +655,7 @@ func hasBlocker(issues []imports.Issue) bool {
 }
 
 func verifyFixture(ctx context.Context, db *sql.DB, owner, partner policy.ActorScope, seededAt time.Time, receipt *Receipt) error {
-	coach := coaching.New(db)
+	coach := coaching.NewWithClock(db, func() time.Time { return seededAt })
 	ownerOverview, err := coach.Overview(ctx, owner, seededAt)
 	if err != nil {
 		return err
@@ -661,7 +668,8 @@ func verifyFixture(ctx context.Context, db *sql.DB, owner, partner policy.ActorS
 	if err != nil || !ownerOverview.HasRecords || !ownerReview.HasRecords || !partnerReview.HasRecords || len(ownerOverview.SharedContext.Facts) == 0 || len(ownerOverview.PersonalContext.Facts) == 0 || len(partnerReview.Personal.Context.Facts) == 0 {
 		return errors.New("demo Family Brief or private Week in Review overlay is incomplete")
 	}
-	if ownerReview.Shared.Status.Label != "Mostly on track" || ownerReview.Shared.Observation.Title != "Groceries need attention, not overall spending" || !reviewHasTitles(ownerReview.Shared.Priorities, "Review travel documents", "Insurance renewal", "August household planning") {
+	monthlyPlanning := shiftFixtureLabel("August household planning", "2026-08-02", seededAt)
+	if ownerReview.Shared.Status.Label != "Mostly on track" || ownerReview.Shared.Observation.Title != "Groceries need attention, not overall spending" || !reviewHasTitles(ownerReview.Shared.Priorities, "Review travel documents", "Insurance renewal", monthlyPlanning) {
 		return errors.New("demo shared Week in Review is incomplete")
 	}
 	if ownerReview.Personal.Status.Label != "Needs attention" || !reviewHasTitle(ownerReview.Personal.Issues, "Glucose record needs correction") || reviewHasTitle(partnerReview.Personal.Issues, "Glucose record needs correction") {
@@ -788,13 +796,31 @@ func partnerFinanceCSV() []byte                    { return financeCSV(partnerFi
 func sharedFinanceProposals() imports.ProposalSet  { return financeProposals(sharedFinanceSamples) }
 func partnerFinanceProposals() imports.ProposalSet { return financeProposals(partnerFinanceSamples) }
 
-var fixtureAnchor = time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)
+// fixtureAnchor is the fixture's own "today". Reset maps every fixture date
+// onto the real reset day so the seeded household reads as current:
+//
+//   - Dates after the anchor (planned events, pending obligations) keep their
+//     exact distance from today, so upcoming windows match the fixture.
+//   - Dates in the anchor month and the month before it move to the current
+//     and previous calendar months. Their days are spread over the days that
+//     have elapsed in the current month, keeping order, so month-to-date and
+//     budget comparisons stay like-for-like on every day of the month.
+//   - Older dates keep their day of month in the correspondingly earlier
+//     month, clamped to that month's length.
+//
+// Dates use the UTC calendar day, matching the coaching month and budget
+// windows. A plain day offset is not enough: it drifts records across month
+// boundaries, so the month-to-date comparison and the budget window stop
+// describing the fixture on most days.
+var fixtureAnchor = time.Date(2026, 7, 18, 0, 0, 0, 0, time.UTC)
 
 func shiftedFinanceSamples(samples []financeSample, seededAt time.Time) []financeSample {
 	shifted := append([]financeSample(nil), samples...)
 	for index := range shifted {
-		shifted[index].date = shiftFixtureDate(shifted[index].date, seededAt)
-		shifted[index].endDate = shiftFixtureDate(shifted[index].endDate, seededAt)
+		original := shifted[index]
+		shifted[index].label = shiftFixtureLabel(original.label, original.date, seededAt)
+		shifted[index].date = shiftFixtureDate(original.date, seededAt)
+		shifted[index].endDate = shiftFixtureEndDate(original.date, original.endDate, seededAt)
 	}
 	return shifted
 }
@@ -815,7 +841,19 @@ func shiftFixtureDate(value string, seededAt time.Time) string {
 	if err != nil {
 		return value
 	}
-	return parsed.AddDate(0, 0, fixtureDayOffset(seededAt)).Format("2006-01-02")
+	return fixtureDay(parsed, seededAt).Format("2006-01-02")
+}
+
+// shiftFixtureEndDate keeps a whole-month period (such as a monthly budget)
+// covering the whole mapped month; other end dates map like any other date.
+func shiftFixtureEndDate(start, end string, seededAt time.Time) string {
+	startDate, startErr := time.Parse("2006-01-02", start)
+	endDate, endErr := time.Parse("2006-01-02", end)
+	if startErr != nil || endErr != nil || startDate.Day() != 1 || startDate.Year() != endDate.Year() || startDate.Month() != endDate.Month() || endDate.Day() != daysIn(endDate) {
+		return shiftFixtureDate(end, seededAt)
+	}
+	mapped := fixtureDay(startDate, seededAt)
+	return time.Date(mapped.Year(), mapped.Month(), daysIn(mapped), 0, 0, 0, 0, time.UTC).Format("2006-01-02")
 }
 
 func shiftFixtureTimestamp(value string, seededAt time.Time) string {
@@ -823,19 +861,49 @@ func shiftFixtureTimestamp(value string, seededAt time.Time) string {
 	if err != nil {
 		return value
 	}
-	return parsed.AddDate(0, 0, fixtureDayOffset(seededAt)).Format("2006-01-02T15:04")
+	day := fixtureDay(time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 0, 0, 0, 0, time.UTC), seededAt)
+	return time.Date(day.Year(), day.Month(), day.Day(), parsed.Hour(), parsed.Minute(), 0, 0, time.UTC).Format("2006-01-02T15:04")
 }
 
-func fixtureDayOffset(seededAt time.Time) int {
-	location, err := time.LoadLocation("Asia/Kolkata")
+// shiftFixtureLabel renames the fixture month in a label (for example
+// "July groceries budget") to the month its date maps to.
+func shiftFixtureLabel(label, date string, seededAt time.Time) string {
+	parsed, err := time.Parse("2006-01-02", date)
 	if err != nil {
-		location = time.UTC
+		return label
 	}
-	now := seededAt.In(location)
-	anchor := fixtureAnchor.In(location)
-	currentDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
-	anchorDay := time.Date(anchor.Year(), anchor.Month(), anchor.Day(), 0, 0, 0, 0, location)
-	return int(currentDay.Sub(anchorDay).Hours() / 24)
+	return strings.ReplaceAll(label, parsed.Month().String(), fixtureDay(parsed, seededAt).Month().String())
+}
+
+func fixtureDay(original, seededAt time.Time) time.Time {
+	now := seededAt.UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	if original.After(fixtureAnchor) {
+		return today.AddDate(0, 0, int(original.Sub(fixtureAnchor).Hours()/24))
+	}
+	monthsBack := (fixtureAnchor.Year()-original.Year())*12 + int(fixtureAnchor.Month()-original.Month())
+	month := time.Date(today.Year(), today.Month()-time.Month(monthsBack), 1, 0, 0, 0, 0, time.UTC)
+	length := daysIn(month)
+	var day int
+	switch monthsBack {
+	case 0:
+		day = spreadDay(original.Day(), fixtureAnchor.Day(), today.Day())
+	case 1:
+		day = spreadDay(original.Day(), daysIn(original), min(today.Day(), length))
+	default:
+		day = min(original.Day(), length)
+	}
+	return time.Date(month.Year(), month.Month(), day, 0, 0, 0, 0, time.UTC)
+}
+
+// spreadDay maps day 1..span onto 1..limit, preserving order.
+func spreadDay(day, span, limit int) int {
+	mapped := 1 + (day-1)*limit/span
+	return max(1, min(mapped, limit))
+}
+
+func daysIn(t time.Time) int {
+	return time.Date(t.Year(), t.Month()+1, 0, 0, 0, 0, 0, time.UTC).Day()
 }
 
 var healthSamples = []imports.HealthProposal{

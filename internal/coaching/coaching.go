@@ -164,6 +164,15 @@ type Service struct {
 
 func New(db *sql.DB) *Service { return &Service{db: db, now: time.Now} }
 
+// NewWithClock is New with an explicit clock, for callers that must evaluate
+// coaching at the same instant they used to build their records.
+func NewWithClock(db *sql.DB, now func() time.Time) *Service {
+	if now == nil {
+		now = time.Now
+	}
+	return &Service{db: db, now: now}
+}
+
 // BuildContext is the only prompt-context constructor. Shared construction
 // cannot read a personal row; personal construction is owner-only.
 func (s *Service) BuildContext(ctx context.Context, actor policy.ActorScope, visibility policy.Visibility) (Context, error) {
