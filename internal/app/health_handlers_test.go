@@ -22,6 +22,9 @@ func TestHealthLensRendersFactualSeriesConflictDatesAndCorrection(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The lens filters by the real clock, so fixture dates stay relative to it.
+	today := time.Now().UTC()
+	day := func(offset int) string { return today.AddDate(0, 0, offset).Format("2006-01-02") }
 	p := health.Provenance{SourceID: source.ID, SourceFamily: source.Family, SourceVersion: source.Version, LocatorKind: "source", LocatorValue: source.LocatorValue}
 	create := func(value, unit, date string) health.Observation {
 		record, err := application.healthRecords.CreateObservation(context.Background(), scope, health.ObservationDraft{Visibility: policy.Shared, Subject: "Alex", Analyte: "Glucose", Specimen: "serum", Method: "lab method", ReferenceContext: "report range", ObservedOn: date, Value: value, Unit: unit, ReferenceLow: "70", ReferenceHigh: "110", ReferenceUnit: "mg/dL", Provenance: p})
@@ -30,8 +33,8 @@ func TestHealthLensRendersFactualSeriesConflictDatesAndCorrection(t *testing.T) 
 		}
 		return record
 	}
-	create("1.00", "g/L", "2026-06-01")
-	create("105", "mg/dL", "2026-07-01")
+	create("1.00", "g/L", day(-45))
+	create("105", "mg/dL", day(-15))
 	conflict := func(value, unit, date string) health.Observation {
 		record, err := application.healthRecords.CreateObservation(context.Background(), scope, health.ObservationDraft{Visibility: policy.Shared, Subject: "Alex", Analyte: "Potassium", Specimen: "serum", Method: "ise", ReferenceContext: "report range", ObservedOn: date, Value: value, Unit: unit, Provenance: p})
 		if err != nil {
@@ -39,12 +42,12 @@ func TestHealthLensRendersFactualSeriesConflictDatesAndCorrection(t *testing.T) 
 		}
 		return record
 	}
-	conflict("4.2", "mmol/L", "2026-06-01")
-	wrong := conflict("160", "mg/dL", "2026-07-01")
-	if _, err := application.healthRecords.CreateAppointment(context.Background(), scope, health.AppointmentDraft{Visibility: policy.Shared, Subject: "Alex", Label: "Annual check-up", Location: "Clinic", ScheduledOn: "2026-07-25", Provenance: p}); err != nil {
+	conflict("4.2", "mmol/L", day(-45))
+	wrong := conflict("160", "mg/dL", day(-15))
+	if _, err := application.healthRecords.CreateAppointment(context.Background(), scope, health.AppointmentDraft{Visibility: policy.Shared, Subject: "Alex", Label: "Annual check-up", Location: "Clinic", ScheduledOn: day(20), Provenance: p}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := application.healthRecords.CreateRoutine(context.Background(), scope, health.RoutineDraft{Visibility: policy.Shared, Subject: "Alex", Label: "Recorded routine", Cadence: "Every morning", NextDueOn: "2026-07-19", Provenance: p}); err != nil {
+	if _, err := application.healthRecords.CreateRoutine(context.Background(), scope, health.RoutineDraft{Visibility: policy.Shared, Subject: "Alex", Label: "Recorded routine", Cadence: "Every morning", NextDueOn: day(7), Provenance: p}); err != nil {
 		t.Fatal(err)
 	}
 	page := serve(application, authenticatedHealthRequest(session, http.MethodGet, "/health", nil))

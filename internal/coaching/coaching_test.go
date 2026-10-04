@@ -1092,6 +1092,8 @@ func TestVisibleUnitAndCalendarConflictsAreExplainedWithoutPrivateInfluence(t *t
 
 func TestCacheStalesOnSharedRevisionButIgnoresPartnerPrivateAndHardInvalidatesDeletedEvidence(t *testing.T) {
 	f := newFixture(t)
+	asOf := time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)
+	f.service.now = func() time.Time { return asOf }
 	ctx := context.Background()
 	source := f.source(t, f.owner, policy.Shared, "salary")
 	if _, err := f.finance.Create(ctx, f.owner, finance.Draft{Kind: finance.Income, Visibility: policy.Shared, Label: "Salary", Category: "Income", Date: "2026-07-17", AmountText: "5000", Provenance: financeProvenance(source)}); err != nil {
@@ -1105,7 +1107,7 @@ func TestCacheStalesOnSharedRevisionButIgnoresPartnerPrivateAndHardInvalidatesDe
 	if err := f.service.Publish(ctx, f.owner, "brief", policy.Shared, input, output, "test-model"); err != nil {
 		t.Fatal(err)
 	}
-	overview, err := f.service.Overview(ctx, f.owner, time.Now())
+	overview, err := f.service.Overview(ctx, f.owner, asOf)
 	if err != nil || !overview.SharedCache.Found || overview.SharedCache.Stale {
 		t.Fatalf("initial cache=%#v err=%v", overview.SharedCache, err)
 	}
@@ -1113,7 +1115,7 @@ func TestCacheStalesOnSharedRevisionButIgnoresPartnerPrivateAndHardInvalidatesDe
 	if _, err := f.finance.Create(ctx, f.partner, finance.Draft{Kind: finance.Spending, Visibility: policy.Personal, Label: "Private", Category: "Other", Date: "2026-07-18", AmountText: "3", Provenance: financeProvenance(private)}); err != nil {
 		t.Fatal(err)
 	}
-	overview, _ = f.service.Overview(ctx, f.owner, time.Now())
+	overview, _ = f.service.Overview(ctx, f.owner, asOf)
 	if overview.SharedCache.Stale {
 		t.Fatal("partner private record invalidated shared cache")
 	}
@@ -1121,7 +1123,7 @@ func TestCacheStalesOnSharedRevisionButIgnoresPartnerPrivateAndHardInvalidatesDe
 	if _, err := f.planning.CreateEvent(ctx, f.owner, planning.EventDraft{Visibility: policy.Shared, Title: "Trip", AllDay: true, StartsOn: "2026-07-21", Status: "planned", Provenance: planningProvenance(second)}); err != nil {
 		t.Fatal(err)
 	}
-	overview, _ = f.service.Overview(ctx, f.owner, time.Now())
+	overview, _ = f.service.Overview(ctx, f.owner, asOf)
 	if !overview.SharedCache.Found || !overview.SharedCache.Stale {
 		t.Fatalf("shared drift cache=%#v", overview.SharedCache)
 	}
@@ -1137,7 +1139,7 @@ func TestCacheStalesOnSharedRevisionButIgnoresPartnerPrivateAndHardInvalidatesDe
 	if err := f.sources.Delete(ctx, f.owner, source.ID); err != nil {
 		t.Fatal(err)
 	}
-	overview, _ = f.service.Overview(ctx, f.owner, time.Now())
+	overview, _ = f.service.Overview(ctx, f.owner, asOf)
 	if overview.SharedCache.Found {
 		t.Fatal("deleted evidence wording remained cached")
 	}

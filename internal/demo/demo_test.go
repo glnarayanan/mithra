@@ -424,3 +424,76 @@ func testKey() []byte {
 	}
 	return key
 }
+
+func TestResetVerifiesTheWeeklyReviewOnCalendarEdgeDays(t *testing.T) {
+	ctx := context.Background()
+	for _, at := range []time.Time{
+		time.Date(2026, 10, 1, 0, 5, 0, 0, time.UTC),
+		time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC),
+		time.Date(2026, 12, 31, 23, 55, 0, 0, time.UTC),
+		time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(2027, 2, 28, 12, 0, 0, 0, time.UTC),
+		time.Date(2027, 3, 31, 12, 0, 0, 0, time.UTC),
+		time.Date(2028, 2, 29, 12, 0, 0, 0, time.UTC),
+	} {
+		t.Run(at.Format("2006-01-02T15:04"), func(t *testing.T) {
+			root := t.TempDir()
+			dataRoot := filepath.Join(root, "data")
+			cfg := Config{DatabasePath: filepath.Join(dataRoot, "mithra.sqlite3"), SourceRoot: filepath.Join(dataRoot, "sources"), BackupRoot: filepath.Join(root, "backups"), OwnerEmail: "judge-owner@example.com", PartnerEmail: "judge-partner@example.com", MasterKey: testKey(), Now: func() time.Time { return at }}
+			seedUnrelatedHousehold(t, ctx, cfg.DatabasePath)
+			if _, err := Reset(ctx, cfg); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestFixtureDatesStayCalendarAlignedEveryDay(t *testing.T) {
+	var dates []time.Time
+	for _, sample := range sharedFinanceSamples {
+		parsed, _ := time.Parse("2006-01-02", sample.date)
+		dates = append(dates, parsed)
+	}
+	for _, sample := range healthSamples {
+		parsed, _ := time.Parse("2006-01-02", sample.ObservedOn)
+		dates = append(dates, parsed)
+	}
+	sort.Slice(dates, func(i, j int) bool { return dates[i].Before(dates[j]) })
+	start := time.Date(2026, 7, 1, 18, 0, 0, 0, time.UTC)
+	for offset := 0; offset < 3*366; offset++ {
+		now := start.AddDate(0, 0, offset)
+		today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+		var previous time.Time
+		for _, original := range dates {
+			mapped := fixtureDay(original, now)
+			if mapped.Before(previous) {
+				t.Fatalf("%s: %s mapped out of order to %s", today.Format("2006-01-02"), original.Format("2006-01-02"), mapped.Format("2006-01-02"))
+			}
+			previous = mapped
+			if original.After(fixtureAnchor) {
+				if !mapped.After(today) {
+					t.Fatalf("%s: upcoming %s mapped to %s", today.Format("2006-01-02"), original.Format("2006-01-02"), mapped.Format("2006-01-02"))
+				}
+				continue
+			}
+			if mapped.After(today) {
+				t.Fatalf("%s: recorded %s mapped into the future %s", today.Format("2006-01-02"), original.Format("2006-01-02"), mapped.Format("2006-01-02"))
+			}
+			wantMonth := time.Date(today.Year(), today.Month()-(fixtureAnchor.Month()-original.Month()), 1, 0, 0, 0, 0, time.UTC)
+			if mapped.Year() != wantMonth.Year() || mapped.Month() != wantMonth.Month() {
+				t.Fatalf("%s: %s mapped to %s, outside %s", today.Format("2006-01-02"), original.Format("2006-01-02"), mapped.Format("2006-01-02"), wantMonth.Format("2006-01"))
+			}
+		}
+		budget := shiftedFinanceSamples(sharedFinanceSamples, now)
+		for _, sample := range budget {
+			if sample.kind != "budget" {
+				continue
+			}
+			first := time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+			last := time.Date(today.Year(), today.Month()+1, 0, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+			if sample.date != first || sample.endDate != last || sample.label != today.Month().String()+" groceries budget" {
+				t.Fatalf("%s: budget %+v does not cover the current month", today.Format("2006-01-02"), sample)
+			}
+		}
+	}
+}
