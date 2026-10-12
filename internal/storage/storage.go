@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -65,6 +66,20 @@ type Service struct {
 	box   *secrets.Box
 	now   func() time.Time
 	hooks hooks
+	gate  *sync.RWMutex
+}
+
+// SetMaintenanceGate makes ciphertext creation and removal hold gate's read
+// lock. A live backup holds the write lock while it snapshots SQLite and copies
+// the source tree, so no live row can lose its ciphertext between the two.
+func (s *Service) SetMaintenanceGate(gate *sync.RWMutex) { s.gate = gate }
+
+func (s *Service) holdGate() func() {
+	if s.gate == nil {
+		return func() {}
+	}
+	s.gate.RLock()
+	return s.gate.RUnlock
 }
 
 func New(db *sql.DB, root string, masterKey []byte) (*Service, error) {
@@ -117,6 +132,7 @@ func (s *Service) Store(ctx context.Context, scope policy.ActorScope, plaintext 
 	}
 	digest := sha256.Sum256(plaintext)
 	source.PlaintextDigest = fmt.Sprintf("%x", digest[:])
+	defer s.holdGate()()
 	ciphertext, err := s.box.Seal(plaintext, sourceContext(source))
 	if err != nil {
 		return Source{}, ErrStorage
@@ -292,6 +308,7 @@ func (s *Service) RemoveCiphertext(source Source) error {
 	if !validStorageKey(source.StorageKey) {
 		return ErrNotFound
 	}
+	defer s.holdGate()()
 	if err := os.Remove(filepath.Join(s.root, source.StorageKey+".enc")); err != nil && !os.IsNotExist(err) {
 		return ErrStorage
 	}

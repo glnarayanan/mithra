@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/glnarayanan/mithra/internal/capture"
+	"github.com/glnarayanan/mithra/internal/database"
 	"github.com/glnarayanan/mithra/internal/demo"
 	"github.com/glnarayanan/mithra/internal/finance"
 	"github.com/glnarayanan/mithra/internal/health"
@@ -29,7 +30,11 @@ func TestReleaseCandidateSeedAndArbitraryHouseholdSurviveRestartThroughSameServi
 	if _, err := demo.Reset(ctx, demo.Config{DatabasePath: databasePath, SourceRoot: sourceRoot, BackupRoot: filepath.Join(root, "backups"), OwnerEmail: "judge-owner@example.com", PartnerEmail: "judge-partner@example.com", MasterKey: key}); err != nil {
 		t.Fatal(err)
 	}
-	cfg := Config{DatabasePath: databasePath, SourceRoot: sourceRoot, MasterKey: key, CanonicalOrigin: "http://127.0.0.1:18099", AllowedEmails: []string{"judge-owner@example.com", "judge-partner@example.com", "arbitrary@example.com"}}
+	databaseKey, err := database.KeyForFile(databasePath, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{DatabasePath: databasePath, DatabaseKey: databaseKey, SourceRoot: sourceRoot, MasterKey: key, CanonicalOrigin: "http://127.0.0.1:18099", AllowedEmails: []string{"judge-owner@example.com", "judge-partner@example.com", "arbitrary@example.com"}}
 	application, err := New(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)

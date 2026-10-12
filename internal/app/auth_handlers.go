@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"time"
@@ -383,7 +384,7 @@ func boundedQuery(r *http.Request, key string) string {
 }
 
 func (a *App) clientThrottleKey(r *http.Request) string {
-	if a.trustedProxy {
+	if a.trustedProxy || a.fromTrustedProxy(r) {
 		forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For"))
 		if strings.Contains(forwarded, ",") {
 			return "shared-proxy"
@@ -398,6 +399,25 @@ func (a *App) clientThrottleKey(r *http.Request) string {
 		return "unknown"
 	}
 	return opaqueThrottleKey(net.ParseIP(host).String())
+}
+
+// fromTrustedProxy reports whether the TCP peer sits inside a configured
+// trusted proxy network. Only such a peer's X-Forwarded-For is believed.
+func (a *App) fromTrustedProxy(r *http.Request) bool {
+	if len(a.trustedProxies) == 0 {
+		return false
+	}
+	peer, err := netip.ParseAddrPort(r.RemoteAddr)
+	if err != nil {
+		return false
+	}
+	address := peer.Addr().Unmap()
+	for _, network := range a.trustedProxies {
+		if network.Contains(address) {
+			return true
+		}
+	}
+	return false
 }
 
 func opaqueThrottleKey(value string) string {
