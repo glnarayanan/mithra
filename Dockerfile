@@ -6,7 +6,7 @@
 # sandboxed PDF parser; docker-compose.yml decides which and how each is
 # confined. See documentation/deploy-containers.md.
 
-ARG GO_VERSION=1.26.8
+ARG GO_VERSION=1.26.9
 ARG DEBIAN_RELEASE=bookworm
 
 # SQLCipher source, pinned to the v4.19.0 tag and checked against its commit
