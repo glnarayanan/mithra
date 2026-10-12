@@ -12,6 +12,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/signal"
@@ -57,7 +58,27 @@ func failStartup(stage string, err error) error {
 	return startupError{stage: stage, err: err}
 }
 
+// commandError carries an operator command's own message. Those messages are
+// written for the operator and never include key material or record content.
+type commandError struct {
+	command string
+	err     error
+}
+
+func (e commandError) Error() string { return e.err.Error() }
+func (e commandError) Unwrap() error { return e.err }
+
 func logStartupFailure(output io.Writer, err error) {
+	var command commandError
+	if errors.As(err, &command) {
+		var failure startupError
+		if errors.As(err, &failure) {
+			fmt.Fprintf(output, "error_code=command_failed command=%s stage=%s message=%q\n", command.command, failure.stage, command.err.Error())
+			return
+		}
+		fmt.Fprintf(output, "error_code=command_failed command=%s message=%q\n", command.command, command.err.Error())
+		return
+	}
 	var failure startupError
 	if errors.As(err, &failure) {
 		fmt.Fprintf(output, "error_code=startup_failed stage=%s\n", failure.stage)
@@ -75,7 +96,7 @@ func runWithOutput(args []string, output io.Writer) error {
 		if len(args) != 1 {
 			return errors.New("help does not accept arguments")
 		}
-		fmt.Fprintln(output, "Usage: mithra [serve] [OPTIONS]\n\nCommands:\n  serve          run the Mithra application (the default)\n  recover-owner  recover an allowlisted household owner\n  help           show this help\n  version        print the Mithra version")
+		fmt.Fprintln(output, "Usage: mithra [serve] [OPTIONS]\n\nCommands:\n  serve                run the Mithra application (the default)\n  recover-owner        recover an allowlisted household owner\n  status               report version, database, backup and parser state\n  generate-master-key  print a new master key for a credential mount\n  backup               create a verified backup while the server is stopped\n  verify-backup        authenticate a backup with the master key\n  restore              restore a backup while the server is stopped\n  reset-demo           replace the marked demo household (server stopped)\n  healthcheck          exit 0 when /healthz reports ready\n  help                 show this help\n  version              print the Mithra version")
 		return nil
 	}
 	if len(args) > 0 && args[0] == "version" {
@@ -86,15 +107,15 @@ func runWithOutput(args []string, output io.Writer) error {
 		return nil
 	}
 	if len(args) > 0 && args[0] == "pdf-parser" {
-		if len(args) != 1 {
-			return errors.New("pdf-parser does not accept arguments")
+		return runPDFParser(args[1:])
+	}
+	if len(args) > 0 {
+		if command, ok := maintenanceCommands[args[0]]; ok {
+			if err := command(args[1:], output); err != nil {
+				return commandError{command: args[0], err: err}
+			}
+			return nil
 		}
-		listener, err := imports.SystemdListener()
-		if err != nil {
-			return errors.New("open PDF parser socket")
-		}
-		defer listener.Close()
-		return imports.ServePDFParser(listener)
 	}
 	if len(args) > 0 && args[0] == "recover-owner" {
 		return runRecoverOwner(args[1:])
@@ -129,11 +150,24 @@ func runWithOutput(args []string, output io.Writer) error {
 		}
 	})
 
-	listener, err := listen(*address, *socketPath, addressConfigured)
+	container := containerMode()
+	var listener net.Listener
+	var err error
+	if container {
+		listener, err = listenContainer(*address, *socketPath)
+	} else {
+		listener, err = listen(*address, *socketPath, addressConfigured)
+	}
 	if err != nil {
 		return failStartup("listener", err)
 	}
 	defer listener.Close()
+	var trustedProxies []netip.Prefix
+	if container {
+		if trustedProxies, err = parseTrustedProxies(os.Getenv("MITHRA_TRUSTED_PROXIES")); err != nil {
+			return failStartup("trusted_proxies", err)
+		}
+	}
 
 	allowedEmails, err := parseAllowedEmails(*allowedRaw)
 	if err != nil {
@@ -142,6 +176,9 @@ func runWithOutput(args []string, output io.Writer) error {
 	secureCookies, err := secureCookiesForOrigin(*originRaw)
 	if err != nil {
 		return failStartup("origin", err)
+	}
+	if container && !secureCookies {
+		return failStartup("origin", errors.New("container mode requires an HTTPS canonical origin"))
 	}
 	credential, err := readCredentialFile(*plunkKeyFile)
 	if err != nil {
@@ -159,12 +196,23 @@ func runWithOutput(args []string, output io.Writer) error {
 	if err != nil {
 		return failStartup("master_key", err)
 	}
+	lock, err := acquireDataLock(environmentDefault("MITHRA_LOCK_FILE", ""))
+	if err != nil {
+		return failStartup("lock", err)
+	}
+	defer lock.Release()
+	databaseKey, err := databaseKeyFor(*databasePath, masterKey, container)
+	if err != nil {
+		return err
+	}
 	application, err := app.New(context.Background(), app.Config{
 		DatabasePath:    *databasePath,
+		DatabaseKey:     databaseKey,
 		AllowedEmails:   allowedEmails,
 		CanonicalOrigin: strings.TrimSpace(*originRaw),
 		SecureCookies:   secureCookies,
 		TrustedProxy:    strings.TrimSpace(*socketPath) != "",
+		TrustedProxies:  trustedProxies,
 		Mailer:          mailer,
 		MasterKey:       masterKey,
 		SourceRoot:      *sourceRoot,
@@ -192,6 +240,20 @@ func runWithOutput(args []string, output io.Writer) error {
 
 	stop, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	if backupDir := environmentDefault("MITHRA_BACKUP_DIR", ""); backupDir != "" {
+		hour, minute, enabled, err := parseBackupTime(os.Getenv("MITHRA_BACKUP_TIME"))
+		if err != nil {
+			return failStartup("backup_schedule", err)
+		}
+		manual := make(chan os.Signal, 1)
+		signal.Notify(manual, syscall.SIGUSR1)
+		defer signal.Stop(manual)
+		schedule := backupSchedule{application: application, directory: backupDir, hour: hour, min: minute, now: time.Now, logger: log.New(os.Stderr, "", log.LstdFlags|log.LUTC)}
+		backupContext, backupCancel := context.WithCancel(stop)
+		backupDone := make(chan struct{})
+		go func() { defer close(backupDone); schedule.runWith(backupContext, manual, enabled) }()
+		defer func() { backupCancel(); <-backupDone }()
+	}
 	select {
 	case err := <-serveErrors:
 		if errors.Is(err, http.ErrServerClosed) {
@@ -235,7 +297,24 @@ func runRecoverOwner(args []string) error {
 	if err != nil {
 		return err
 	}
-	db, err := database.Open(context.Background(), *databasePath)
+	lock, err := acquireDataLock(environmentDefault("MITHRA_LOCK_FILE", ""))
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
+	var databaseKey []byte
+	if plaintext, err := database.IsPlaintext(*databasePath); err == nil && !plaintext && database.EncryptionAvailable() {
+		masterKey, err := loadMasterKey()
+		if err != nil {
+			return errors.New("recover-owner needs MITHRA_MASTER_KEY_FILE for an encrypted database")
+		}
+		databaseKey, err = database.DeriveKey(masterKey)
+		clear(masterKey)
+		if err != nil {
+			return errors.New("derive database key")
+		}
+	}
+	db, err := database.OpenWithKey(context.Background(), *databasePath, databaseKey)
 	if err != nil {
 		return errors.New("open Mithra database for recovery")
 	}
@@ -414,7 +493,16 @@ func readCredentialFile(path string) (string, error) {
 	if err != nil || !pathInfo.Mode().IsRegular() || pathInfo.Mode()&os.ModeSymlink != 0 {
 		return "", errors.New("credential file is invalid")
 	}
-	if !systemdCredentialPath(path) {
+	switch {
+	case systemdCredentialPath(path):
+	case platformCredentialPath(path):
+		// A read-only platform mount (compose secrets): owned by root or the
+		// service identity and writable by neither group nor others.
+		stat, ok := pathInfo.Sys().(*syscall.Stat_t)
+		if !ok || (stat.Uid != 0 && stat.Uid != uint32(os.Geteuid())) || pathInfo.Mode().Perm()&0o022 != 0 {
+			return "", errors.New("credential file is invalid")
+		}
+	default:
 		stat, ok := pathInfo.Sys().(*syscall.Stat_t)
 		if !ok || stat.Uid != uint32(os.Geteuid()) || pathInfo.Mode().Perm()&0o077 != 0 {
 			return "", errors.New("credential file is invalid")
@@ -438,5 +526,12 @@ func readCredentialFile(path string) (string, error) {
 
 func systemdCredentialPath(path string) bool {
 	directory := strings.TrimSpace(os.Getenv("CREDENTIALS_DIRECTORY"))
+	return filepath.IsAbs(directory) && filepath.Clean(directory) == directory && filepath.Dir(filepath.Clean(path)) == directory
+}
+
+// platformCredentialPath reports whether path sits directly in the explicitly
+// configured platform credential directory (Docker secrets at /run/secrets).
+func platformCredentialPath(path string) bool {
+	directory := strings.TrimSpace(os.Getenv(credentialDirectoryEnv))
 	return filepath.IsAbs(directory) && filepath.Clean(directory) == directory && filepath.Dir(filepath.Clean(path)) == directory
 }
