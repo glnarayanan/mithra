@@ -45,6 +45,9 @@ var (
 	ErrEncryptedPDF  = errors.New("encrypted PDF is unsupported")
 	ErrParserPanic   = errors.New("PDF parser panicked")
 	ErrParserTimeout = errors.New("PDF parser timed out")
+	// ErrParserUnavailable means the isolated parser could not be reached, for
+	// example while its container restarts. The document itself may be fine.
+	ErrParserUnavailable = errors.New("PDF parser is unavailable")
 )
 
 type Kind string
@@ -303,7 +306,7 @@ func classifyPDFError(err error) error {
 	switch {
 	case isPDFContextError(err):
 		return ErrParserTimeout
-	case errors.Is(err, ErrOverLimit), errors.Is(err, ErrScannedPDF), errors.Is(err, ErrEncryptedPDF), errors.Is(err, ErrParserPanic), errors.Is(err, ErrParserTimeout):
+	case errors.Is(err, ErrOverLimit), errors.Is(err, ErrScannedPDF), errors.Is(err, ErrEncryptedPDF), errors.Is(err, ErrParserPanic), errors.Is(err, ErrParserTimeout), errors.Is(err, ErrParserUnavailable):
 		return err
 	default:
 		return ErrUnreadable

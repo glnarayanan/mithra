@@ -89,7 +89,9 @@ Arivu path.
 
 ## Seeded demo reset
 
-`mithra-installer reset-demo` is the only production demo-reset path. It stops
+`mithra-installer reset-demo` is the only demo-reset path for a systemd install
+(containers use `mithra reset-demo`; see
+[deploy with containers](deploy-containers.md#admin-commands)). It stops
 the Mithra service and backup timer, acquires an exclusive maintenance lock,
 and refuses any ordinary or unmarked household. The fixed household marker is
 stored separately from user-entered data and binds the fixture version to the

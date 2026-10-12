@@ -49,6 +49,12 @@ required build flags are:
 -tags=sqlite_fts5,sqlite_omit_load_extension
 ```
 
+The container image adds `libsqlite3` and links a pinned SQLCipher build with
+the same feature set. When the binary has SQLCipher, a new database is created
+encrypted with a key derived from the master key, and every open proves the
+key before migrations run. Container mode requires this; an existing plain
+database still opens elsewhere.
+
 Numbered SQL files in `migrations/` are compiled into the binary. The migration
 ledger stores each version, filename, SHA-256 checksum, and application time.
 Startup rejects a changed historical checksum and a database created by a newer
@@ -180,7 +186,7 @@ dedicated unit.
 
 ## Verification
 
-CI uses Go 1.26.8, the required SQLite tags, `gofmt`, `go mod verify`,
+CI uses Go 1.26.9, the required SQLite tags, `gofmt`, `go mod verify`,
 `go vet`, tests, an application build, native Node syntax/test checks, and a
 pinned `govulncheck`. It does not install a frontend package manager.
 

@@ -164,3 +164,13 @@ func (panicPDF) Extract(context.Context, []byte, Limits) ([]Fragment, error) { p
 type blockingPDF struct{}
 
 func (blockingPDF) Extract(context.Context, []byte, Limits) ([]Fragment, error) { select {} }
+
+func TestSocketParserReportsAMissingParserAsUnavailable(t *testing.T) {
+	parser := SocketPDFParser{Path: filepath.Join(t.TempDir(), "absent.sock")}
+	if _, err := parser.Extract(context.Background(), []byte("%PDF-1.7\n"), Limits{MaxPages: MaxPDFPages, MaxText: MaxPDFTextBytes}); !errors.Is(err, ErrParserUnavailable) {
+		t.Fatalf("missing parser = %v, want ErrParserUnavailable", err)
+	}
+	if _, err := New(parser).Extract(context.Background(), Input{Name: "report.pdf", Bytes: []byte("%PDF-1.7\n")}); !errors.Is(err, ErrParserUnavailable) {
+		t.Fatalf("classified missing parser = %v, want ErrParserUnavailable", err)
+	}
+}

@@ -1,0 +1,89 @@
+# Mithra on a container host (built for Dokploy, works with plain
+# `docker compose`). Nothing is published on the host: a reverse proxy on the
+# same Docker network terminates TLS and forwards to app:8080.
+#
+# Every setting is listed in documentation/deploy-containers.md.
+
+name: mithra
+
+services:
+  app:
+    build:
+      context: .
+      args:
+        VERSION: ${MITHRA_VERSION:-dev}
+    image: mithra:${MITHRA_VERSION:-dev}
+    restart: unless-stopped
+    command: ["serve"]
+    environment:
+      ALLOWED_EMAILS: ${ALLOWED_EMAILS:?set the comma-separated sign-in allowlist}
+      MITHRA_CANONICAL_ORIGIN: ${MITHRA_CANONICAL_ORIGIN:?set the public https origin, for example https://mithrahq.com}
+      MITHRA_PLUNK_FROM: ${MITHRA_PLUNK_FROM:?set the verified Plunk sender, for example Mithra <hello@mithrahq.com>}
+      MITHRA_TRUSTED_PROXIES: ${MITHRA_TRUSTED_PROXIES:?set the private CIDR of the reverse-proxy network}
+      MITHRA_BACKUP_TIME: ${MITHRA_BACKUP_TIME:-03:30}
+    secrets:
+      - source: master_key
+        target: master_key
+      - source: plunk_key
+        target: plunk_key
+    volumes:
+      - mithra-data:/data
+      - mithra-backups:/backups
+      - pdf-socket:/run/mithra-pdf
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    expose: ["8080"]
+    stop_grace_period: 30s
+    depends_on:
+      pdf-parser:
+        condition: service_started
+
+  # The PDF parser reads untrusted documents, so it gets nothing else: no
+  # network, no data, no secrets, a read-only root, and a hard memory cap. It
+  # talks to the app only through a Unix socket on a tiny shared tmpfs and
+  # exits every few minutes so Docker restarts it from a clean process.
+  pdf-parser:
+    image: mithra:${MITHRA_VERSION:-dev}
+    pull_policy: never
+    restart: unless-stopped
+    command: ["pdf-parser", "--listen", "/run/mithra-pdf/pdf-parser.sock", "--max-lifetime", "5m"]
+    user: "10002:10001"
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 192m
+    memswap_limit: 192m
+    cpus: 0.5
+    pids_limit: 32
+    ulimits:
+      nofile: {soft: 64, hard: 64}
+    volumes:
+      - pdf-socket:/run/mithra-pdf
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/mithra", "pdf-parser-probe", "--socket", "/run/mithra-pdf/pdf-parser.sock"]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+
+secrets:
+  master_key:
+    file: ${MITHRA_MASTER_KEY_PATH:-../files/master.key}
+  plunk_key:
+    file: ${MITHRA_PLUNK_KEY_PATH:-../files/plunk.key}
+
+volumes:
+  # Encrypted database and source files. Back this up.
+  mithra-data:
+  # Verified .mbackup archives written by the in-app schedule. Back this up.
+  mithra-backups:
+  # Only the parser socket; recreated empty on every start.
+  pdf-socket:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: size=1m,uid=10002,gid=10001,mode=0750

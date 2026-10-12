@@ -46,7 +46,8 @@ sent off-site; bearer-token GETs redirect to a clean URL before rendering.
 
 The canonical origin is configuration, never `Host` or a forwarding header.
 HTTPS is required outside literal loopback development. TCP mode ignores
-`X-Forwarded-For`. Permissioned Unix-socket mode accepts exactly one valid IP
+`X-Forwarded-For`, except in container mode, where it is read only when the
+TCP peer is inside the configured private `MITHRA_TRUSTED_PROXIES` networks. Permissioned Unix-socket mode accepts exactly one valid IP
 from it and hashes that IP into a throttle key; invalid or multi-hop values use
 one shared proxy key. Forwarding data never determines an actor, household,
 link, or authorization decision.
@@ -91,6 +92,11 @@ Source ciphertext is synced and renamed before its live database row commits,
 and startup reconciliation removes only recognizable Mithra orphans. Losing or
 changing the master key makes encrypted state unreadable, so recovery retains
 the original credential independently.
+
+The container image links SQLCipher and encrypts every SQLite page, WAL frame
+and snapshot with a separate HKDF-derived database key; container mode refuses
+plain SQLite. Release binaries and the systemd install keep plain SQLite on
+owner-only paths. See [deploy with containers](deploy-containers.md).
 
 Only the active owner can validate, replace, or remove the household model
 provider. Validation occurs before replacement, the saved key is encrypted,

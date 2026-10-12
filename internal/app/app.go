@@ -14,6 +14,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -28,6 +29,7 @@ import (
 	"github.com/glnarayanan/mithra/internal/finance"
 	"github.com/glnarayanan/mithra/internal/health"
 	"github.com/glnarayanan/mithra/internal/imports"
+	"github.com/glnarayanan/mithra/internal/installer"
 	"github.com/glnarayanan/mithra/internal/jobs"
 	"github.com/glnarayanan/mithra/internal/planning"
 	"github.com/glnarayanan/mithra/internal/providers"
@@ -46,16 +48,20 @@ const (
 // listen. Network listener policy belongs to cmd/mithra.
 type Config struct {
 	DatabasePath    string
+	DatabaseKey     []byte // SQLCipher page key; nil opens plain SQLite.
 	AllowedEmails   []string
 	CanonicalOrigin string
 	SecureCookies   bool
 	TrustedProxy    bool
-	Mailer          providers.Mailer
-	MasterKey       []byte
-	OpenAIClient    *http.Client // Legacy name for the model-provider transport test seam.
-	SourceRoot      string
-	ImportPDF       imports.PDFParser // isolated parser seam used by tests and deployment.
-	Auth            *auth.Service     // test seam; production constructs the standard service.
+	// TrustedProxies are the peer networks whose X-Forwarded-For is believed
+	// in container mode. Socket mode keeps TrustedProxy semantics.
+	TrustedProxies []netip.Prefix
+	Mailer         providers.Mailer
+	MasterKey      []byte
+	OpenAIClient   *http.Client // Legacy name for the model-provider transport test seam.
+	SourceRoot     string
+	ImportPDF      imports.PDFParser // isolated parser seam used by tests and deployment.
+	Auth           *auth.Service     // test seam; production constructs the standard service.
 }
 
 // App owns the initialized database and the embedded HTML renderer.
@@ -82,6 +88,10 @@ type App struct {
 	origin           *url.URL
 	secure           bool
 	trustedProxy     bool
+	trustedProxies   []netip.Prefix
+	maintenance      *sync.RWMutex
+	backupPaths      installer.Paths
+	masterKey        []byte
 	closed           atomic.Bool
 	closeOnce        sync.Once
 	closeErr         error
@@ -113,7 +123,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse embedded templates: %w", err)
 	}
-	db, err := database.Open(ctx, cfg.DatabasePath)
+	db, err := database.OpenWithKey(ctx, cfg.DatabasePath, cfg.DatabaseKey)
 	if err != nil {
 		return nil, fmt.Errorf("initialize database: %w", err)
 	}
@@ -149,15 +159,19 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		_ = db.Close()
 		return nil, errors.New("initialize source storage")
 	}
+	maintenance := &sync.RWMutex{}
+	sources.SetMaintenanceGate(maintenance)
 	if err := sources.Reconcile(ctx); err != nil {
 		_ = db.Close()
 		return nil, errors.New("reconcile source storage")
 	}
-	deletionJournal, err := imports.NewDeletionJournal(filepath.Join(filepath.Dir(sourceRoot), "deletion.journal"), cfg.MasterKey)
+	journalPath := filepath.Join(filepath.Dir(sourceRoot), "deletion.journal")
+	deletionJournal, err := imports.NewDeletionJournal(journalPath, cfg.MasterKey)
 	if err != nil {
 		_ = db.Close()
 		return nil, errors.New("initialize deletion journal")
 	}
+	deletionJournal.SetMaintenanceGate(maintenance)
 	captureRecords := capture.New(db, sources)
 	if err := captureRecords.Cleanup(ctx, time.Now()); err != nil {
 		_ = db.Close()
@@ -177,7 +191,10 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		return nil, errors.New("reconcile visual PDF staging")
 	}
 	cleanupContext, cleanupCancel := context.WithCancel(context.Background())
-	application := &App{db: db, templates: templates, logger: log.Default(), auth: service, mailer: mailer, providerSettings: providerSettings, openAIClient: cfg.OpenAIClient, sources: sources, jobs: jobs.New(db), finance: financeRecords, healthRecords: healthRecords, planningRecords: planningRecords, captureRecords: captureRecords, imports: importRecords, coaching: coachingRecords, importExtractor: imports.New(cfg.ImportPDF), captureVoiceSlot: make(chan struct{}, 2), captureStop: cleanupCancel, captureDone: make(chan struct{}), origin: origin, secure: cfg.SecureCookies, trustedProxy: cfg.TrustedProxy}
+	application := &App{db: db, templates: templates, logger: log.Default(), auth: service, mailer: mailer, providerSettings: providerSettings, openAIClient: cfg.OpenAIClient, sources: sources, jobs: jobs.New(db), finance: financeRecords, healthRecords: healthRecords, planningRecords: planningRecords, captureRecords: captureRecords, imports: importRecords, coaching: coachingRecords, importExtractor: imports.New(cfg.ImportPDF), captureVoiceSlot: make(chan struct{}, 2), captureStop: cleanupCancel, captureDone: make(chan struct{}), origin: origin, secure: cfg.SecureCookies, trustedProxy: cfg.TrustedProxy, trustedProxies: cfg.TrustedProxies, maintenance: maintenance, masterKey: append([]byte(nil), cfg.MasterKey...)}
+	if databasePath, err := filepath.Abs(cfg.DatabasePath); err == nil {
+		application.backupPaths = installer.Paths{Data: filepath.Dir(databasePath), Database: databasePath, Sources: sourceRoot, Journal: journalPath}
+	}
 	go application.cleanCaptureAudio(cleanupContext)
 	return application, nil
 }

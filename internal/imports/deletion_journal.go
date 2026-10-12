@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/glnarayanan/mithra/internal/secrets"
@@ -22,7 +23,12 @@ type journalLine struct{ ID, Envelope string }
 type DeletionJournal struct {
 	path string
 	box  *secrets.Box
+	gate *sync.RWMutex
 }
+
+// SetMaintenanceGate makes Append hold gate's read lock, so a live backup that
+// holds the write lock copies the journal between whole records.
+func (j *DeletionJournal) SetMaintenanceGate(gate *sync.RWMutex) { j.gate = gate }
 
 func NewDeletionJournal(path string, masterKey []byte) (*DeletionJournal, error) {
 	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
@@ -63,6 +69,10 @@ func (j *DeletionJournal) Append(intent DeletionIntent) error {
 	}
 	line, _ := json.Marshal(journalLine{ID: intent.ID, Envelope: base64.RawURLEncoding.EncodeToString(envelope)})
 	line = append(line, '\n')
+	if j.gate != nil {
+		j.gate.RLock()
+		defer j.gate.RUnlock()
+	}
 	file, err := os.OpenFile(j.path, os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {
 		return err

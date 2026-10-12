@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -591,4 +592,11 @@ func importUploadRequest(t *testing.T, session browserSession, name, contentType
 func importForm(session browserSession, values url.Values) *http.Request {
 	values.Set("csrf", session.csrf.Value)
 	return authForm(http.MethodPost, "/imports", values, []*http.Cookie{session.session, session.csrf})
+}
+
+func TestImportExtractionFailureExplainsARestartingPDFParser(t *testing.T) {
+	code, message := importExtractionFailure(fmt.Errorf("extract: %w", importcore.ErrParserUnavailable), "report.pdf")
+	if code != "import_pdf_parser_unavailable" || !strings.Contains(message, "Nothing was saved or sent") {
+		t.Fatalf("parser unavailable = %q %q", code, message)
+	}
 }

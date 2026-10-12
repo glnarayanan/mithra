@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"strings"
 	"testing"
@@ -225,6 +226,29 @@ func TestThrottleIdentityTrustsForwardedIPOnlyForPermissionedProxyMode(t *testin
 	request.Header.Set("X-Forwarded-For", "198.51.100.20, 203.0.113.8")
 	if got := (&App{trustedProxy: true}).clientThrottleKey(request); got != "shared-proxy" {
 		t.Fatalf("multi-hop forwarded value = %q, want shared proxy key", got)
+	}
+}
+
+func TestThrottleIdentityTrustsForwardedIPOnlyFromConfiguredProxyNetworks(t *testing.T) {
+	application := &App{trustedProxies: []netip.Prefix{netip.MustParsePrefix("10.0.1.0/24")}}
+	request := httptest.NewRequest(http.MethodPost, "/auth/login", nil)
+	request.Header.Set("X-Forwarded-For", "198.51.100.20")
+
+	request.RemoteAddr = "10.0.1.7:43210"
+	if got := application.clientThrottleKey(request); got != opaqueThrottleKey("198.51.100.20") {
+		t.Fatalf("trusted proxy peer throttle key = %q", got)
+	}
+	request.RemoteAddr = "[::ffff:10.0.1.7]:43210"
+	if got := application.clientThrottleKey(request); got != opaqueThrottleKey("198.51.100.20") {
+		t.Fatalf("IPv4-mapped trusted proxy peer throttle key = %q", got)
+	}
+	request.RemoteAddr = "10.0.2.7:43210"
+	if got := application.clientThrottleKey(request); got != opaqueThrottleKey("10.0.2.7") {
+		t.Fatalf("untrusted peer forwarded header was believed: %q", got)
+	}
+	request.RemoteAddr = "not-an-address"
+	if application.fromTrustedProxy(request) {
+		t.Fatal("unparseable peer treated as a trusted proxy")
 	}
 }
 

@@ -471,6 +471,8 @@ func importExtractionFailure(err error, fileName string) (string, string) {
 		return "import_pdf_encrypted", "This PDF is password-protected. Save an unlocked copy, then upload that copy. Nothing was saved or sent."
 	case errors.Is(err, imports.ErrOverLimit):
 		return "import_safety_limit", "This file exceeds Mithra's safe size, page, row, or text limits. Nothing was saved or sent."
+	case errors.Is(err, imports.ErrParserUnavailable):
+		return "import_pdf_parser_unavailable", "Mithra's PDF reader is restarting. Nothing was saved or sent; try the file again in a moment."
 	case errors.Is(err, imports.ErrParserTimeout):
 		return "import_pdf_timeout", "Mithra could not finish reading this PDF locally in time. Nothing was saved or sent; try the file once more."
 	default:

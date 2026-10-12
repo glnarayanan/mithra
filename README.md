@@ -37,6 +37,8 @@ invitation-only; there is no public signup.
 - [Product tour](documentation/product-tour.md) — the main household views.
 - [Self-hosting](documentation/self-hosting.md) — verified install and the
   operator lifecycle.
+- [Deploy with containers / Dokploy](documentation/deploy-containers.md) — the
+  compose stack, its settings, volumes, encryption at rest and admin commands.
 - [Architecture](documentation/architecture.md),
   [security](documentation/security.md),
   [operations](documentation/operations.md), and

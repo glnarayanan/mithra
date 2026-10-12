@@ -47,33 +47,44 @@ type AppliedMigration struct {
 // Open initializes the SQLite connection, applies the embedded migration set,
 // and confirms that the resulting database is safe to serve.
 func Open(ctx context.Context, path string) (*sql.DB, error) {
-	return open(ctx, path, os.Geteuid(), os.Getegid())
+	return open(ctx, path, nil, os.Geteuid(), os.Getegid())
+}
+
+// OpenWithKey opens a SQLCipher database with a page key from DeriveKey or
+// KeyForFile. A nil key opens plain SQLite exactly like Open.
+func OpenWithKey(ctx context.Context, path string, key []byte) (*sql.DB, error) {
+	return open(ctx, path, key, os.Geteuid(), os.Getegid())
 }
 
 // OpenForOwner opens a stopped service's database while a root-owned
 // maintenance command retains process control.
 func OpenForOwner(ctx context.Context, path string, uid, gid int) (*sql.DB, error) {
+	return OpenForOwnerWithKey(ctx, path, nil, uid, gid)
+}
+
+// OpenForOwnerWithKey is OpenForOwner for a database that may be encrypted.
+func OpenForOwnerWithKey(ctx context.Context, path string, key []byte, uid, gid int) (*sql.DB, error) {
 	if uid < 0 || gid < 0 {
 		return nil, errors.New("SQLite service ownership is invalid")
 	}
-	return open(ctx, path, uid, gid)
+	return open(ctx, path, key, uid, gid)
 }
 
-func open(ctx context.Context, path string, uid, gid int) (*sql.DB, error) {
+func open(ctx context.Context, path string, key []byte, uid, gid int) (*sql.DB, error) {
 	set, err := EmbeddedMigrations()
 	if err != nil {
 		return nil, err
 	}
-	return openWithMigrations(ctx, path, set, uid, gid)
+	return openWithMigrations(ctx, path, set, key, uid, gid)
 }
 
 // OpenWithMigrations exists for migration verification and focused tests. The
 // application itself always uses the embedded migration set through Open.
 func OpenWithMigrations(ctx context.Context, path string, set []Migration) (*sql.DB, error) {
-	return openWithMigrations(ctx, path, set, os.Geteuid(), os.Getegid())
+	return openWithMigrations(ctx, path, set, nil, os.Geteuid(), os.Getegid())
 }
 
-func openWithMigrations(ctx context.Context, path string, set []Migration, uid, gid int) (*sql.DB, error) {
+func openWithMigrations(ctx context.Context, path string, set []Migration, key []byte, uid, gid int) (*sql.DB, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, errors.New("SQLite database path is required")
 	}
@@ -81,7 +92,22 @@ func openWithMigrations(ctx context.Context, path string, set []Migration, uid, 
 	if err != nil {
 		return nil, err
 	}
+	if key != nil {
+		if len(key) != KeyBytes {
+			return nil, errors.New("SQLite database key is invalid")
+		}
+		if !EncryptionAvailable() {
+			return nil, ErrEncryptionUnavailable
+		}
+	}
 	if fileBacked {
+		if key != nil {
+			if plaintext, err := IsPlaintext(databasePath); err != nil {
+				return nil, fmt.Errorf("inspect SQLite database: %w", err)
+			} else if plaintext {
+				return nil, ErrPlaintextDatabase
+			}
+		}
 		if err := preparePrivateDatabaseFile(databasePath, uid, gid); err != nil {
 			return nil, err
 		}
@@ -90,12 +116,16 @@ func openWithMigrations(ctx context.Context, path string, set []Migration, uid, 
 		}
 	}
 
-	db, err := sql.Open("sqlite3", sqliteDSN(path))
+	db, err := sql.Open("sqlite3", sqliteDSN(path, key))
 	if err != nil {
 		return nil, fmt.Errorf("open SQLite database: %w", err)
 	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
+	if err := verifyEncryption(ctx, db, key); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 
 	if err := initialize(ctx, db, set); err != nil {
 		_ = db.Close()
@@ -229,7 +259,7 @@ func ensurePrivateParentDirectory(path string, uid, gid int) error {
 	return nil
 }
 
-func sqliteDSN(path string) string {
+func sqliteDSN(path string, key []byte) string {
 	if path == ":memory:" {
 		return path + sqliteParameters(path)
 	}
@@ -245,6 +275,9 @@ func sqliteDSN(path string) string {
 	}
 	uri := url.URL{Scheme: "file", Path: filepath.ToSlash(resolved)}
 	uri.RawQuery = sqliteParameters("")[1:]
+	if parameter := KeyParameter(key); parameter != "" {
+		uri.RawQuery += "&" + parameter
+	}
 	return uri.String()
 }
 

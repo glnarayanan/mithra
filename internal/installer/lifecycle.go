@@ -76,7 +76,17 @@ func (p *PreparedRestore) Cleanup() {
 }
 
 func DatabasePreflight(ctx context.Context, path string) error {
-	db, err := sql.Open("sqlite3", "file:"+filepath.ToSlash(path)+"?mode=ro&_foreign_keys=on&_busy_timeout=5000")
+	return DatabasePreflightWithKey(ctx, path, nil)
+}
+
+// DatabasePreflightWithKey is DatabasePreflight for a database that may be
+// SQLCipher-encrypted with a key derived from masterKey.
+func DatabasePreflightWithKey(ctx context.Context, path string, masterKey []byte) error {
+	key, err := databaseKey(path, masterKey)
+	if err != nil {
+		return err
+	}
+	db, err := sql.Open("sqlite3", mithradb.FileDSN(filepath.ToSlash(path), "mode=ro&_foreign_keys=on&_busy_timeout=5000", key))
 	if err != nil {
 		return err
 	}
@@ -298,7 +308,7 @@ func CreateBackup(ctx context.Context, paths Paths, masterKey []byte, now time.T
 		return "", err
 	}
 	defer os.RemoveAll(stage)
-	if err := snapshotSQLite(ctx, paths.Database, filepath.Join(stage, "mithra.sqlite3")); err != nil {
+	if err := snapshotSQLite(ctx, paths.Database, filepath.Join(stage, "mithra.sqlite3"), masterKey); err != nil {
 		return "", err
 	}
 	if err := copyTree(paths.Sources, filepath.Join(stage, "sources")); err != nil {
@@ -343,7 +353,7 @@ func RehearseMigrations(ctx context.Context, databasePath string) error {
 	}
 	defer os.RemoveAll(stage)
 	candidate := filepath.Join(stage, "mithra.sqlite3")
-	if err := snapshotSQLite(ctx, databasePath, candidate); err != nil {
+	if err := snapshotSQLite(ctx, databasePath, candidate, nil); err != nil {
 		return err
 	}
 	db, err := mithradb.Open(ctx, candidate)
@@ -396,7 +406,7 @@ func PrepareRestore(ctx context.Context, paths Paths, archive string, masterKey 
 	if err := verifyExtracted(stage, masterKey); err != nil {
 		return fail(err)
 	}
-	if err := DatabasePreflight(ctx, filepath.Join(stage, "mithra.sqlite3")); err != nil {
+	if err := DatabasePreflightWithKey(ctx, filepath.Join(stage, "mithra.sqlite3"), masterKey); err != nil {
 		return fail(fmt.Errorf("restored database preflight: %w", err))
 	}
 	archivedJournal, err := imports.NewDeletionJournal(filepath.Join(stage, "deletion.journal"), masterKey)
@@ -819,7 +829,11 @@ func mergeDeletionJournals(archivedPath, currentPath string, key []byte) ([]impo
 
 func sanitizeRestore(ctx context.Context, stage string, intents []imports.DeletionIntent, allowlist []string, masterKey []byte) error {
 	dbPath := filepath.Join(stage, "mithra.sqlite3")
-	db, err := sql.Open("sqlite3", "file:"+filepath.ToSlash(dbPath)+"?_foreign_keys=on&_busy_timeout=5000")
+	key, err := databaseKey(dbPath, masterKey)
+	if err != nil {
+		return err
+	}
+	db, err := sql.Open("sqlite3", mithradb.FileDSN(filepath.ToSlash(dbPath), "_foreign_keys=on&_busy_timeout=5000", key))
 	if err != nil {
 		return err
 	}
@@ -904,8 +918,14 @@ func restoreStatementArgs(statement string) []any {
 	return nil
 }
 
-func snapshotSQLite(ctx context.Context, source, target string) error {
-	db, err := sql.Open("sqlite3", "file:"+filepath.ToSlash(source)+"?_foreign_keys=on&_busy_timeout=5000")
+// snapshotSQLite writes a consistent copy of source to target. VACUUM INTO
+// keeps an encrypted source's key, so the snapshot is never plaintext.
+func snapshotSQLite(ctx context.Context, source, target string, masterKey []byte) error {
+	key, err := databaseKey(source, masterKey)
+	if err != nil {
+		return err
+	}
+	db, err := sql.Open("sqlite3", mithradb.FileDSN(filepath.ToSlash(source), "_foreign_keys=on&_busy_timeout=5000", key))
 	if err != nil {
 		return err
 	}
@@ -922,6 +942,16 @@ func snapshotSQLite(ctx context.Context, source, target string) error {
 		return err
 	}
 	return os.Chmod(target, 0o600)
+}
+
+// databaseKey returns the SQLCipher key for path, or nil when no master key is
+// available (systemd maintenance of a plain SQLite install) or the file is an
+// unencrypted database.
+func databaseKey(path string, masterKey []byte) ([]byte, error) {
+	if masterKey == nil {
+		return nil, nil
+	}
+	return mithradb.KeyForFile(path, masterKey)
 }
 
 func digestTree(root string) ([]backupEntry, error) {

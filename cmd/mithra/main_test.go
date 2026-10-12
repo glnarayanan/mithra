@@ -189,6 +189,22 @@ func TestStartupFailureLoggingRedactsSensitiveCLIAndPathText(t *testing.T) {
 	}
 }
 
+func TestOperatorCommandFailuresExplainThemselvesWithoutEchoingArguments(t *testing.T) {
+	const sensitive = "--archive=/private/mithra/household.mbackup?token=not-for-logs"
+	err := run([]string{"verify-backup", sensitive, "extra"})
+	if err == nil {
+		t.Fatal("invalid verify-backup arguments unexpectedly succeeded")
+	}
+	var logs bytes.Buffer
+	logStartupFailure(&logs, err)
+	if !strings.HasPrefix(logs.String(), "error_code=command_failed command=verify-backup message=") {
+		t.Fatalf("command log = %q", logs.String())
+	}
+	if strings.Contains(logs.String(), "not-for-logs") || strings.Contains(logs.String(), "/private/mithra") {
+		t.Fatalf("command log echoed its arguments: %q", logs.String())
+	}
+}
+
 func TestRecoverOwnerCommandUsesCurrentAllowlistAndLeavesPasswordBootstrapPending(t *testing.T) {
 	ctx := context.Background()
 	databasePath := filepath.Join(t.TempDir(), "mithra.sqlite3")

@@ -92,11 +92,15 @@ func Reset(ctx context.Context, cfg Config) (receipt Receipt, err error) {
 	}
 	defer releaseLock(lock)
 
+	databaseKey, err := database.KeyForFile(databasePath, cfg.MasterKey)
+	if err != nil {
+		return receipt, err
+	}
 	var db *sql.DB
 	if cfg.Ownership.Set {
-		db, err = database.OpenForOwner(ctx, databasePath, cfg.Ownership.UID, cfg.Ownership.GID)
+		db, err = database.OpenForOwnerWithKey(ctx, databasePath, databaseKey, cfg.Ownership.UID, cfg.Ownership.GID)
 	} else {
-		db, err = database.Open(ctx, databasePath)
+		db, err = database.OpenWithKey(ctx, databasePath, databaseKey)
 	}
 	if err != nil {
 		return receipt, err
@@ -143,7 +147,7 @@ func Reset(ctx context.Context, cfg Config) (receipt Receipt, err error) {
 	rollback := func(cause error) error {
 		closeErr := closeDB()
 		restoreErr := installer.RestoreGenerationWithOwnership(paths, archive, cfg.MasterKey, cfg.Ownership, func() error {
-			return installer.DatabasePreflight(ctx, databasePath)
+			return installer.DatabasePreflightWithKey(ctx, databasePath, cfg.MasterKey)
 		})
 		return errors.Join(cause, closeErr, restoreErr)
 	}
