@@ -53,7 +53,10 @@ jobs:
           mkdir -p "$secrets"
           docker run --rm "mithra:$MITHRA_VERSION" generate-master-key > "$secrets/master.key"
           printf 'sk_ci_placeholder' > "$secrets/plunk.key"
+          # Mithra accepts secret mounts owned by root or its own uid, as on
+          # a Dokploy host; the runner user owns neither.
           chmod 0644 "$secrets"/*.key
+          sudo chown root:root "$secrets"/*.key
           cat > "$RUNNER_TEMP/mithra.env" <<ENV
           ALLOWED_EMAILS=owner@example.com,partner@example.com
           MITHRA_CANONICAL_ORIGIN=https://mithra.ci.invalid
