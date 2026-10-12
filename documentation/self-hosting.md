@@ -6,6 +6,9 @@ reverse-proxy selection, monitoring, backup storage, and access to the server.
 Mithra never installs packages, changes global firewall policy, manages DNS, or
 claims unrelated proxy configuration.
 
+To run Mithra as containers instead, for example on Dokploy, follow
+[deploy with containers](deploy-containers.md); it does not use this installer.
+
 Read [operations](operations.md) for ownership and release mechanics,
 [backup and restore](backup-restore.md) for recovery semantics, and
 [security](security.md) for the security contract.

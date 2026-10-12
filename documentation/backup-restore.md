@@ -7,7 +7,9 @@ native SQLite snapshot is created. Every archived file has an exact size and
 SHA-256 digest. A manifest records the retained-key fingerprint and complete
 generation digest and is authenticated with a key derived from the master key.
 The key and Plunk credential are never archived. The timer retains the seven
-most recent successfully committed archives.
+most recent successfully committed archives. In the container deployment the
+app writes the same archives on its own daily schedule; see
+[deploy with containers](deploy-containers.md#backups-and-restore).
 
 ```bash
 sudo mithra-installer backup
