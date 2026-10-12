@@ -8,8 +8,10 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -38,7 +40,7 @@ func (p SocketPDFParser) Extract(ctx context.Context, content []byte, limits Lim
 	dialer := net.Dialer{Timeout: timeout}
 	connection, err := dialer.DialContext(ctx, "unix", p.Path)
 	if err != nil {
-		return nil, ErrUnreadable
+		return nil, ErrParserUnavailable
 	}
 	defer connection.Close()
 	deadline := time.Now().Add(timeout)
@@ -80,10 +82,22 @@ type parserResponse struct {
 // ServePDFParser accepts systemd-activated parser connections until the
 // listener closes. Each request is independently bounded and panic-contained.
 func ServePDFParser(listener net.Listener) error {
+	return ServePDFParserFor(context.Background(), listener)
+}
+
+// ServePDFParserFor serves like ServePDFParser until ctx ends, then stops
+// accepting and waits for in-flight requests, which are already bounded by the
+// per-connection deadline. Containers use it to recycle the parser process the
+// way systemd's RuntimeMaxSec does.
+func ServePDFParserFor(ctx context.Context, listener net.Listener) error {
 	if listener == nil {
 		return ErrUnreadable
 	}
+	stop := context.AfterFunc(ctx, func() { _ = listener.Close() })
+	defer stop()
 	slots := make(chan struct{}, 2)
+	var inFlight sync.WaitGroup
+	defer inFlight.Wait()
 	for {
 		connection, err := listener.Accept()
 		if err != nil {
@@ -93,8 +107,46 @@ func ServePDFParser(listener net.Listener) error {
 			return err
 		}
 		slots <- struct{}{}
-		go func() { defer func() { <-slots }(); serveParserConnection(connection) }()
+		inFlight.Add(1)
+		go func() {
+			defer inFlight.Done()
+			defer func() { <-slots }()
+			serveParserConnection(connection)
+		}()
 	}
+}
+
+// ListenPDFParser creates the parser's own Unix socket at path for platforms
+// without socket activation. The parent directory must be a private directory
+// of the parser identity's group; a stale socket left by a previous process in
+// that directory is replaced. The socket is group read/write so only the
+// application identity, which shares the group, can connect.
+func ListenPDFParser(path string) (*net.UnixListener, error) {
+	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+		return nil, ErrInvalidInput
+	}
+	directory, err := os.Lstat(filepath.Dir(path))
+	if err != nil || !directory.IsDir() || directory.Mode()&os.ModeSymlink != 0 || directory.Mode().Perm()&0o007 != 0 {
+		return nil, ErrInvalidInput
+	}
+	if existing, err := os.Lstat(path); err == nil {
+		if existing.Mode()&os.ModeSocket == 0 {
+			return nil, ErrInvalidInput
+		}
+		if err := os.Remove(path); err != nil {
+			return nil, err
+		}
+	}
+	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
+	if err != nil {
+		return nil, err
+	}
+	listener.SetUnlinkOnClose(true)
+	if err := os.Chmod(path, 0o660); err != nil {
+		_ = listener.Close()
+		return nil, err
+	}
+	return listener, nil
 }
 
 func SystemdListener() (net.Listener, error) {
