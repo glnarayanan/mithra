@@ -1,11 +1,11 @@
 module github.com/glnarayanan/mithra
 
-go 1.26.10
+go 1.27.3
 
 require (
-	github.com/ledongthuc/pdf v0.0.0-20260907135840-6c8c28e0e8a0
+	github.com/ledongthuc/pdf v0.0.0-20261020125853-5e46805f718e
 	github.com/mattn/go-sqlite3 v1.14.52
-	github.com/xuri/excelize/v2 v2.11.1-0.20260930021559-01a9ff32fb3c
+	github.com/xuri/excelize/v2 v2.11.1-0.20261020033641-611b222fd8f7
 	golang.org/x/crypto v0.58.0
 )
 
