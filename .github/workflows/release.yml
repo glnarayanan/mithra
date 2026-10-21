@@ -21,7 +21,7 @@ jobs:
       GOFLAGS: -tags=sqlite_fts5,sqlite_omit_load_extension
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: Build release binaries

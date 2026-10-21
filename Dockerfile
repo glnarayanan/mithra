@@ -6,8 +6,8 @@
 # sandboxed PDF parser; docker-compose.yml decides which and how each is
 # confined. See documentation/deploy-containers.md.
 
-ARG GO_VERSION=1.26.10
-ARG DEBIAN_RELEASE=bookworm
+ARG GO_VERSION=1.27.3
+ARG DEBIAN_RELEASE=trixie
 
 # SQLCipher source, pinned to the v4.19.0 tag and checked against its commit
 # so a moved tag cannot change what is compiled into the image.
@@ -54,7 +54,7 @@ RUN go vet ./... && go test -count=1 ./...
 
 FROM debian:${DEBIAN_RELEASE}-slim AS runtime
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates tzdata libssl3 \
+ && apt-get install -y --no-install-recommends ca-certificates tzdata libssl3t64 \
  && rm -rf /var/lib/apt/lists/* \
  && groupadd --system --gid 10001 mithra \
  && useradd --system --uid 10001 --gid mithra --home-dir /data --no-create-home --shell /usr/sbin/nologin mithra \
