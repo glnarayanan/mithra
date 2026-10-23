@@ -9,8 +9,7 @@ and dependency-free frontend unless a product decision explicitly changes them.
 
 ## Design
 
-Read `DESIGN.md` before any UI change when you have it (it is kept local
-and git-ignored, like `PRODUCT.md`); the rules below are the summary. Mithra is the blue square in the
+Read [DESIGN.md](DESIGN.md) before any UI change. Mithra is the blue square in the
 MithraHQ shared system (derived from the Lexington Vanta theme), shared with
 mithrahq.com, Mithra, HealthTrends and TinyTots.
 
