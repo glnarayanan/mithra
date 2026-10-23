@@ -87,7 +87,7 @@ written.
    docker network inspect dokploy-network --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}'
    ```
 
-4. **Add the domain.** In **Domains**, add `mithrahq.com` with service `app`,
+4. **Add the domain.** In **Domains**, add `app.mithrahq.com` with service `app`,
    container port `8080`, HTTPS on and a Let's Encrypt certificate.
 5. **Deploy.** Wait until both services report healthy, then check the stack
    from the server:
@@ -99,7 +99,7 @@ written.
    A healthy stack prints `database=encrypted`, `database_check=ok` and
    `pdf_parser=reachable`. Dokploy shows the compose project name, which is
    `<app-name>` here.
-6. **Sign in.** Open `https://mithrahq.com`. The first allowlisted adult uses
+6. **Sign in.** Open `https://app.mithrahq.com`. The first allowlisted adult uses
    **Set or reset your password** and becomes the household owner. The owner
    invites the partner in **Settings**. See
    [self-hosting](self-hosting.md#first-login-and-household-setup) for the rest
@@ -116,7 +116,7 @@ Set these in Dokploy. Compose refuses to start when any of them is missing.
 | Variable | Example | Purpose |
 | --- | --- | --- |
 | `ALLOWED_EMAILS` | `owner@example.com,partner@example.com` | The only addresses that can sign in. There is no public signup. |
-| `MITHRA_CANONICAL_ORIGIN` | `https://mithrahq.com` | The public origin. Must be HTTPS. Used for links, cookie scope and the CSRF origin check. Never taken from `Host` or forwarding headers. |
+| `MITHRA_CANONICAL_ORIGIN` | `https://app.mithrahq.com` | The public origin. Must be HTTPS. Used for links, cookie scope and the CSRF origin check. Never taken from `Host` or forwarding headers. |
 | `MITHRA_PLUNK_FROM` | `Mithra <hello@mithrahq.com>` | The verified Plunk sender. |
 | `MITHRA_TRUSTED_PROXIES` | `10.0.1.0/24` | Comma-separated private CIDRs of the proxy network. Only peers in these networks may supply `X-Forwarded-For`. |
 

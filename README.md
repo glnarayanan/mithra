@@ -27,7 +27,7 @@ dates, and privacy scope strongly match. It does not expose a private record,
 or even the existence of a private issue, in shared status or copy. Invalid or
 incompatible health readings never support a comparison or coaching claim.
 
-Try the hosted app at [mithrahq.com](https://mithrahq.com). It is
+Try the hosted app at [app.mithrahq.com](https://app.mithrahq.com). It is
 invitation-only; there is no public signup.
 
 ## Start here
