@@ -103,6 +103,9 @@ type NavigationItem struct {
 	Label   string
 	Group   string
 	Current bool
+	// Utility items stay in the mobile menu and quick navigation but are
+	// reached from the toolbar or account menu in the desktop top bar.
+	Utility bool
 }
 
 // New opens a verified SQLite database before making a handler available.
@@ -336,12 +339,12 @@ func navigationForPath(path string) []NavigationItem {
 	return []NavigationItem{
 		{Path: "/", Label: "Family Brief", Group: "Overview", Current: path == "/"},
 		{Path: "/review", Label: "Week in Review", Current: path == "/review"},
-		{Path: "/imports", Label: "Import", Group: "Add", Current: path == "/imports"},
+		{Path: "/imports", Label: "Import", Group: "Add", Current: path == "/imports", Utility: true},
 		{Path: "/finance", Label: "Finance", Group: "Household", Current: path == "/finance"},
 		{Path: "/health", Label: "Health", Current: path == "/health"},
 		{Path: "/planning", Label: "Planning", Current: path == "/planning"},
-		{Path: "/settings", Label: "Settings", Group: "Account", Current: path == "/settings"},
-		{Path: "/help", Label: "Help", Current: path == "/help"},
+		{Path: "/settings", Label: "Settings", Group: "Account", Current: path == "/settings", Utility: true},
+		{Path: "/help", Label: "Help", Current: path == "/help", Utility: true},
 	}
 }
 

@@ -19,7 +19,6 @@
       <section class="health-heading">
         <div class="page-shell health-heading-row">
           <div>
-            <p class="eyebrow">Reports and routines</p>
             <h1>Health trends</h1>
             <p class="introduction-copy">Keep reported values, appointments, and routines together so changes are easier to see.</p>
           </div>
@@ -36,9 +35,9 @@
         {{if .Status}}<p class="status-message" role="status" aria-live="polite">{{.Status}}</p>{{end}}
         {{if .Error}}<section class="finance-error" role="alert"><h2>Health records are temporarily unavailable</h2><p>{{.Error}}</p></section>
         {{else if not .HasRecords}}
-        <section class="empty-state" aria-labelledby="health-empty-title"><p class="eyebrow">Get started</p><h2 id="health-empty-title">No health records yet</h2><p>Import a report or add an appointment, measurement, or routine to see it here.</p><div class="empty-actions"><a href="/#capture">Add an update</a><a href="/imports">Import a report</a></div></section>
+        <section class="empty-state" aria-labelledby="health-empty-title"><h2 id="health-empty-title">No health records yet</h2><p>Import a report or add an appointment, measurement, or routine to see it here.</p><div class="empty-actions"><a href="/#capture">Add an update</a><a href="/imports">Import a report</a></div></section>
         {{else}}
-        <section aria-labelledby="health-series-title"><div class="section-heading"><div><p class="eyebrow">Over time</p><h2 id="health-series-title">Measurements</h2></div><p>Only comparable results with matching context and units are shown together.</p></div>
+        <section aria-labelledby="health-series-title"><div class="section-heading"><div><h2 id="health-series-title">Measurements</h2></div><p>Only comparable results with matching context and units are shown together.</p></div>
           <nav class="analytics-range" aria-label="Measurement range">{{range .Ranges}}<a href="{{.URL}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a>{{end}}</nav>
           {{if .Series}}
           <p class="analytics-note">Showing {{range .Ranges}}{{if .Current}}{{.Label}}{{end}}{{end}} of reported measurements. The solid line joins recorded values. The dashed line shows a calculated direction only; it is not medical advice.</p>
@@ -49,17 +48,17 @@
           {{end}}
         </section>
         {{if .Conflicts}}
-        <section class="finance-section incomplete-panel" aria-labelledby="health-conflicts-title"><div class="section-heading"><div><p class="eyebrow">Worth checking</p><h2 id="health-conflicts-title">Values kept separate</h2></div><p>The units do not match, so Mithra did not combine them. <a href="/help#health-corrections">Help with corrections</a></p></div>
+        <section class="finance-section incomplete-panel" aria-labelledby="health-conflicts-title"><div class="section-heading"><div><h2 id="health-conflicts-title">Values kept separate</h2></div><p>The units do not match, so Mithra did not combine them. <a href="/help#health-corrections">Help with corrections</a></p></div>
           <ul class="health-conflict-list">{{range .Conflicts}}<li><div><strong>{{.Analyte}}</strong><p>{{.Reason}}</p><a href="{{.EvidenceURL}}">View original report</a></div><form method="post" action="/health/correct" class="health-correction-form"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="record_id" value="{{.RecordID}}"><input type="hidden" name="version" value="{{.Version}}"><label>Correct value<input name="value" inputmode="decimal" maxlength="128" required></label><label>Correct unit<input name="unit" maxlength="64" required></label><button type="submit">Use corrected value</button></form></li>{{end}}</ul>
         </section>
         {{end}}
         {{if .Appointments}}
-        <section class="finance-section" aria-labelledby="health-appointments-title"><div class="section-heading"><div><p class="eyebrow">Dates ahead</p><h2 id="health-appointments-title">Appointments</h2></div><p>Recorded dates only.</p></div><ol class="obligation-list">{{range .Appointments}}<li><time datetime="{{.DateISO}}">{{.DateLabel}}</time><div><strong>{{.Label}}</strong><span>{{.Subject}}{{if .Location}} · {{.Location}}{{end}}</span></div><a href="{{.EvidenceURL}}">View original</a></li>{{end}}</ol></section>
+        <section class="finance-section" aria-labelledby="health-appointments-title"><div class="section-heading"><div><h2 id="health-appointments-title">Appointments</h2></div><p>Recorded dates only.</p></div><ol class="obligation-list">{{range .Appointments}}<li><time datetime="{{.DateISO}}">{{.DateLabel}}</time><div><strong>{{.Label}}</strong><span>{{.Subject}}{{if .Location}} · {{.Location}}{{end}}</span></div><a href="{{.EvidenceURL}}">View original</a></li>{{end}}</ol></section>
         {{end}}
         {{if .Routines}}
-        <section class="finance-section" aria-labelledby="health-routines-title"><div class="section-heading"><div><p class="eyebrow">As recorded</p><h2 id="health-routines-title">Care routines</h2></div><p>Shown exactly as saved.</p></div><ul class="issue-list">{{range .Routines}}<li><div><strong>{{.Label}}</strong><p>{{.Schedule}} · {{.Subject}}</p></div><a href="{{.EvidenceURL}}">View original</a></li>{{end}}</ul></section>
+        <section class="finance-section" aria-labelledby="health-routines-title"><div class="section-heading"><div><h2 id="health-routines-title">Care routines</h2></div><p>Shown exactly as saved.</p></div><ul class="issue-list">{{range .Routines}}<li><div><strong>{{.Label}}</strong><p>{{.Schedule}} · {{.Subject}}</p></div><a href="{{.EvidenceURL}}">View original</a></li>{{end}}</ul></section>
         {{end}}
-        <section class="finance-section" aria-labelledby="health-records-title"><div class="section-heading"><div><p class="eyebrow">Details</p><h2 id="health-records-title">Health records</h2></div><p>Open a source to check the original report or update.</p></div><div class="record-table-wrap"><table class="record-table"><thead><tr><th scope="col">Record</th><th scope="col">Subject</th><th scope="col">Date</th><th scope="col">Observed</th><th scope="col">Context</th><th scope="col">Visibility</th><th scope="col">Source</th></tr></thead><tbody>{{range .Records}}<tr><th scope="row">{{.Label}}</th><td>{{.Subject}}</td><td>{{.Date}}</td><td class="number-cell">{{.Observed}}</td><td>{{.Context}}</td><td>{{.Scope}}</td><td><a href="{{.EvidenceURL}}">View</a></td></tr>{{end}}</tbody></table></div></section>
+        <section class="finance-section" aria-labelledby="health-records-title"><div class="section-heading"><div><h2 id="health-records-title">Health records</h2></div><p>Open a source to check the original report or update.</p></div><div class="record-table-wrap"><table class="record-table"><thead><tr><th scope="col">Record</th><th scope="col">Subject</th><th scope="col">Date</th><th scope="col">Observed</th><th scope="col">Context</th><th scope="col">Visibility</th><th scope="col">Source</th></tr></thead><tbody>{{range .Records}}<tr><th scope="row">{{.Label}}</th><td>{{.Subject}}</td><td>{{.Date}}</td><td class="number-cell">{{.Observed}}</td><td>{{.Context}}</td><td>{{.Scope}}</td><td><a href="{{.EvidenceURL}}">View</a></td></tr>{{end}}</tbody></table></div></section>
         {{end}}
       </div>
     </main>

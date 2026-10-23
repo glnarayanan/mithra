@@ -80,7 +80,7 @@ func TestFamilyBriefLoadsWithoutAIThenRefreshesEvidenceAndKeepsPartnerPrivateOut
 	})}
 
 	initial := serve(application, coachingGET("/", ownerSession))
-	for _, required := range []string{"Family Brief", "Here’s what changed and what’s coming up.", "At a glance", "Mithra insights", "Patterns in your records", "Worth checking", "Regenerate AI insights"} {
+	for _, required := range []string{"Family Brief", "Here’s what changed and what’s coming up.", "At a glance", "Patterns in your records", "Worth checking", "Regenerate AI insights"} {
 		if !strings.Contains(initial.Body.String(), required) {
 			t.Fatalf("initial brief missing %q: %s", required, initial.Body.String())
 		}
