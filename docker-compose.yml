@@ -17,7 +17,7 @@ services:
     command: ["serve"]
     environment:
       ALLOWED_EMAILS: ${ALLOWED_EMAILS:?set the comma-separated sign-in allowlist}
-      MITHRA_CANONICAL_ORIGIN: ${MITHRA_CANONICAL_ORIGIN:?set the public https origin, for example https://mithrahq.com}
+      MITHRA_CANONICAL_ORIGIN: ${MITHRA_CANONICAL_ORIGIN:?set the public https origin, for example https://app.mithrahq.com}
       MITHRA_PLUNK_FROM: ${MITHRA_PLUNK_FROM:?set the verified Plunk sender, for example Mithra <hello@mithrahq.com>}
       MITHRA_TRUSTED_PROXIES: ${MITHRA_TRUSTED_PROXIES:?set the private CIDR of the reverse-proxy network}
       MITHRA_BACKUP_TIME: ${MITHRA_BACKUP_TIME:-03:30}
