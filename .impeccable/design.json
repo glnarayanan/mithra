@@ -1,0 +1,515 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-23T00:00:00Z",
+  "title": "Design System: Mithra",
+  "extensions": {
+    "colorMeta": {
+      "mithra-blue": {
+        "role": "primary",
+        "displayName": "Mithra Blue",
+        "canonical": "oklch(51.9% 0.1261 259.6)",
+        "tonalRamp": [
+          "oklch(24% 0.055 259.6)",
+          "oklch(34% 0.085 259.6)",
+          "oklch(45% 0.115 259.6)",
+          "oklch(51.9% 0.1261 259.6)",
+          "oklch(62% 0.13 259.6)",
+          "oklch(82% 0.08 259.6)",
+          "oklch(94.5% 0.028 259.6)",
+          "oklch(97.5% 0.012 259.6)"
+        ]
+      },
+      "link-blue": {
+        "role": "primary",
+        "displayName": "Link Blue",
+        "canonical": "oklch(45% 0.115 259.6)",
+        "tonalRamp": [
+          "oklch(24% 0.055 259.6)",
+          "oklch(34% 0.085 259.6)",
+          "oklch(45% 0.115 259.6)",
+          "oklch(51.9% 0.1261 259.6)",
+          "oklch(62% 0.13 259.6)",
+          "oklch(82% 0.08 259.6)",
+          "oklch(94.5% 0.028 259.6)",
+          "oklch(97.5% 0.012 259.6)"
+        ]
+      },
+      "blue-wash": {
+        "role": "primary",
+        "displayName": "Blue Wash",
+        "canonical": "oklch(94.5% 0.028 259.6)",
+        "tonalRamp": [
+          "oklch(24% 0.055 259.6)",
+          "oklch(34% 0.085 259.6)",
+          "oklch(45% 0.115 259.6)",
+          "oklch(51.9% 0.1261 259.6)",
+          "oklch(62% 0.13 259.6)",
+          "oklch(82% 0.08 259.6)",
+          "oklch(94.5% 0.028 259.6)",
+          "oklch(97.5% 0.012 259.6)"
+        ]
+      },
+      "blue-mist": {
+        "role": "primary",
+        "displayName": "Blue Mist",
+        "canonical": "oklch(97.5% 0.012 259.6)",
+        "tonalRamp": [
+          "oklch(24% 0.055 259.6)",
+          "oklch(34% 0.085 259.6)",
+          "oklch(45% 0.115 259.6)",
+          "oklch(51.9% 0.1261 259.6)",
+          "oklch(62% 0.13 259.6)",
+          "oklch(82% 0.08 259.6)",
+          "oklch(94.5% 0.028 259.6)",
+          "oklch(97.5% 0.012 259.6)"
+        ]
+      },
+      "blue-edge": {
+        "role": "primary",
+        "displayName": "Blue Edge",
+        "canonical": "oklch(89.5% 0.05 259.6)",
+        "tonalRamp": [
+          "oklch(24% 0.055 259.6)",
+          "oklch(34% 0.085 259.6)",
+          "oklch(45% 0.115 259.6)",
+          "oklch(51.9% 0.1261 259.6)",
+          "oklch(62% 0.13 259.6)",
+          "oklch(82% 0.08 259.6)",
+          "oklch(94.5% 0.028 259.6)",
+          "oklch(97.5% 0.012 259.6)"
+        ]
+      },
+      "mustard": {
+        "role": "secondary",
+        "displayName": "Mustard",
+        "canonical": "oklch(74.7% 0.1231 86.4)",
+        "tonalRamp": [
+          "oklch(15% 0.1231 86.4)",
+          "oklch(26% 0.1231 86.4)",
+          "oklch(38% 0.1231 86.4)",
+          "oklch(50% 0.1231 86.4)",
+          "oklch(62% 0.1231 86.4)",
+          "oklch(74% 0.1231 86.4)",
+          "oklch(86% 0.1231 86.4)",
+          "oklch(95% 0.1231 86.4)"
+        ]
+      },
+      "terracotta": {
+        "role": "tertiary",
+        "displayName": "Terracotta",
+        "canonical": "oklch(52% 0.15 41.2)",
+        "tonalRamp": [
+          "oklch(15% 0.15 41.2)",
+          "oklch(26% 0.15 41.2)",
+          "oklch(38% 0.15 41.2)",
+          "oklch(50% 0.15 41.2)",
+          "oklch(62% 0.15 41.2)",
+          "oklch(74% 0.15 41.2)",
+          "oklch(86% 0.15 41.2)",
+          "oklch(95% 0.15 41.2)"
+        ]
+      },
+      "coral": {
+        "role": "tertiary",
+        "displayName": "Coral (HealthTrends family colour, unused in Mithra surfaces)",
+        "canonical": "oklch(64.2% 0.1541 41.2)",
+        "tonalRamp": [
+          "oklch(15% 0.1541 41.2)",
+          "oklch(26% 0.1541 41.2)",
+          "oklch(38% 0.1541 41.2)",
+          "oklch(50% 0.1541 41.2)",
+          "oklch(62% 0.1541 41.2)",
+          "oklch(74% 0.1541 41.2)",
+          "oklch(86% 0.1541 41.2)",
+          "oklch(95% 0.1541 41.2)"
+        ]
+      },
+      "navy-ink": {
+        "role": "neutral",
+        "displayName": "Navy Ink",
+        "canonical": "oklch(22% 0.035 265)",
+        "tonalRamp": [
+          "oklch(22% 0.035 265)",
+          "oklch(26% 0.035 265)",
+          "oklch(34% 0.03 265)",
+          "oklch(46% 0.022 265)",
+          "oklch(62% 0.018 265)",
+          "oklch(81% 0.012 85)",
+          "oklch(93.5% 0.012 85)",
+          "oklch(96.2% 0.008 85)"
+        ]
+      },
+      "slate-800": {
+        "role": "neutral",
+        "displayName": "Slate 800",
+        "canonical": "oklch(34% 0.03 265)",
+        "tonalRamp": [
+          "oklch(22% 0.035 265)",
+          "oklch(26% 0.035 265)",
+          "oklch(34% 0.03 265)",
+          "oklch(46% 0.022 265)",
+          "oklch(62% 0.018 265)",
+          "oklch(81% 0.012 85)",
+          "oklch(93.5% 0.012 85)",
+          "oklch(96.2% 0.008 85)"
+        ]
+      },
+      "muted-ink": {
+        "role": "neutral",
+        "displayName": "Muted Ink",
+        "canonical": "oklch(46% 0.022 265)",
+        "tonalRamp": [
+          "oklch(22% 0.035 265)",
+          "oklch(26% 0.035 265)",
+          "oklch(34% 0.03 265)",
+          "oklch(46% 0.022 265)",
+          "oklch(62% 0.018 265)",
+          "oklch(81% 0.012 85)",
+          "oklch(93.5% 0.012 85)",
+          "oklch(96.2% 0.008 85)"
+        ]
+      },
+      "on-navy": {
+        "role": "neutral",
+        "displayName": "On Navy",
+        "canonical": "oklch(95% 0.01 85)",
+        "tonalRamp": [
+          "oklch(22% 0.035 265)",
+          "oklch(26% 0.035 265)",
+          "oklch(34% 0.03 265)",
+          "oklch(46% 0.022 265)",
+          "oklch(62% 0.018 265)",
+          "oklch(81% 0.012 85)",
+          "oklch(93.5% 0.012 85)",
+          "oklch(96.2% 0.008 85)"
+        ]
+      },
+      "on-navy-muted": {
+        "role": "neutral",
+        "displayName": "On Navy Muted",
+        "canonical": "oklch(78% 0.02 265)",
+        "tonalRamp": [
+          "oklch(22% 0.035 265)",
+          "oklch(26% 0.035 265)",
+          "oklch(34% 0.03 265)",
+          "oklch(46% 0.022 265)",
+          "oklch(62% 0.018 265)",
+          "oklch(81% 0.012 85)",
+          "oklch(93.5% 0.012 85)",
+          "oklch(96.2% 0.008 85)"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "oklch(99.6% 0.003 85)",
+        "tonalRamp": [
+          "oklch(22% 0.035 265)",
+          "oklch(26% 0.035 265)",
+          "oklch(34% 0.03 265)",
+          "oklch(46% 0.022 265)",
+          "oklch(62% 0.018 265)",
+          "oklch(81% 0.012 85)",
+          "oklch(93.5% 0.012 85)",
+          "oklch(96.2% 0.008 85)"
+        ]
+      },
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Canvas",
+        "canonical": "oklch(98.8% 0.005 85)",
+        "tonalRamp": [
+          "oklch(22% 0.035 265)",
+          "oklch(26% 0.035 265)",
+          "oklch(34% 0.03 265)",
+          "oklch(46% 0.022 265)",
+          "oklch(62% 0.018 265)",
+          "oklch(81% 0.012 85)",
+          "oklch(93.5% 0.012 85)",
+          "oklch(96.2% 0.008 85)"
+        ]
+      },
+      "paper-surface": {
+        "role": "neutral",
+        "displayName": "Paper Surface",
+        "canonical": "oklch(96.2% 0.008 85)",
+        "tonalRamp": [
+          "oklch(22% 0.035 265)",
+          "oklch(26% 0.035 265)",
+          "oklch(34% 0.03 265)",
+          "oklch(46% 0.022 265)",
+          "oklch(62% 0.018 265)",
+          "oklch(81% 0.012 85)",
+          "oklch(93.5% 0.012 85)",
+          "oklch(96.2% 0.008 85)"
+        ]
+      },
+      "paper-hover": {
+        "role": "neutral",
+        "displayName": "Paper Hover",
+        "canonical": "oklch(93.5% 0.012 85)",
+        "tonalRamp": [
+          "oklch(22% 0.035 265)",
+          "oklch(26% 0.035 265)",
+          "oklch(34% 0.03 265)",
+          "oklch(46% 0.022 265)",
+          "oklch(62% 0.018 265)",
+          "oklch(81% 0.012 85)",
+          "oklch(93.5% 0.012 85)",
+          "oklch(96.2% 0.008 85)"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "oklch(88% 0.012 85)",
+        "tonalRamp": [
+          "oklch(22% 0.035 265)",
+          "oklch(26% 0.035 265)",
+          "oklch(34% 0.03 265)",
+          "oklch(46% 0.022 265)",
+          "oklch(62% 0.018 265)",
+          "oklch(81% 0.012 85)",
+          "oklch(93.5% 0.012 85)",
+          "oklch(96.2% 0.008 85)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Page h1."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section h2."
+      },
+      "panel-number": {
+        "displayName": "Panel Number",
+        "purpose": "Counts inside colour panels."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Colour panel labels."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Running text, lists, forms."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Form field labels in muted ink."
+      },
+      "button": {
+        "displayName": "Button",
+        "purpose": "All buttons; toolbar tools use 500."
+      }
+    },
+    "shadows": [
+      {
+        "name": "shadow-subtle",
+        "value": "0 0 0 1px rgb(30 31 37 / 9%), 0 1px 2px rgb(30 31 37 / 8%)",
+        "purpose": "Ring on paper cards, capture and import panels, quiet controls."
+      },
+      {
+        "name": "shadow-normal",
+        "value": "0 0 0 1px rgb(14 63 126 / 4%), 0 1px 1px rgb(42 51 69 / 4%), 0 3px 3px -1.5px rgb(42 51 70 / 4%), 0 6px 6px -3px rgb(42 51 70 / 4%), 0 12px 12px -6px rgb(14 63 126 / 4%)",
+        "purpose": "Menus and dialogs."
+      },
+      {
+        "name": "panel-lift",
+        "value": "0 1rem 2rem -1.25rem oklch(22% 0.035 265 / 45%)",
+        "purpose": "Hover on linked colour panels only."
+      },
+      {
+        "name": "focus-ring",
+        "value": "outline: 0.1875rem solid oklch(45% 0.115 259.6); outline-offset: 0.25rem",
+        "purpose": "Default visible focus; mustard on colour panels."
+      },
+      {
+        "name": "field-focus",
+        "value": "0 0 0 0.125rem oklch(51.9% 0.1261 259.6)",
+        "purpose": "Field focus ring."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "All state transitions."
+      },
+      {
+        "name": "control-state",
+        "value": "220ms",
+        "purpose": "Button, link and field colour changes."
+      },
+      {
+        "name": "press",
+        "value": "160ms translateY(1px)",
+        "purpose": "Button press."
+      },
+      {
+        "name": "tab-underline",
+        "value": "260ms scaleX",
+        "purpose": "Desktop tab underline."
+      },
+      {
+        "name": "panel-lift",
+        "value": "320ms translateY(-0.1875rem)",
+        "purpose": "Linked colour panel hover."
+      },
+      {
+        "name": "brand-turn",
+        "value": "420ms rotate(90deg)",
+        "purpose": "Brand square on brand hover."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "prefers-reduced-motion: reduce",
+        "purpose": "Disables brand, panel and underline transitions."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "stack",
+        "value": "45rem"
+      },
+      {
+        "name": "sm",
+        "value": "40rem"
+      },
+      {
+        "name": "paper-shell",
+        "value": "64rem"
+      },
+      {
+        "name": "wide",
+        "value": "90rem"
+      }
+    ],
+    "themes": {
+      "light": "only",
+      "dark": "not implemented"
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Navy display-face button; hovers to Mithra blue.",
+      "html": "<button class=\"ds-btn-primary\">Add update</button>",
+      "css": ".ds-btn-primary{min-height:2.75rem;padding:.65rem 1.5rem;border:0;border-radius:.75rem;background:var(--navy,oklch(22% 0.035 265));color:#fff;font:600 1rem/1.2 'Bricolage Grotesque', InterVariable, Inter, system-ui, sans-serif;cursor:pointer;transition:background-color 220ms cubic-bezier(.22,1,.36,1),transform 160ms cubic-bezier(.22,1,.36,1)}.ds-btn-primary:hover{background:var(--blue,oklch(51.9% 0.1261 259.6))}.ds-btn-primary:active{transform:translateY(1px)}.ds-btn-primary:focus-visible{outline:.1875rem solid var(--focus,oklch(45% 0.115 259.6));outline-offset:.25rem}"
+    },
+    {
+      "name": "Quiet Button",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "Paper button with a subtle ring for secondary actions.",
+      "html": "<button class=\"ds-btn-quiet\">Cancel</button>",
+      "css": ".ds-btn-quiet{min-height:2.75rem;padding:.65rem 1.5rem;border:0;border-radius:.75rem;background:oklch(99.6% 0.003 85);color:oklch(22% 0.035 265);box-shadow:0 0 0 1px rgb(30 31 37 / 9%),0 1px 2px rgb(30 31 37 / 8%);font:600 1rem/1.2 'Bricolage Grotesque', InterVariable, Inter, system-ui, sans-serif;cursor:pointer;transition:background-color 220ms cubic-bezier(.22,1,.36,1)}.ds-btn-quiet:hover{background:oklch(93.5% 0.012 85)}.ds-btn-quiet:focus-visible{outline:.1875rem solid oklch(45% 0.115 259.6);outline-offset:.25rem}"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Filled paper-surface field; focus becomes a 2px blue ring.",
+      "html": "<label class=\"ds-field\">Amount<input class=\"ds-input\" value=\"120.00\"></label>",
+      "css": ".ds-field{display:grid;gap:.35rem;color:oklch(46% 0.022 265);font:700 .875rem/1.3 InterVariable,Inter,system-ui,sans-serif}.ds-input{min-height:2.8rem;padding:.6rem .75rem;border:1px solid transparent;border-radius:.5rem;background:oklch(96.2% 0.008 85);color:oklch(22% 0.035 265);box-shadow:inset 0 0 0 1px oklch(93.5% 0.012 85);font:400 1rem/1.55 InterVariable,Inter,system-ui,sans-serif;transition:background-color 220ms,box-shadow 220ms}.ds-input:hover{background:oklch(93.5% 0.012 85)}.ds-input:focus-visible{outline:0;box-shadow:0 0 0 2px oklch(51.9% 0.1261 259.6)}"
+    },
+    {
+      "name": "Paper Top Bar",
+      "kind": "nav",
+      "refersTo": "nav-tab",
+      "description": "Desktop paper shell: blue-square brand, underlined text tabs, tools.",
+      "html": "<header class=\"ds-bar\"><a class=\"ds-brand\" href=\"#\"><span class=\"ds-mark\"></span>Mithra</a><nav><a href=\"#\" aria-current=\"page\">Family Brief</a><a href=\"#\">Week in Review</a><a href=\"#\">Finance</a><a href=\"#\">Health</a><a href=\"#\">Planning</a></nav><button class=\"ds-add\">Add update</button></header>",
+      "css": ".ds-bar{display:flex;align-items:center;gap:1.5rem;min-height:4rem;padding:0 1.5rem;border-bottom:1px solid oklch(88% 0.012 85);background:oklch(98.8% 0.005 85)}.ds-brand{display:inline-flex;align-items:center;gap:.625rem;color:oklch(22% 0.035 265);font:600 1.125rem 'Bricolage Grotesque', InterVariable, Inter, system-ui, sans-serif;letter-spacing:-.025em;text-decoration:none}.ds-mark{width:1.125rem;height:1.125rem;border-radius:.1875rem;background:oklch(51.9% 0.1261 259.6);transition:transform 420ms cubic-bezier(.22,1,.36,1)}.ds-brand:hover .ds-mark{transform:rotate(90deg)}.ds-bar nav{display:flex;gap:.25rem;flex:1}.ds-bar nav a{position:relative;display:inline-flex;align-items:center;min-height:4rem;padding:0 .75rem;color:oklch(46% 0.022 265);font:500 .9375rem InterVariable,Inter,system-ui,sans-serif;text-decoration:none;white-space:nowrap}.ds-bar nav a::after{content:'';position:absolute;left:.75rem;right:.75rem;bottom:-1px;height:2px;background:oklch(22% 0.035 265);transform:scaleX(0);transition:transform 260ms cubic-bezier(.22,1,.36,1)}.ds-bar nav a:hover{color:oklch(22% 0.035 265)}.ds-bar nav a[aria-current=page]{color:oklch(22% 0.035 265);font-weight:600}.ds-bar nav a[aria-current=page]::after{transform:scaleX(1)}.ds-bar a:focus-visible,.ds-add:focus-visible{outline:.1875rem solid oklch(45% 0.115 259.6);outline-offset:.25rem}.ds-add{min-height:2.5rem;padding:.5rem .875rem;border:0;border-radius:.75rem;background:oklch(22% 0.035 265);color:oklch(95% 0.01 85);font:600 .875rem 'Bricolage Grotesque', InterVariable, Inter, system-ui, sans-serif;cursor:pointer}.ds-add:hover{background:oklch(51.9% 0.1261 259.6)}@media (prefers-reduced-motion:reduce){.ds-mark,.ds-bar nav a::after{transition:none}}"
+    },
+    {
+      "name": "Family Brief Glance Panels",
+      "kind": "card",
+      "refersTo": "panel-coming-up",
+      "description": "Three linked colour panels: Coming up (blue), Worth checking (paper surface), Only you (navy).",
+      "html": "<dl class=\"ds-glance\"><div class=\"ds-panel ds-blue\"><dt>Coming up</dt><dd><span class=\"ds-num\">6</span><span class=\"ds-note\">Next seven days</span></dd><a class=\"ds-link\" href=\"#\" aria-label=\"Coming up\"></a></div><div class=\"ds-panel ds-paper\"><dt>Worth checking</dt><dd><span class=\"ds-num\">2</span><span class=\"ds-note\">From your records</span></dd><a class=\"ds-link\" href=\"#\" aria-label=\"Worth checking\"></a></div><div class=\"ds-panel ds-navy\"><dt>Only you</dt><dd><span class=\"ds-num\">3</span><span class=\"ds-note\">Private to you</span></dd><a class=\"ds-link\" href=\"#\" aria-label=\"Only you\"></a></div></dl>",
+      "css": ".ds-glance{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem;margin:0}.ds-panel{position:relative;display:grid;align-content:space-between;min-height:11rem;padding:1.5rem;border-radius:1.5rem;transition:transform 320ms cubic-bezier(.22,1,.36,1),box-shadow 320ms cubic-bezier(.22,1,.36,1)}.ds-panel dt{font:600 1.0625rem 'Bricolage Grotesque', InterVariable, Inter, system-ui, sans-serif}.ds-panel dd{display:grid;gap:.25rem;margin:1.5rem 0 0}.ds-num{font:500 clamp(2.75rem,4vw,3.75rem)/1 'Bricolage Grotesque', InterVariable, Inter, system-ui, sans-serif;letter-spacing:-.03em;font-variant-numeric:tabular-nums}.ds-note{font:400 .875rem InterVariable,Inter,system-ui,sans-serif;opacity:.8}.ds-blue{background:oklch(51.9% 0.1261 259.6);color:oklch(95% 0.01 85)}.ds-paper{background:oklch(96.2% 0.008 85);color:oklch(22% 0.035 265);box-shadow:inset 0 0 0 1px oklch(88% 0.012 85)}.ds-navy{background:oklch(22% 0.035 265);color:oklch(95% 0.01 85)}.ds-link{position:absolute;inset:0;border-radius:inherit}.ds-link:focus-visible{outline:.1875rem solid oklch(74.7% 0.1231 86.4);outline-offset:.1875rem}.ds-panel:hover{transform:translateY(-.1875rem);box-shadow:0 1rem 2rem -1.25rem oklch(22% 0.035 265 / 45%)}.ds-paper:hover{box-shadow:inset 0 0 0 1px oklch(88% 0.012 85),0 1rem 2rem -1.25rem oklch(22% 0.035 265 / 30%)}@media (prefers-reduced-motion:reduce){.ds-panel{transition:none}}"
+    },
+    {
+      "name": "Week in Review Status",
+      "kind": "card",
+      "refersTo": "panel-review-status",
+      "description": "Mustard status panel with navy text.",
+      "html": "<section class=\"ds-status\"><h2>A steady week</h2><p>Two bills paid, one appointment booked, nothing overdue.</p></section>",
+      "css": ".ds-status{padding:clamp(1.25rem,3vw,2rem);border-radius:1.5rem;background:color-mix(in oklch,oklch(74.7% 0.1231 86.4) 30%,oklch(99.6% 0.003 85));color:oklch(22% 0.035 265)}.ds-status h2{margin:0 0 .35rem;font:500 clamp(1.75rem,3vw,2.25rem)/1.2 'Bricolage Grotesque', InterVariable, Inter, system-ui, sans-serif;letter-spacing:-.025em}.ds-status p{margin:0;max-width:60ch;color:oklch(34% 0.03 265);font:400 1rem/1.55 InterVariable,Inter,system-ui,sans-serif}"
+    },
+    {
+      "name": "Hairline List",
+      "kind": "custom",
+      "refersTo": "card-paper",
+      "description": "Plain list items separated by 1px hairlines, link-blue actions.",
+      "html": "<ol class=\"ds-list\"><li><div><strong>Car insurance renewal</strong><p>Due 4 November</p></div><a href=\"#\">Open</a></li><li><div><strong>School photo order</strong><p>Shared with your partner</p></div><a href=\"#\">Open</a></li></ol>",
+      "css": ".ds-list{margin:0;padding:0;list-style:none;font:400 1rem/1.55 InterVariable,Inter,system-ui,sans-serif;color:oklch(22% 0.035 265)}.ds-list li{display:flex;justify-content:space-between;gap:1rem;padding:1rem 0;border-top:1px solid oklch(88% 0.012 85)}.ds-list p{margin:.3rem 0 0;color:oklch(46% 0.022 265)}.ds-list a{color:oklch(45% 0.115 259.6);font-weight:700;text-underline-offset:.2em}.ds-list a:hover{color:oklch(51.9% 0.1261 259.6)}.ds-list a:focus-visible{outline:.1875rem solid oklch(45% 0.115 259.6);outline-offset:.25rem}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Household Paper Desk",
+    "overview": "**Creative North Star: \"The Household Paper Desk\"**\n\nMithra is a calm desk of warm paper for two adults running a household together. Neutrals are a faintly warm off-white; ink is a deep navy rather than black; the single voice of colour is Mithra blue, the blue square in the MithraHQ family (HealthTrends is the coral arch, TinyTots the mustard circle). The system is shared across MithraHQ and derives from the Lexington \"Vanta\" theme: display headings in Bricolage Grotesque, running text in InterVariable, big rounded colour panels for the few numbers that matter, and hairline lists for everything else.\n\nThe authenticated app wears the \"paper shell\" (chosen 2026-10-23). From 64rem up, one light top bar holds the brand, five underlined text tabs (Family Brief, Week in Review, Finance, Health, Planning) and the tools (Import, Add update in navy, Quick navigation, Account). Utility destinations (Import, Settings, Help) sit in the toolbar or Account menu on desktop and stay in the Menu under 64rem, where a sticky mobile header keeps every item. Density is moderate: generous heading space, readable 60 to 70ch measures, and tables only where records demand them.\n\nMithra is light only. There is no dark theme yet; navy surfaces are panels inside the light world, not a mode.",
+    "keyCharacteristics": [
+      "Warm paper canvas, navy ink, one blue accent; mustard and terracotta in supporting roles.",
+      "Bricolage Grotesque for h1, h2, the brand, panel numbers and buttons; InterVariable for everything else.",
+      "Big rounded colour panels (1.5rem radius) carry key counts and status; hairline rules separate list items.",
+      "Sentence case throughout; no eyebrow labels, uppercase or monospace costume.",
+      "Flat by default: subtle ring shadows on paper cards, lift only on hover of linked panels.",
+      "WCAG AA contrast, visible focus rings, reduced motion respected."
+    ],
+    "rules": [
+      {
+        "name": "The One Blue Rule",
+        "body": "Mithra blue is the only saturated hue that identifies Mithra. Mustard and terracotta have jobs (status, attention); coral belongs to HealthTrends.",
+        "section": "colors"
+      },
+      {
+        "name": "The Navy Not Black Rule",
+        "body": "Ink is navy-ink. No pure black text or surfaces anywhere.",
+        "section": "colors"
+      },
+      {
+        "name": "The Sentence Case Rule",
+        "body": "Every heading, label, tab and button is sentence case. No uppercase transforms, no letter-spaced small caps, no monospace labels.",
+        "section": "typography"
+      },
+      {
+        "name": "The Two Faces Rule",
+        "body": "Bricolage for h1, h2, brand, panel numbers and buttons; Inter for everything else. No third face; monospace is reserved for real `kbd` key caps.",
+        "section": "typography"
+      },
+      {
+        "name": "The Utility Drawer Rule",
+        "body": "On desktop, only the five views are tabs. Import, Settings and Help never become tabs; they live in the toolbar or Account menu, and every item stays reachable from the mobile Menu.",
+        "section": "layout"
+      },
+      {
+        "name": "The Lift Means Link Rule",
+        "body": "A panel lifts on hover only when the whole panel is a link. Static surfaces never move.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do put the few key counts and statuses in big rounded colour panels (1.5rem radius) and keep everything else on paper with hairline lists.",
+      "Do use Mithra blue for identity and the \"Coming up\" panel, navy for primary actions and the \"Only you\" panel, mustard for weekly status.",
+      "Do set h1, h2, brand, panel numbers and buttons in Bricolage Grotesque 500 to 600, and everything else in InterVariable.",
+      "Do write every label, tab and button in sentence case.",
+      "Do keep a visible focus ring on every interactive element: link-blue by default, mustard on colour panels.",
+      "Do disable transforms and transitions under `prefers-reduced-motion: reduce` for the brand mark, panels and tab underline.",
+      "Do keep Import, Settings and Help out of the desktop tabs and inside the toolbar or Account menu, while the mobile Menu keeps every item.",
+      "Do meet WCAG AA contrast for text on every panel colour."
+    ],
+    "donts": [
+      "Don't add eyebrow labels above headings.",
+      "Don't use uppercase transforms, letter-spaced caps or monospace as decoration.",
+      "Don't use coloured side-stripe borders on cards, alerts or list items.",
+      "Don't use pure black, or a second saturated accent beyond the assigned roles; coral is HealthTrends' colour.",
+      "Don't add a dark theme ad hoc; Mithra is light only until a dark theme is designed for the whole family.",
+      "Don't lift or animate surfaces that are not links."
+    ]
+  }
+}
