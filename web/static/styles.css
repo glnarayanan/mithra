@@ -6,42 +6,56 @@
   src: url("/assets/fonts/inter-variable.woff2") format("woff2");
 }
 
+@font-face {
+  font-family: "Bricolage Grotesque";
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url("/assets/fonts/bricolage.woff2") format("woff2");
+}
+
 :root {
-  /* Lexington Navy's base and accent ramps are the application source of truth. */
-  --accent-50: oklch(98.21% 0.02 173.97);
-  --accent-100: oklch(95.93% 0.045 173.67);
-  --accent-200: oklch(92.64% 0.081 172.51);
-  --accent-300: oklch(89.57% 0.117 170.84);
-  --accent-400: oklch(86.76% 0.147 168.56);
-  --accent-500: oklch(84.83% 0.168 165.66);
-  --accent-600: oklch(77.33% 0.165 163.25);
-  --accent-700: oklch(62.84% 0.133 163.56);
-  --accent-800: oklch(47.46% 0.099 164.12);
-  --accent-900: oklch(28.98% 0.057 166.58);
-  --accent-950: oklch(20.29% 0.037 169.89);
-  --base-50: oklch(96.74% 0.001 286.38);
-  --base-100: oklch(93.73% 0.001 286.37);
-  --base-200: oklch(87.31% 0.004 271.36);
-  --base-300: oklch(80.82% 0.006 274.95);
-  --base-400: oklch(74.22% 0.009 278.59);
-  --base-500: oklch(67.48% 0.012 280.37);
-  --base-600: oklch(56.83% 0.015 281.34);
-  --base-700: oklch(46.56% 0.011 279.46);
-  --base-800: oklch(35.42% 0.009 285.95);
-  --base-900: oklch(23.48% 0.004 264.49);
-  --base-950: oklch(16.89% 0.002 286.18);
-  --canvas: var(--base-50);
-  --paper: #ffffff;
+  /* MithraHQ shared system (Lexington Vanta): warm paper neutrals, navy ink, Mithra blue accent. */
+  --accent-50: oklch(97.5% 0.012 259.6);
+  --accent-100: oklch(94.5% 0.028 259.6);
+  --accent-200: oklch(89.5% 0.05 259.6);
+  --accent-300: oklch(82% 0.08 259.6);
+  --accent-400: oklch(72% 0.11 259.6);
+  --accent-500: oklch(62% 0.13 259.6);
+  --accent-600: oklch(56.5% 0.13 259.6);
+  --accent-700: oklch(51.9% 0.1261 259.6);
+  --accent-800: oklch(45% 0.115 259.6);
+  --accent-900: oklch(34% 0.085 259.6);
+  --accent-950: oklch(24% 0.055 259.6);
+  --base-50: oklch(96.2% 0.008 85);
+  --base-100: oklch(93.5% 0.012 85);
+  --base-200: oklch(88% 0.012 85);
+  --base-300: oklch(81% 0.012 85);
+  --base-400: oklch(72% 0.014 265);
+  --base-500: oklch(62% 0.018 265);
+  --base-600: oklch(54% 0.02 265);
+  --base-700: oklch(46% 0.022 265);
+  --base-800: oklch(34% 0.03 265);
+  --base-900: oklch(26% 0.035 265);
+  --base-950: oklch(22% 0.035 265);
+  --canvas: oklch(98.8% 0.005 85);
+  --paper: oklch(99.6% 0.003 85);
   --ink: var(--base-950);
   --muted-ink: var(--base-700);
   --moss: var(--accent-800);
   --moss-wash: var(--accent-100);
-  --terracotta: #a43f38;
-  --line: color-mix(in oklch, var(--base-950) 10%, transparent);
+  --terracotta: oklch(52% 0.15 41.2);
+  --coral: oklch(64.2% 0.1541 41.2);
+  --mustard: oklch(74.7% 0.1231 86.4);
+  --blue: oklch(51.9% 0.1261 259.6);
+  --on-navy: oklch(95% 0.01 85);
+  --on-navy-muted: oklch(78% 0.02 265);
+  --font-display: "Bricolage Grotesque", InterVariable, Inter, ui-sans-serif, system-ui, sans-serif;
+  --line: oklch(88% 0.012 85);
   --focus: var(--accent-800);
   --navy: var(--base-950);
   --radius: 0.75rem;
-  --control-radius: 999px;
+  --control-radius: 0.75rem;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --shadow-subtle: 0 0 0 1px rgb(30 31 37 / 9%), 0 1px 2px rgb(30 31 37 / 8%);
   --shadow-normal: 0 0 0 1px rgb(14 63 126 / 4%), 0 1px 1px rgb(42 51 69 / 4%), 0 3px 3px -1.5px rgb(42 51 70 / 4%), 0 6px 6px -3px rgb(42 51 70 / 4%), 0 12px 12px -6px rgb(14 63 126 / 4%);
@@ -2628,4 +2642,132 @@ body:not(.authenticated-shell) .auth-card h1 {
   .review-period {
     margin: 0;
   }
+}
+
+/* MithraHQ shared shell (Vanta): navy sidebar, display headings, square brand mark. */
+h1,
+h2,
+.brand {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+}
+
+.brand {
+  font-weight: 600;
+}
+
+.brand-mark {
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 0;
+  background: var(--blue);
+  color: transparent;
+  font-size: 0;
+}
+
+button {
+  background: var(--navy);
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+
+button:hover {
+  background: var(--blue);
+}
+
+.button-quiet,
+.button-secondary,
+.quiet-button {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.import-upload-form input[type="file"]::file-selector-button {
+  background: var(--navy);
+  font-family: var(--font-display);
+}
+
+.authenticated-shell .site-header {
+  border-right: 0;
+  background: var(--navy);
+}
+
+.authenticated-shell .site-header .brand {
+  color: var(--on-navy);
+}
+
+.authenticated-shell .navigation-group {
+  color: var(--on-navy-muted);
+}
+
+.authenticated-shell .navigation-list a {
+  color: var(--on-navy-muted);
+}
+
+.authenticated-shell .navigation-list a:hover {
+  background: oklch(28% 0.035 265);
+  color: var(--on-navy);
+}
+
+.authenticated-shell .navigation-list a[aria-current="page"] {
+  background: oklch(30% 0.04 265);
+  color: var(--on-navy);
+}
+
+.authenticated-shell .navigation-list a[aria-current="page"]::before {
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-right: 0.625rem;
+  background: var(--blue);
+  content: "";
+}
+
+.app-toolbar {
+  background: color-mix(in oklch, var(--canvas) 94%, transparent);
+}
+
+.toolbar-controls {
+  background: var(--paper);
+}
+
+.quick-navigation-trigger,
+.quick-capture-trigger,
+.shortcut-help-trigger,
+.account-menu summary,
+.account-menu button {
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-weight: 500;
+}
+
+.quick-navigation-trigger:hover,
+.quick-capture-trigger:hover,
+.shortcut-help-trigger:hover,
+.account-menu summary:hover,
+.account-menu button:hover {
+  background: var(--base-100);
+}
+
+.eyebrow,
+.mobile-navigation summary {
+  font-family: var(--font-text, InterVariable, Inter, ui-sans-serif, system-ui, sans-serif);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mobile-navigation summary {
+  font-family: var(--font-display);
+  font-size: 0.9375rem;
+  color: var(--ink);
+}
+
+.status-message,
+.mobile-capture-link {
+  background: var(--accent-100);
+}
+
+.brand-inverse .brand-mark {
+  background: var(--blue);
 }

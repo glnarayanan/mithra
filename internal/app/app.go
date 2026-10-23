@@ -369,6 +369,7 @@ var assetContentTypes = map[string]string{
 	"imports.js":                 "application/javascript; charset=utf-8",
 	"favicon.svg":                "image/svg+xml",
 	"fonts/inter-variable.woff2": "font/woff2",
+	"fonts/bricolage.woff2":      "font/woff2",
 }
 
 func withHTTPGuards(next http.Handler, logger *log.Logger) http.Handler {
