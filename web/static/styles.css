@@ -87,7 +87,7 @@
 .capture-form-footer select { min-height: 2.75rem; padding: .55rem .75rem; }
 .voice-capture { display: flex; align-items: center; gap: .5rem; }
 .voice-capture p { max-width: 14rem; margin: 0; color: var(--muted-ink); font-size: .75rem; line-height: 1.25; }
-.voice-capture p[data-tone="error"] { color: #8a3326; }
+.voice-capture p[data-tone="error"] { color: var(--terracotta); }
 .capture-mic { display: inline-grid; width: 2.75rem; min-width: 2.75rem; padding: 0; place-items: center; border-radius: 999px; }
 .capture-mic svg { width: 1.15rem; height: 1.15rem; fill: none; stroke: currentcolor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
 .capture-pending { background: var(--accent-50); }
@@ -130,7 +130,7 @@
   padding: 0.5rem 0.875rem;
   border: 0;
   border-radius: var(--control-radius);
-  background: linear-gradient(to top, var(--base-900), var(--base-800));
+  background: var(--navy);
   color: white;
   cursor: pointer;
   font: 600 0.8125rem/1.2 InterVariable, Inter, ui-sans-serif, system-ui, sans-serif;
@@ -138,7 +138,7 @@
 .import-upload-form button, .import-review-actions button { font-size: .875rem; }
 .import-upload-form button:disabled, .import-review-actions button:disabled { cursor: not-allowed; opacity: .55; }
 .import-upload-form p, .import-review-actions p { margin: 0; }
-.import-upload-form p[data-tone="error"], .field-error { color: #8a3326; }
+.import-upload-form p[data-tone="error"], .field-error { color: var(--terracotta); }
 .import-blockers { padding: 1rem; border: 0; border-radius: var(--radius); background: color-mix(in oklch, var(--terracotta) 8%, white); }
 .import-blockers h3, .import-blockers p { margin: 0; }
 .import-blockers ol, .import-warnings ul { display: grid; gap: .65rem; margin: 1rem 0 0; padding-left: 1.35rem; }
@@ -836,8 +836,8 @@ kbd {
     min-height: 2.75rem;
     border: 0;
     border-radius: var(--control-radius);
-    background: linear-gradient(to top, var(--base-900), var(--base-800));
-    color: white;
+    background: var(--navy);
+    color: var(--on-navy);
     font: inherit;
   }
 
@@ -931,14 +931,14 @@ button {
   padding: 0.65rem 1.5rem;
   border: 0;
   border-radius: var(--control-radius);
-  background: linear-gradient(to top, var(--base-900), var(--base-800));
+  background: var(--navy);
   color: white;
   cursor: pointer;
   font-weight: 600;
 }
 
 button:hover {
-  background: linear-gradient(to top, var(--base-800), var(--base-900));
+  background: var(--blue);
 }
 
 button:disabled {
@@ -1450,9 +1450,8 @@ button:disabled {
 
 .record-table thead th {
   color: var(--muted-ink);
-  font-size: 0.75rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 0.8125rem;
+  font-weight: 600;
 }
 
 .record-table tbody th {
@@ -1696,9 +1695,8 @@ button:disabled {
 .calendar-weekdays span {
   padding: 0.5rem;
   color: var(--muted-ink);
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
+  font-size: 0.8125rem;
+  font-weight: 600;
 }
 
 .calendar-day {
@@ -2162,7 +2160,6 @@ button:disabled {
 .coaching-freshness strong { color: var(--moss); }
 .coaching-layout { display: grid; gap: clamp(2.25rem, 6vw, 4.75rem); padding-top: clamp(2rem, 5vw, 3.5rem); }
 .coaching-lead { position: relative; overflow: hidden; padding: clamp(1.5rem, 4vw, 3rem); border-radius: var(--radius); background: var(--ink); color: var(--paper); }
-.coaching-lead::after { position: absolute; right: -4rem; bottom: -7rem; width: 17rem; height: 17rem; border: 2.25rem solid rgb(224 233 223 / 10%); border-radius: 50%; content: ""; }
 .coaching-lead h2 { max-width: 22ch; font-size: 2rem; }
 .coaching-lead p:not(.eyebrow) { max-width: 62ch; color: rgb(255 253 248 / 78%); }
 .coaching-lead a { position: relative; z-index: 1; color: var(--paper); font-weight: 750; }
@@ -2177,13 +2174,13 @@ button:disabled {
 .coaching-list-large strong { font-family: InterVariable, Inter, ui-sans-serif, system-ui, sans-serif; font-size: 1.3rem; }
 .priority-list { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; counter-reset: priority; }
 .priority-list li { min-width: 0; padding: 1.15rem; border: 0; border-radius: var(--radius); background: var(--paper); box-shadow: var(--shadow-subtle); counter-increment: priority; }
-.priority-list li::before { display: block; margin-bottom: 1.5rem; color: var(--terracotta); content: counter(priority, decimal-leading-zero); font: 700 .8rem ui-monospace, monospace; }
+.priority-list li::before { display: grid; width: 1.5rem; height: 1.5rem; place-items: center; margin-bottom: 1rem; border-radius: 0.375rem; background: var(--base-100); color: var(--ink); content: counter(priority); font: 600 .8125rem/1 var(--font-display); font-variant-numeric: tabular-nums; }
 .priority-list a { display: inline-block; margin-top: .8rem; color: var(--moss); font-weight: 700; }
 .only-you { padding: clamp(1.25rem, 3vw, 2rem); border: 0; border-radius: var(--radius); background: var(--accent-50); }
 .only-you > .quiet-copy { max-width: 55ch; }
 .quiet-copy { color: var(--muted-ink); }
 .coaching-empty .empty-actions { display: flex; gap: .75rem; flex-wrap: wrap; margin-top: 1.25rem; }
-.empty-actions a, .coaching-actions > a, .coaching-actions button { display: inline-flex; min-height: 2.75rem; align-items: center; justify-content: center; padding: .65rem 1.5rem; border: 0; border-radius: var(--control-radius); background: linear-gradient(to top, var(--base-900), var(--base-800)); color: white; cursor: pointer; font: inherit; font-weight: 600; text-decoration: none; }
+.empty-actions a, .coaching-actions > a, .coaching-actions button { display: inline-flex; min-height: 2.75rem; align-items: center; justify-content: center; padding: .65rem 1.5rem; border: 0; border-radius: var(--control-radius); background: var(--navy); color: var(--on-navy); cursor: pointer; font: inherit; font-weight: 600; text-decoration: none; }
 .empty-actions a:last-child, .coaching-actions > a { background: var(--base-50); color: var(--ink); box-shadow: var(--shadow-subtle); }
 .coaching-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-top: 1.25rem; border-top: .0625rem solid var(--line); }
 .coaching-actions form { margin: 0; }
@@ -2602,7 +2599,6 @@ body:not(.authenticated-shell) .auth-card h1 {
 .review-status .eyebrow { color: rgb(255 255 255 / 68%); }
 .review-status h2 { color: white; margin-bottom: .35rem; }
 .review-status p:not(.eyebrow) { max-width: 60ch; margin: 0; color: rgb(255 255 255 / 78%); }
-.review-observation { border-left: .3rem solid var(--moss); }
 .review-observation h2 { margin-bottom: .45rem; }
 .review-observation > p:not(.eyebrow) { max-width: 70ch; }
 .review-priorities, .review-list { display: grid; gap: .65rem; margin: .9rem 0 0; padding: 0; list-style: none; }

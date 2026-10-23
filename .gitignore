@@ -27,4 +27,5 @@ documentation/deployment-receipt.local.md
 /PLAN.md
 /PRODUCT.md
 /DESIGN.md
+/.impeccable/
 /.playwright-cli/
