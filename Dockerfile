@@ -53,7 +53,10 @@ FROM build AS test
 RUN go vet ./... && go test -count=1 ./...
 
 FROM debian:${DEBIAN_RELEASE}-slim AS runtime
+# The upgrade picks up Debian security fixes the base image does not carry yet
+# (for example DSA-6613-1, zlib).
 RUN apt-get update \
+ && apt-get upgrade -y \
  && apt-get install -y --no-install-recommends ca-certificates tzdata libssl3t64 \
  && rm -rf /var/lib/apt/lists/* \
  && groupadd --system --gid 10001 mithra \
