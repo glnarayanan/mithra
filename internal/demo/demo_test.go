@@ -47,8 +47,8 @@ func TestResetUsesProductionPathsIsFixtureOnlyAndRollsBackExactly(t *testing.T) 
 		DatabasePath: filepath.Join(dataRoot, "mithra.sqlite3"),
 		SourceRoot:   filepath.Join(dataRoot, "sources"),
 		BackupRoot:   filepath.Join(root, "backups"),
-		OwnerEmail:   "judge-owner@example.com",
-		PartnerEmail: "judge-partner@example.com",
+		OwnerEmail:   "demo-owner@example.com",
+		PartnerEmail: "demo-partner@example.com",
 		MasterKey:    testKey(),
 	}
 	seedUnrelatedHousehold(t, ctx, cfg.DatabasePath)
@@ -96,7 +96,7 @@ func TestResetRefusesUnmarkedReservedHousehold(t *testing.T) {
 		t.Fatal(err)
 	}
 	db.Close()
-	_, err = Reset(ctx, Config{DatabasePath: databasePath, SourceRoot: filepath.Join(root, "data", "sources"), BackupRoot: filepath.Join(root, "backups"), OwnerEmail: "judge-owner@example.com", PartnerEmail: "judge-partner@example.com", MasterKey: testKey()})
+	_, err = Reset(ctx, Config{DatabasePath: databasePath, SourceRoot: filepath.Join(root, "data", "sources"), BackupRoot: filepath.Join(root, "backups"), OwnerEmail: "demo-owner@example.com", PartnerEmail: "demo-partner@example.com", MasterKey: testKey()})
 	if !errors.Is(err, ErrUnsafeReset) {
 		t.Fatalf("unmarked household reset = %v", err)
 	}
@@ -116,15 +116,15 @@ func TestResetRefusesUnmarkedReservedHousehold(t *testing.T) {
 	}
 }
 
-func TestResetSetsPrivateJudgeCredentialsAndRevokesBootstrapSessions(t *testing.T) {
+func TestResetSetsPrivateDemoCredentialsAndRevokesBootstrapSessions(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	cfg := Config{
 		DatabasePath:    filepath.Join(root, "data", "mithra.sqlite3"),
 		SourceRoot:      filepath.Join(root, "data", "sources"),
 		BackupRoot:      filepath.Join(root, "backups"),
-		OwnerEmail:      "judge-owner@example.com",
-		PartnerEmail:    "judge-partner@example.com",
+		OwnerEmail:      "demo-owner@example.com",
+		PartnerEmail:    "demo-partner@example.com",
 		OwnerPassword:   []byte("owner demo password"),
 		PartnerPassword: []byte("partner demo password"),
 		MasterKey:       testKey(),
@@ -149,8 +149,8 @@ func TestResetSetsPrivateJudgeCredentialsAndRevokesBootstrapSessions(t *testing.
 	for _, account := range []struct {
 		email, password, role string
 	}{
-		{"judge-owner@example.com", "owner demo password", "owner"},
-		{"judge-partner@example.com", "partner demo password", "adult"},
+		{"demo-owner@example.com", "owner demo password", "owner"},
+		{"demo-partner@example.com", "partner demo password", "adult"},
 	} {
 		session, err := service.Login(ctx, account.email, account.password, "demo-credential-test:"+account.email)
 		if err != nil || session.Scope.HouseholdID != HouseholdID || session.Scope.Role != account.role {
@@ -179,8 +179,8 @@ func TestResetPreservesMarkedProviderConfiguration(t *testing.T) {
 		DatabasePath:    filepath.Join(root, "data", "mithra.sqlite3"),
 		SourceRoot:      filepath.Join(root, "data", "sources"),
 		BackupRoot:      filepath.Join(root, "backups"),
-		OwnerEmail:      "judge-owner@example.com",
-		PartnerEmail:    "judge-partner@example.com",
+		OwnerEmail:      "demo-owner@example.com",
+		PartnerEmail:    "demo-partner@example.com",
 		OwnerPassword:   []byte("owner demo password"),
 		PartnerPassword: []byte("partner demo password"),
 		MasterKey:       key,
@@ -236,7 +236,7 @@ func TestResetPreservesMarkedProviderConfiguration(t *testing.T) {
 	}
 }
 
-func TestResetRotatesMarkedJudgeEmails(t *testing.T) {
+func TestResetRotatesMarkedDemoEmails(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	cfg := Config{
@@ -260,7 +260,7 @@ func TestResetRotatesMarkedJudgeEmails(t *testing.T) {
 		t.Fatal(err)
 	}
 	db.Close()
-	cfg.OwnerEmail, cfg.PartnerEmail = "judge-owner@example.com", "judge-partner@example.com"
+	cfg.OwnerEmail, cfg.PartnerEmail = "demo-owner@example.com", "demo-partner@example.com"
 	cfg.OwnerPassword, cfg.PartnerPassword = []byte("owner secure password"), []byte("partner secure password")
 	if _, err := Reset(ctx, cfg); err != nil {
 		t.Fatalf("rotate marked emails: %v", err)
@@ -315,7 +315,7 @@ func TestResetRefusesMarkedEmailCollisionOrUnrelatedMembership(t *testing.T) {
 		t.Fatal(err)
 	}
 	db.Close()
-	cfg.OwnerEmail = "judge-owner@example.com"
+	cfg.OwnerEmail = "demo-owner@example.com"
 	if _, err := Reset(ctx, cfg); !errors.Is(err, ErrUnsafeReset) {
 		t.Fatalf("unrelated membership reset=%v", err)
 	}
@@ -439,7 +439,7 @@ func TestResetVerifiesTheWeeklyReviewOnCalendarEdgeDays(t *testing.T) {
 		t.Run(at.Format("2006-01-02T15:04"), func(t *testing.T) {
 			root := t.TempDir()
 			dataRoot := filepath.Join(root, "data")
-			cfg := Config{DatabasePath: filepath.Join(dataRoot, "mithra.sqlite3"), SourceRoot: filepath.Join(dataRoot, "sources"), BackupRoot: filepath.Join(root, "backups"), OwnerEmail: "judge-owner@example.com", PartnerEmail: "judge-partner@example.com", MasterKey: testKey(), Now: func() time.Time { return at }}
+			cfg := Config{DatabasePath: filepath.Join(dataRoot, "mithra.sqlite3"), SourceRoot: filepath.Join(dataRoot, "sources"), BackupRoot: filepath.Join(root, "backups"), OwnerEmail: "demo-owner@example.com", PartnerEmail: "demo-partner@example.com", MasterKey: testKey(), Now: func() time.Time { return at }}
 			seedUnrelatedHousehold(t, ctx, cfg.DatabasePath)
 			if _, err := Reset(ctx, cfg); err != nil {
 				t.Fatal(err)

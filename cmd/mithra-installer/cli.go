@@ -29,7 +29,7 @@ var commandSpecs = []commandSpec{
 	{"backup", "create an encrypted backup", installer.Backup, nil},
 	{"restore", "restore an authenticated backup", installer.Restore, []string{"--domain", "--proxy", "--port", "--allowed-emails", "--archive"}},
 	{"status", "report Mithra status", installer.Status, []string{"--proxy", "--port"}},
-	{"reset-demo", "replace judge demo data (advanced)", "reset-demo", []string{"--owner-email", "--partner-email", "--owner-password-file", "--partner-password-file", "--master-key-file"}},
+	{"reset-demo", "replace demo data (advanced)", "reset-demo", []string{"--owner-email", "--partner-email", "--owner-password-file", "--partner-password-file", "--master-key-file"}},
 	{"uninstall", "remove Mithra runtime and preserve recovery data", installer.Uninstall, []string{"--proxy"}},
 	{"purge", "remove retained Mithra recovery data", installer.Purge, []string{"--proxy", "--confirm-purge"}},
 }

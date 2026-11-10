@@ -277,8 +277,8 @@ func TestResetDemoRealServiceOwnedTree(t *testing.T) {
 		DatabasePath:    paths.Database,
 		SourceRoot:      paths.Sources,
 		BackupRoot:      paths.Backups,
-		OwnerEmail:      "judge-owner@example.com",
-		PartnerEmail:    "judge-partner@example.com",
+		OwnerEmail:      "demo-owner@example.com",
+		PartnerEmail:    "demo-partner@example.com",
 		OwnerPassword:   []byte("owner demo password"),
 		PartnerPassword: []byte("partner demo password"),
 		MasterKey:       key,
@@ -571,7 +571,7 @@ func TestPlanOperationAndRootValidationAreScoped(t *testing.T) {
 	if _, err := parseInstallerCommand([]string{"backup", "--root", root + "/../" + filepath.Base(root)}); err == nil {
 		t.Fatal("unclean root was accepted")
 	}
-	parsed, err = parseInstallerCommand([]string{"reset-demo", "--root", root, "--owner-email", "judge-owner@example.com", "--partner-email", "judge-partner@example.com", "--owner-password-file", "/root/owner-password", "--partner-password-file", "/root/partner-password"})
+	parsed, err = parseInstallerCommand([]string{"reset-demo", "--root", root, "--owner-email", "demo-owner@example.com", "--partner-email", "demo-partner@example.com", "--owner-password-file", "/root/owner-password", "--partner-password-file", "/root/partner-password"})
 	if err != nil || *parsed.flags.ownerPasswordPath != "/root/owner-password" || *parsed.flags.partnerPasswordPath != "/root/partner-password" {
 		t.Fatalf("reset-demo password files parsed=%+v err=%v", parsed, err)
 	}

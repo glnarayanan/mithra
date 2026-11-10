@@ -1,4 +1,4 @@
-// Package demo creates and safely resets Mithra's marked Build Week household.
+// Package demo creates and safely resets Mithra's marked demo household.
 package demo
 
 import (

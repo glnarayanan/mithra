@@ -107,8 +107,8 @@ households, files, jobs, caches, and access state remain unchanged.
 
 ```bash
 sudo mithra-installer reset-demo \
-  --owner-email judge-owner@example.com \
-  --partner-email judge-partner@example.com
+  --owner-email demo-owner@example.com \
+  --partner-email demo-partner@example.com
 ```
 
 Both addresses must be current allowlist entries. Reset revokes their browser
@@ -117,8 +117,7 @@ keeps established password hashes unless the operator supplies private
 root-owned password files. It restarts the service, checks both accounts and
 their privacy boundary, and reports success only after the application is
 healthy. If that check fails, reset restores the verified backup and previous
-service state. Judge credentials are delivered only through the private
-submission channel.
+service state. Share demo credentials privately; never commit them.
 
 ## Recovery ownership
 
