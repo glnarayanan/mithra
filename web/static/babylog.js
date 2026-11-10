@@ -55,8 +55,8 @@
         note.id = "baby-error-bottle";
         note.setAttribute("role", "alert");
         note.tabIndex = -1;
-        const submit = form.querySelector('button[type="submit"]');
-        form.insertBefore(note, submit);
+        const amounts = form.querySelector(".log-amounts");
+        if (amounts) amounts.after(note); else form.insertBefore(note, form.querySelector('button[type="submit"]'));
       }
       note.textContent = message;
       taken.setAttribute("aria-invalid", "true");
