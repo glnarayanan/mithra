@@ -161,12 +161,13 @@ components:
 
 Mithra is a calm desk of warm paper for two adults running a household together. Neutrals are a faintly warm off-white; ink is a deep navy rather than black; the single voice of colour is Mithra blue, the blue square in the MithraHQ family (HealthTrends is the coral arch, TinyTots the mustard circle). The system is shared across MithraHQ and derives from the Lexington "Vanta" theme: display headings in Bricolage Grotesque, running text in InterVariable, big rounded colour panels for the few numbers that matter, and hairline lists for everything else.
 
-The authenticated app wears the "paper shell" (chosen 2026-10-23). From 64rem up, one light top bar holds the brand, five underlined text tabs (Family Brief, Week in Review, Finance, Health, Planning) and the tools (Import, Add update in navy, Quick navigation, Account). Utility destinations (Import, Settings, Help) sit in the toolbar or Account menu on desktop and stay in the Menu under 64rem, where a sticky mobile header keeps every item. Density is moderate: generous heading space, readable 60 to 70ch measures, and tables only where records demand them.
+The authenticated app wears the "paper shell" (chosen 2026-10-23, consolidated 2026-11-10). On desktop one light top bar holds the brand, four underlined text tabs (Home, Money, Health, Calendar; Family joins in the consolidation) and the tools (Quick navigation, Add in navy, Account). Home has a Today and This week switch instead of two tabs. Utility destinations (Import, Settings, Help) and the theme switch live in the Account menu. On phones a bottom dock replaces the old Menu: Home, Money, Add, Health and a fifth slot (Calendar now, Family once it ships). Density is moderate: generous heading space, readable 60 to 70ch measures, and rows instead of tables wherever a record fits on one line.
 
-Mithra is light only. There is no dark theme yet; navy surfaces are panels inside the light world, not a mode.
+Mithra has a day theme and a navy night theme (approved by LN, 2026-11-10). Night follows the device by default and can be pinned to Day or Night from the Account menu.
 
 **Key Characteristics:**
 - Warm paper canvas, navy ink, one blue accent; mustard and terracotta in supporting roles.
+- Area marks inside lists: a blue square for money, a coral arch for health, a mustard circle for the baby log, a quiet square for calendar and notes. They name the area; they are not decoration.
 - Bricolage Grotesque for h1, h2, the brand, panel numbers and buttons; InterVariable for everything else.
 - Big rounded colour panels (1.5rem radius) carry key counts and status; hairline rules separate list items.
 - Sentence case throughout; no eyebrow labels, uppercase or monospace costume.
@@ -183,7 +184,7 @@ A warm paper palette with navy ink and a single confident blue, tuned in OKLCH; 
 - **Blue Wash / Blue Mist / Blue Edge** (blue-wash, blue-mist, blue-edge): status messages, privacy notes, pending capture, quick navigation highlight, and the review observation panel with its inset blue-edge ring.
 
 ### Secondary
-- **Mustard** (mustard): the Week in Review status panel (mixed 30% into paper), text selection (45% wash), and the focus ring on colour panels where a blue ring would vanish.
+- **Mustard** (mustard): the This week status panel (mixed 30% into paper), text selection (45% wash), and the focus ring on colour panels where a blue ring would vanish.
 
 ### Tertiary
 - **Terracotta** (terracotta): attention and errors. Invalid field borders, import blockers (tinted 7 to 9% into white), warning strokes in charts.
@@ -227,12 +228,12 @@ A warm paper palette with navy ink and a single confident blue, tuned in OKLCH; 
 
 ## Layout
 
-Pages sit in a centred shell: `min(100% - 3rem, 64rem)` for public pages, widening to 72rem inside the authenticated shell at 64rem and up (80rem below that breakpoint with 1rem gutters). The desktop top bar is sticky, 4rem tall, padded to align with an 80rem frame, and uses canvas at 94% over the page. Under 64rem the sidebar and toolbar give way to a sticky 4rem mobile header with a Menu disclosure that lists every destination, including utilities.
+Pages sit in a centred shell: `min(100% - 3rem, 64rem)` for public pages, widening to 72rem inside the authenticated shell at 64rem and up (80rem below that breakpoint with 1rem gutters). The desktop top bar is sticky, 4rem tall, padded to align with an 80rem frame, and uses canvas at 94% over the page. Under 48rem the tabs give way to a slim header (brand and Account) and the bottom dock; the page gains bottom padding so the dock never covers content.
 
-Rhythm follows the spacing scale (0.25rem to 4rem). Page headings get 4rem above and 2rem below; sections are separated by 2rem to 3rem. Breakpoints in use: 40rem, 45rem (panels stack, rows collapse), 64rem (paper shell), 90rem (Quick navigation shows its text label). Family Brief lays its three panels in an equal three-column grid with 1rem gaps; under 45rem they become compact full-width rows.
+Rhythm follows the spacing scale (0.25rem to 4rem). Page headings get 4rem above and 2rem below; sections are separated by 2rem to 3rem. Breakpoints in use: 40rem, 45rem (panels stack, rows collapse), 64rem (paper shell), 90rem (Quick navigation shows its text label). Home, Money and Health lay their three panels in an equal three-column grid with 1rem gaps; under 45rem they become compact full-width rows.
 
 ### Named Rules
-**The Utility Drawer Rule.** On desktop, only the five views are tabs. Import, Settings and Help never become tabs; they live in the toolbar or Account menu, and every item stays reachable from the mobile Menu.
+**The Utility Drawer Rule.** Only the main views are tabs and dock items. Import, Settings and Help never become tabs; they live in the Account menu on every width.
 
 ## Elevation & Depth
 
@@ -274,34 +275,42 @@ Confident and quiet at once: navy slabs in the display face.
 
 ### Navigation
 - **Desktop (64rem and up):** text tabs in Inter 500 at 0.9375rem, muted ink, filling the 4rem bar height. Hover turns them navy; the current tab goes 600 navy with a 2px navy underline that scales in from the centre over 260ms.
-- **Mobile:** sticky paper header with the brand and a Menu summary drawn as an outlined pill (inset hairline ring, display face). The menu panel is paper with the normal float shadow and full-width rows that tint paper-hover when current.
+- **Phone dock (under 48rem):** a fixed paper dock at the bottom with five 44px-plus targets: Home, Money, Add (a navy tile in the middle), Health and Calendar (Family after phase 2). The current item goes navy and 600. The slim top header keeps only the brand and the Account button. State screens (empty, error) keep the dock.
+- **Account menu:** Import, Settings, Help, the Auto / Day / Night theme switch, keyboard shortcuts and Sign out.
 - **Quick navigation:** a paper dialog (max 38rem) with a filled search field; the active result tints blue-wash.
 
 ### Colour Panels (signature)
 Big rounded panels that carry the numbers a couple acts on.
-- **Family Brief glance:** three panels, minimum 11rem tall, 1.5rem radius and padding. Coming up is Mithra blue, Worth checking is paper-surface with an inset hairline, Only you is navy. Each holds a display-face label, a panel number and a short note, and the whole panel is a link to its list with a mustard focus ring. Under 45rem they collapse to single rows with the number on the right and the note hidden.
-- **Week in Review status:** a mustard panel (30% mustard in paper) with navy text and a larger h2; no shadow.
+- **Glance panels (Home, Money, Health):** three panels, minimum 11rem tall, 1.5rem radius and padding. Coming up is Mithra blue, Worth checking is paper-surface with an inset hairline, Only you is navy. Each holds a display-face label, a panel number and a short note, and the whole panel is a link to its list with a mustard focus ring. Under 45rem they collapse to single rows with the number on the right and the note hidden.
+- **This week status:** a mustard panel (30% mustard in paper) with navy text and a larger h2; no shadow.
 - **Review observation:** blue-mist with an inset blue-edge ring at the same 1.5rem radius.
 
-### Hairline Lists
-Records, recent captures, imports and coaching items are plain lists separated by 1px hairlines with 1rem vertical padding, bold item titles, muted supporting text and link-blue actions in weight 700.
+### Hairline Lists (rows)
+Records, recent updates, imports, appointments and coaching items are rows: an area mark, a bold title, a muted meta line of short facts, and a right-aligned value in tabular figures. The whole row is the link to its source; rows that hold a form open as a disclosure. Long lists show twelve rows and a "Show all" button.
+
+### Value cards
+Health measurements are paper cards: the label, the latest value in the display face, a sparkline of recorded values with a dashed calculated direction, and the lab's own range in words. A pill says "In lab range", "Above lab range" or "Below lab range" only when the units match. Cards never say whether a value is good or bad.
+
+### Night theme
+Night is a navy room: canvas and paper become deep navy tones, ink becomes warm off-white, and Mithra blue lifts for contrast. Panels keep their colour roles; night surfaces use navy-lifted colours with a 2px coloured top rule instead of mixing mustard or coral into navy.
 
 ## Do's and Don'ts
 
 ### Do:
 - **Do** put the few key counts and statuses in big rounded colour panels (1.5rem radius) and keep everything else on paper with hairline lists.
-- **Do** use Mithra blue for identity and the "Coming up" panel, navy for primary actions and the "Only you" panel, mustard for weekly status.
+- **Do** use Mithra blue for identity and the "Coming up" panel, navy for primary actions and the "Only you" panel, mustard for weekly status. Inside the baby log, mustard is reserved for Save and Log feed.
 - **Do** set h1, h2, brand, panel numbers and buttons in Bricolage Grotesque 500 to 600, and everything else in InterVariable.
 - **Do** write every label, tab and button in sentence case.
 - **Do** keep a visible focus ring on every interactive element: link-blue by default, mustard on colour panels.
 - **Do** disable transforms and transitions under `prefers-reduced-motion: reduce` for the brand mark, panels and tab underline.
-- **Do** keep Import, Settings and Help out of the desktop tabs and inside the toolbar or Account menu, while the mobile Menu keeps every item.
+- **Do** keep Import, Settings and Help out of the tabs and the dock, inside the Account menu.
+- **Do** check every changed screen at phone and desktop widths, in day and night.
 - **Do** meet WCAG AA contrast for text on every panel colour.
 
 ### Don't:
 - **Don't** add eyebrow labels above headings.
 - **Don't** use uppercase transforms, letter-spaced caps or monospace as decoration.
 - **Don't** use coloured side-stripe borders on cards, alerts or list items.
-- **Don't** use pure black, or a second saturated accent beyond the assigned roles; coral is HealthTrends' colour.
-- **Don't** add a dark theme ad hoc; Mithra is light only until a dark theme is designed for the whole family.
+- **Don't** use pure black, or a second saturated accent beyond the assigned roles; coral appears only as the health area mark and its charts.
+- **Don't** mix mustard or coral into navy for night surfaces.
 - **Don't** lift or animate surfaces that are not links.

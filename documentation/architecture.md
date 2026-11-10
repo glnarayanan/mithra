@@ -170,13 +170,22 @@ Startup replays the journal before serving; ciphertext cleanup is idempotent.
 
 ## Browser shell
 
-`web/templates/shared/shell.html`, `web/static/styles.css`, and `web/static/app.js`
-are embedded first-party assets. The mobile-first shell renders without
-JavaScript, exposes Family Brief, Week in Review, Capture, Import, Finance,
-Health, Planning, Settings, and Help navigation, has a
-keyboard-visible skip link and focus treatment, and declares an accessible
-status region plus an honest empty state. The tiny JavaScript enhancement writes
-updates with `textContent`, never HTML, so untrusted future import/model text
+`web/templates/shared/shell.html`, `web/static/styles.css`, `web/static/theme.js`
+and `web/static/app.js` are embedded first-party assets. `shell.html` defines
+the shared `head` (the sign-in pages use `head-public`, which loads no app
+script), the `icon` set, the `app-shell` top bar, phone dock and Add sheet, and
+the `status` region. The shell renders without JavaScript. Desktop tabs are
+Home (with a Today and This week switch), Money, Health and Calendar; Import,
+Settings, Help and the theme switch sit in the Account menu. Under 48rem a
+bottom dock carries Home, Money, Add, Health and Calendar.
+
+`theme.js` applies a saved Day or Night choice before first paint; without one,
+the night tokens follow `prefers-color-scheme`. Pages share one component
+vocabulary in `styles.css` (page frame, glance panels, rows, value cards,
+segmented controls, sheet, empty and notice states) so a new page needs no new
+CSS for the common cases. Display formatting lives in `internal/app/format.go`
+and only changes how stored facts read. The JavaScript enhancement writes
+updates with `textContent`, never HTML, so untrusted import and model text
 remains text.
 
 Authentication, encrypted source infrastructure, durable jobs, the model-provider
