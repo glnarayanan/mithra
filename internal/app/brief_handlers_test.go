@@ -119,7 +119,7 @@ func TestFamilyBriefLoadsWithoutAIThenRefreshesEvidenceAndKeepsPartnerPrivateOut
 		t.Fatalf("follow-up code=%d calls=%d mail=%#v", followUp.Code, providerCalls, mailer.last(t))
 	}
 	week := serve(application, coachingGET("/review", ownerSession))
-	if week.Code != http.StatusOK || !strings.Contains(week.Body.String(), "Week in Review") || !strings.Contains(week.Body.String(), "Weekly status") || !strings.Contains(week.Body.String(), "Top priorities") || strings.Contains(week.Body.String(), "Only you</h2>") || !strings.Contains(week.Body.String(), "Regenerate AI insights") || strings.Contains(week.Body.String(), "A private record needs a look") {
+	if week.Code != http.StatusOK || !strings.Contains(week.Body.String(), "Week in review") || !strings.Contains(week.Body.String(), "Weekly status") || !strings.Contains(week.Body.String(), "Top priorities") || strings.Contains(week.Body.String(), "Only you</h2>") || !strings.Contains(week.Body.String(), "Regenerate AI insights") || strings.Contains(week.Body.String(), "A private record needs a look") {
 		t.Fatalf("week=%d %q", week.Code, week.Body.String())
 	}
 }

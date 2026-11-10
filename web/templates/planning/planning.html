@@ -12,7 +12,7 @@
     <main id="main-content" tabindex="-1" class="page">
       <header class="page-head">
         <div><h1>Calendar</h1><p class="lede">{{if .Timezone}}Household dates, plans and milestones. Times shown in {{.Timezone}}.{{else}}Household dates, plans and milestones. <a href="/settings#timezone">Set your household timezone</a> before exporting timed events.{{end}}</p></div>
-        <nav class="segmented" aria-label="Calendar view"><a href="{{.MonthURL}}"{{if eq .View "month"}} aria-current="page"{{end}}>Month</a><a href="{{.WeekURL}}"{{if eq .View "week"}} aria-current="page"{{end}}>Week</a><a href="{{.AgendaURL}}"{{if eq .View "agenda"}} aria-current="page"{{end}}>Agenda</a></nav>
+        <nav class="segmented calendar-view-switch" aria-label="Calendar view"><a href="{{.MonthURL}}"{{if eq .View "month"}} aria-current="page"{{end}}>Month</a><a href="{{.WeekURL}}"{{if eq .View "week"}} aria-current="page"{{end}}>Week</a><a href="{{.AgendaURL}}"{{if eq .View "agenda"}} aria-current="page"{{end}}>Agenda</a></nav>
       </header>
       {{template "status" .Status}}
       {{if .Error}}<section class="notice notice-error" role="alert"><p>{{.Error}}</p></section>{{end}}

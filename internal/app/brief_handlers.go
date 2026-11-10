@@ -424,7 +424,7 @@ func reviewEventMeta(event coaching.ReviewEvent) string {
 func reviewEventParts(event coaching.ReviewEvent) []string {
 	parts := make([]string, 0, 4)
 	if event.Domain != "" {
-		parts = append(parts, event.Domain)
+		parts = append(parts, areaNames(event.Domain))
 	}
 	if date, ok := parseISODate(event.When); ok {
 		label := humanDate(date)
@@ -439,6 +439,16 @@ func reviewEventParts(event coaching.ReviewEvent) []string {
 		parts = append(parts, strings.ReplaceAll(event.Status, " · ", ", "))
 	}
 	return parts
+}
+
+// areaNames rewrites coaching's domain names ("Planning + finance") to the
+// navigation's names ("Calendar and Money").
+func areaNames(domain string) string {
+	parts := strings.Split(domain, "+")
+	for index, part := range parts {
+		parts[index] = areaLabel(strings.ToLower(strings.TrimSpace(part)))
+	}
+	return strings.Join(parts, " and ")
 }
 
 // areaLabel names a record family the way the navigation does.

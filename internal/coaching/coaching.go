@@ -845,8 +845,8 @@ func applyHealthConflicts(facts []Fact, conflicts []health.Conflict) {
 	for _, conflict := range conflicts {
 		if index, ok := byRecord[conflict.RecordID]; ok {
 			reason := conflict.Reason
-			if strings.HasPrefix(reason, "Units ") {
-				reason = "reported units differ and cannot be compared; enter the correct value and unit."
+			if strings.HasPrefix(reason, "Units ") || strings.HasPrefix(reason, "Reported units") {
+				reason = "reported units differ and cannot be compared; enter the correct value and unit"
 			}
 			facts[index].Issue = joinIssue(facts[index].Issue, reason)
 		}
@@ -1360,16 +1360,13 @@ func reviewObservation(signals []Signal) Item {
 	if match := regexp.MustCompile(`Spending recorded in ([^.]+) through`).FindStringSubmatch(budget.Summary); len(match) == 2 {
 		category = match[1]
 	}
-	title := category + " need attention"
+	title := category + " is near its recorded budget"
+	if match := regexp.MustCompile(`([0-9]+(?:\.[0-9]+)?%) of the recorded budget`).FindStringSubmatch(budget.Summary); len(match) == 2 {
+		title = category + " at " + match[1] + " of the recorded budget"
+	}
 	copy := budget.Summary
 	if month.Kind != "" {
 		copy += " " + month.Summary
-		if spendingLowerThanPrior(month.Summary) {
-			title = category + " need attention, not overall spending"
-		}
-	}
-	if remaining := budgetRemaining(budget.Summary); remaining != "" {
-		copy += " Suggested next step: Keep the remaining recorded " + strings.ToLower(category) + " spending within " + remaining + ", or adjust the recorded budget."
 	}
 	evidence := append([]string(nil), budget.EvidenceIDs...)
 	for _, id := range month.EvidenceIDs {
@@ -1378,14 +1375,6 @@ func reviewObservation(signals []Signal) Item {
 		}
 	}
 	return Item{Title: title, Copy: copy, EvidenceIDs: evidence}
-}
-
-func budgetRemaining(summary string) string {
-	match := regexp.MustCompile(`leaving ([0-9][0-9,]*(?:\.[0-9]+)?)\.`).FindStringSubmatch(summary)
-	if len(match) == 2 {
-		return match[1]
-	}
-	return ""
 }
 
 func containsString(values []string, wanted string) bool {

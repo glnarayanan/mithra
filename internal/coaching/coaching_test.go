@@ -314,7 +314,7 @@ func TestWeekObservationUsesRecordedBudgetAndLowerOverallSpending(t *testing.T) 
 		{Kind: "finance_budget", Summary: "Spending recorded in Groceries through 21 Jul 2026 is 14,500 against the 18,000 budget recorded as July groceries budget, leaving 3,500. This is 80.6% of the recorded budget.", EvidenceIDs: []string{"budget"}},
 		{Kind: "finance_month_to_date", Summary: "Spending recorded from 1 Jul 2026 through 21 Jul 2026 is 32,759, compared with 52,800 from 1 Jun 2026 through 21 Jun 2026.", EvidenceIDs: []string{"month"}},
 	})
-	if observation.Title != "Groceries need attention, not overall spending" || !strings.Contains(observation.Copy, "within 3,500") || !strings.Contains(observation.Copy, "adjust the recorded budget") {
+	if observation.Title != "Groceries at 80.6% of the recorded budget" || !strings.Contains(observation.Copy, "leaving 3,500") || strings.Contains(observation.Copy, "Suggested") || strings.Contains(observation.Copy, "adjust") {
 		t.Fatalf("observation = %#v", observation)
 	}
 }

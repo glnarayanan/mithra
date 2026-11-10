@@ -32,7 +32,7 @@
           <section class="section" aria-labelledby="finance-trends-title">
             <div class="section-head"><h2 id="finance-trends-title">Spending by month</h2><nav class="segmented" aria-label="Spending period"><a href="/finance?scope={{.Scope}}&amp;range=3"{{if eq .Range 3}} aria-current="page"{{end}}>3 months</a><a href="/finance?scope={{.Scope}}&amp;range=6"{{if eq .Range 6}} aria-current="page"{{end}}>6 months</a><a href="/finance?scope={{.Scope}}&amp;range=12"{{if eq .Range 12}} aria-current="page"{{end}}>12 months</a></nav></div>
             {{if .Chart.Bars}}
-            <svg class="chart" viewBox="0 0 420 190" role="img" aria-labelledby="stack-title stack-desc"><title id="stack-title">Spending by month</title><desc id="stack-desc">{{.Chart.Summary}}</desc>
+            <svg class="chart chart-stack" viewBox="0 0 420 190" role="img" aria-labelledby="stack-title stack-desc"><title id="stack-title">Spending by month</title><desc id="stack-desc">{{.Chart.Summary}}</desc>
               {{range .Chart.Grid}}<line class="grid" x1="56" x2="412" y1="{{.Y}}" y2="{{.Y}}"></line><text x="50" y="{{.Y}}" dy="4" text-anchor="end">{{.Label}}</text>{{end}}
               {{range .Chart.Bars}}{{$bar := .}}{{range .Segments}}<rect class="bar {{.Class}}" x="{{$bar.X}}" y="{{.Y}}" width="{{$.Chart.Width}}" height="{{.Height}}"><title>{{$bar.Label}}, {{.Title}}</title></rect>{{end}}<text x="{{.LabelX}}" y="178" text-anchor="middle">{{.Label}}</text>{{if le (len $.Chart.Bars) 6}}<text class="total" x="{{.LabelX}}" y="{{.TotalY}}" text-anchor="middle">{{.Total}}</text>{{end}}{{end}}
             </svg>

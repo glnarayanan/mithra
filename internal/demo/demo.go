@@ -673,7 +673,7 @@ func verifyFixture(ctx context.Context, db *sql.DB, owner, partner policy.ActorS
 		return errors.New("demo Family Brief or private Week in Review overlay is incomplete")
 	}
 	monthlyPlanning := shiftFixtureLabel("August household planning", "2026-08-02", seededAt)
-	if ownerReview.Shared.Status.Label != "Mostly on track" || ownerReview.Shared.Observation.Title != "Groceries need attention, not overall spending" || !reviewHasTitles(ownerReview.Shared.Priorities, "Review travel documents", "Insurance renewal", monthlyPlanning) {
+	if ownerReview.Shared.Status.Label != "Mostly on track" || ownerReview.Shared.Observation.Title != "Groceries at 80.6% of the recorded budget" || !reviewHasTitles(ownerReview.Shared.Priorities, "Review travel documents", "Insurance renewal", monthlyPlanning) {
 		return errors.New("demo shared Week in Review is incomplete")
 	}
 	if ownerReview.Personal.Status.Label != "Needs attention" || !reviewHasTitle(ownerReview.Personal.Issues, "Glucose record needs correction") || reviewHasTitle(partnerReview.Personal.Issues, "Glucose record needs correction") {

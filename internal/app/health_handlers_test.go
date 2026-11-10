@@ -102,7 +102,7 @@ func TestHealthRangeFiltersChartsAndKeepsConflicts(t *testing.T) {
 		Series: []health.Series{{Analyte: "Weight", Subject: "Alex", Unit: "kg", Observations: []health.Observation{
 			observation("2026-04-20", "70"), observation("2026-05-21", "71"), observation("2026-06-21", "72"), observation("2026-07-21", "73"),
 		}}},
-		Conflicts: []health.Conflict{{Analyte: "Glucose", Reason: "Units are not explicitly compatible; enter the correct value and unit.", SourceID: "conflict"}},
+		Conflicts: []health.Conflict{{Analyte: "Glucose", Reason: "Reported units differ and cannot be compared. Enter the correct value and unit.", SourceID: "conflict"}},
 	}
 	now := time.Date(2026, time.July, 21, 12, 0, 0, 0, time.UTC)
 	if healthRange("") != "3" || healthRange("bogus") != "3" || healthRange("all") != "all" {

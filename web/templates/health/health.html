@@ -21,7 +21,7 @@
       {{else}}
       <section aria-labelledby="health-glance"><h2 id="health-glance" class="visually-hidden">At a glance</h2>
         <div class="panels">
-          <a class="panel panel-blue" href="#health-appointments-title"><span class="panel-label">Next appointment</span><span class="panel-number">{{if .NextAppointment}}{{.NextAppointment.Relative}}{{else}}None{{end}}</span><span class="panel-note">{{if .NextAppointment}}{{.NextAppointment.Label}}, {{.NextAppointment.DateLabel}}{{else}}No appointments dated ahead{{end}}</span></a>
+          <a class="panel panel-blue" href="#health-appointments-title"><span class="panel-label">Next appointment</span><span class="panel-number">{{if .NextAppointment}}{{.NextAppointment.Relative}}{{else}}0{{end}}</span><span class="panel-note">{{if .NextAppointment}}{{.NextAppointment.Label}}, {{.NextAppointment.DateLabel}}{{else}}No appointments dated ahead{{end}}</span></a>
           <a class="panel panel-paper" href="#health-series-title"><span class="panel-label">Measurements tracked</span><span class="panel-number">{{len .Series}}</span><span class="panel-note">In the period shown</span></a>
           <a class="panel panel-paper" href="#health-routines-title"><span class="panel-label">Care routines</span><span class="panel-number">{{len .Routines}}</span><span class="panel-note">{{if .Routines}}Shown exactly as saved{{else}}None recorded{{end}}</span></a>
         </div>

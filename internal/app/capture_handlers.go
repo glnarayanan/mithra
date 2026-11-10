@@ -289,8 +289,8 @@ func (a *App) renderCapture(r *http.Request, w http.ResponseWriter, scope policy
 }
 
 func captureItemView(receipt capture.Capture, now time.Time) CaptureItemView {
-	kind := strings.Title(receipt.RecordFamily)
-	if kind == "" {
+	kind := areaLabel(receipt.RecordFamily)
+	if receipt.RecordFamily == "" {
 		kind = "Update"
 	}
 	title := receipt.Summary

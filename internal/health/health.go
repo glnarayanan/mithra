@@ -659,7 +659,7 @@ func buildSeries(observations []Observation) ([]Series, []Conflict) {
 		u, _ := UnitFor(o.Unit)
 		base := strings.ToLower(strings.Join([]string{o.Analyte, o.Subject, o.Specimen, o.Method, o.ReferenceContext}, "\x1f"))
 		if len(baseFamilies[base]) > 1 {
-			conflicts = append(conflicts, Conflict{RecordID: o.ID, Version: o.Version, Analyte: o.Analyte, Reason: "Units are not explicitly compatible; enter the correct value and unit.", SourceID: o.SourceID})
+			conflicts = append(conflicts, Conflict{RecordID: o.ID, Version: o.Version, Analyte: o.Analyte, Reason: "Reported units differ and cannot be compared. Enter the correct value and unit.", SourceID: o.SourceID})
 			continue
 		}
 		canonical, err := Convert(o.Value, o.Unit, u.Canonical)
