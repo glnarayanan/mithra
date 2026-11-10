@@ -61,7 +61,29 @@ func relativeDays(date, now time.Time) string {
 // groupDigits adds thousands separators to the integer part of a plain
 // decimal string such as "735000" or "-1250.50". Text that is not a plain
 // number is returned unchanged.
-func groupDigits(value string) string {
+func groupDigits(value string) string { return groupDigitsIn(value, "") }
+
+// currencySymbols are the signs a household can choose to show on Money
+// figures. The sign is display only: amounts are never converted.
+var currencySymbols = map[string]string{"INR": "₹", "USD": "$", "GBP": "£", "EUR": "€"}
+
+// moneyIn groups an amount for the locale and puts the household's currency
+// sign in front, after any minus sign: −₹1,250.
+func moneyIn(value, locale, currency string) string {
+	grouped := groupDigitsIn(value, locale)
+	symbol := currencySymbols[currency]
+	if symbol == "" || grouped == "" || strings.Trim(grouped, "−+0123456789,.") != "" {
+		return grouped
+	}
+	if strings.HasPrefix(grouped, "−") {
+		return "−" + symbol + strings.TrimPrefix(grouped, "−")
+	}
+	return symbol + grouped
+}
+
+// groupDigitsIn groups digits the way the household locale writes them:
+// lakh and crore groups (7,35,000) for en-IN, thousands everywhere else.
+func groupDigitsIn(value, locale string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return value
@@ -76,7 +98,8 @@ func groupDigits(value string) string {
 	}
 	var grouped strings.Builder
 	for i, digit := range whole {
-		if i > 0 && (len(whole)-i)%3 == 0 {
+		left := len(whole) - i
+		if i > 0 && (left%3 == 0 && (locale != "en-IN" || left == 3) || locale == "en-IN" && left > 3 && left%2 == 1) {
 			grouped.WriteByte(',')
 		}
 		grouped.WriteRune(digit)

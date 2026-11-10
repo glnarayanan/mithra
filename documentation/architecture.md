@@ -93,8 +93,10 @@ use bounded integer coefficient-and-scale values; Go owns exact totals,
 month-to-month category changes, and upcoming-date queries. Invalid or missing
 amounts and dates remain source-linked incomplete records and are excluded from
 affected calculations. A source may declare at most one validation-only
-currency context; no currency field, selector, conversion, or symbol is stored
-as finance meaning or rendered by the lens.
+currency context; no currency field, conversion, or symbol is stored as
+finance meaning. The household may choose a display-only currency sign and
+locale (migration 021); the lens prefixes amounts with that sign and groups
+digits for the locale, without changing any stored value.
 
 Finance reads recheck active membership and apply the same shared/personal
 scope used by encrypted source downloads. Corrections use optimistic versions,

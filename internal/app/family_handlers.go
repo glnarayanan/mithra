@@ -164,6 +164,7 @@ func (a *App) renderFamily(ctx context.Context, w http.ResponseWriter, scope pol
 	if code != http.StatusOK {
 		w.WriteHeader(code)
 	}
+	a.localize(ctx, rendered)
 	rendered.commit(w)
 }
 
@@ -266,5 +267,6 @@ func (a *App) renderPerson(ctx context.Context, w http.ResponseWriter, r *http.R
 	if code != http.StatusOK {
 		w.WriteHeader(code)
 	}
+	a.localize(ctx, rendered)
 	rendered.commit(w)
 }

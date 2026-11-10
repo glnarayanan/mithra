@@ -68,6 +68,11 @@ appointments, and routines together; it does not diagnose or recommend
 treatment. When results cannot be compared safely, Mithra keeps them separate
 until you enter a corrected value and unit.
 
+The household owner can choose a **Language and number format** and a
+**Currency on Money** in **Settings**. English (India) groups figures as
+7,35,000. The currency sign is display only: Money shows it before every
+amount, and Mithra never converts between currencies.
+
 **Planning** keeps goals, milestones, constraints, and household dates
 connected. Confirm the household timezone in **Settings** before exporting
 timed events. Downloading an `.ics` file or opening a Google Calendar draft is

@@ -170,6 +170,7 @@ func (a *App) renderHealth(ctx context.Context, w http.ResponseWriter, view Heal
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	a.localize(ctx, rendered)
 	rendered.commit(w)
 }
 

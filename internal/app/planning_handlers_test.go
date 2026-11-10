@@ -113,6 +113,23 @@ func TestPlanningLensRequiresSessionAndSettingsConfirmsTimezone(t *testing.T) {
 	if bad.Code != http.StatusOK || !strings.Contains(bad.Body.String(), "valid timezone") {
 		t.Fatalf("bad timezone=%d %s", bad.Code, bad.Body.String())
 	}
+	locale := serve(application, authenticatedSettingsRequest(session, http.MethodPost, url.Values{"action": {"save_locale"}, "locale": {"en-IN"}}))
+	if body := locale.Body.String(); locale.Code != http.StatusOK || !strings.Contains(body, "saved as English (India)") || !strings.Contains(body, `<html lang="en-IN">`) {
+		t.Fatalf("saved locale=%d", locale.Code)
+	}
+	if page := serve(application, authenticatedPlanningRequest(session, "/finance")).Body.String(); !strings.Contains(page, `<html lang="en-IN">`) {
+		t.Fatal("pages do not use the household locale")
+	}
+	currency := serve(application, authenticatedSettingsRequest(session, http.MethodPost, url.Values{"action": {"save_currency"}, "currency": {"INR"}}))
+	if currency.Code != http.StatusOK || !strings.Contains(currency.Body.String(), "Money now shows ₹ Indian rupee.") {
+		t.Fatalf("saved currency=%d", currency.Code)
+	}
+	if odd := serve(application, authenticatedSettingsRequest(session, http.MethodPost, url.Values{"action": {"save_currency"}, "currency": {"BTC"}})); !strings.Contains(odd.Body.String(), "Choose one of the listed currencies.") {
+		t.Fatal("an unknown currency was accepted")
+	}
+	if wrong := serve(application, authenticatedSettingsRequest(session, http.MethodPost, url.Values{"action": {"save_locale"}, "locale": {"fr-FR"}})); !strings.Contains(wrong.Body.String(), "Choose one of the listed formats.") {
+		t.Fatal("an unknown locale was accepted")
+	}
 }
 
 func authenticatedPlanningRequest(session browserSession, target string) *http.Request {

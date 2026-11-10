@@ -129,6 +129,83 @@ func (s *Service) SetTimezone(ctx context.Context, a policy.ActorScope, zone str
 	return nil
 }
 
+// Locales are the household language choices. They set how dates, times and
+// numbers are written, never what a record means. The empty locale leaves it
+// to each browser.
+var Locales = []string{"en-IN", "en-GB", "en-US"}
+
+// GetLocale returns the household's chosen locale, or "" when none is set.
+func (s *Service) GetLocale(ctx context.Context, a policy.ActorScope) (string, error) {
+	if err := authorize(ctx, s.db, a); err != nil {
+		return "", err
+	}
+	var locale string
+	if err := s.db.QueryRowContext(ctx, `SELECT locale FROM households WHERE id=? AND status='active'`, a.HouseholdID).Scan(&locale); err != nil {
+		return "", policy.ErrUnauthorized
+	}
+	return locale, nil
+}
+
+// SetLocale changes the household locale only when its active owner confirms it.
+func (s *Service) SetLocale(ctx context.Context, a policy.ActorScope, locale string) error {
+	if !a.Valid() {
+		return policy.ErrUnauthorized
+	}
+	known := locale == ""
+	for _, value := range Locales {
+		known = known || value == locale
+	}
+	if !known {
+		return ErrInvalidRecord
+	}
+	r, err := s.db.ExecContext(ctx, `UPDATE households SET locale=?,updated_at=? WHERE id=? AND owner_user_id=? AND status='active' AND EXISTS (SELECT 1 FROM household_members m JOIN users u ON u.id=m.user_id WHERE m.household_id=households.id AND m.user_id=? AND m.role='owner' AND u.status='active')`, locale, s.now().UTC().Format(time.RFC3339Nano), a.HouseholdID, a.ActorID, a.ActorID)
+	if err != nil {
+		return err
+	}
+	if n, _ := r.RowsAffected(); n != 1 {
+		return policy.ErrUnauthorized
+	}
+	return nil
+}
+
+// Currencies are the signs a household can show on Money figures. The
+// choice is display only; records store no currency.
+var Currencies = []string{"INR", "USD", "GBP", "EUR"}
+
+// GetCurrency returns the household's display currency, or "" for none.
+func (s *Service) GetCurrency(ctx context.Context, a policy.ActorScope) (string, error) {
+	if err := authorize(ctx, s.db, a); err != nil {
+		return "", err
+	}
+	var currency string
+	if err := s.db.QueryRowContext(ctx, `SELECT currency FROM households WHERE id=? AND status='active'`, a.HouseholdID).Scan(&currency); err != nil {
+		return "", policy.ErrUnauthorized
+	}
+	return currency, nil
+}
+
+// SetCurrency changes the display currency only when the active owner confirms it.
+func (s *Service) SetCurrency(ctx context.Context, a policy.ActorScope, currency string) error {
+	if !a.Valid() {
+		return policy.ErrUnauthorized
+	}
+	known := currency == ""
+	for _, value := range Currencies {
+		known = known || value == currency
+	}
+	if !known {
+		return ErrInvalidRecord
+	}
+	r, err := s.db.ExecContext(ctx, `UPDATE households SET currency=?,updated_at=? WHERE id=? AND owner_user_id=? AND status='active' AND EXISTS (SELECT 1 FROM household_members m JOIN users u ON u.id=m.user_id WHERE m.household_id=households.id AND m.user_id=? AND m.role='owner' AND u.status='active')`, currency, s.now().UTC().Format(time.RFC3339Nano), a.HouseholdID, a.ActorID, a.ActorID)
+	if err != nil {
+		return err
+	}
+	if n, _ := r.RowsAffected(); n != 1 {
+		return policy.ErrUnauthorized
+	}
+	return nil
+}
+
 func (s *Service) CreateGoal(ctx context.Context, a policy.ActorScope, d GoalDraft) (string, error) {
 	d.Visibility = policy.PersonalDefault(d.Visibility)
 	if strings.TrimSpace(d.Title) == "" || (d.TargetOn != "" && !date(d.TargetOn)) {

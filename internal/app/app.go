@@ -34,6 +34,7 @@ import (
 	"github.com/glnarayanan/mithra/internal/jobs"
 	"github.com/glnarayanan/mithra/internal/people"
 	"github.com/glnarayanan/mithra/internal/planning"
+	"github.com/glnarayanan/mithra/internal/policy"
 	"github.com/glnarayanan/mithra/internal/providers"
 	"github.com/glnarayanan/mithra/internal/secrets"
 	"github.com/glnarayanan/mithra/internal/storage"
@@ -503,13 +504,53 @@ func (w *bufferedResponse) commit(destination http.ResponseWriter) {
 
 type requestIDContextKey struct{}
 
+// pageContext remembers who is signed in for this request, so a rendered page
+// can take the household's language without every handler passing it along.
+type pageContextKey struct{}
+
+type pageContext struct {
+	scope    policy.ActorScope
+	signedIn bool
+}
+
+// householdLocale returns the signed-in household's locale, or "".
+func (a *App) householdLocale(ctx context.Context) string {
+	page, ok := ctx.Value(pageContextKey{}).(*pageContext)
+	if !ok || !page.signedIn || a.planningRecords == nil {
+		return ""
+	}
+	locale, err := a.planningRecords.GetLocale(ctx, page.scope)
+	if err != nil {
+		return ""
+	}
+	return locale
+}
+
+// localize sets the page language to the household locale, so the browser's
+// own date and time pickers write dates and times the way the app does.
+func (a *App) localize(ctx context.Context, rendered *bufferedResponse) {
+	locale := a.householdLocale(ctx)
+	if locale == "" || rendered.overflow {
+		return
+	}
+	body := rendered.body.Bytes()
+	if index := bytes.Index(body, []byte(`<html lang="en">`)); index >= 0 && index < 512 {
+		updated := append([]byte{}, body[:index]...)
+		updated = append(updated, []byte(`<html lang="`+locale+`">`)...)
+		updated = append(updated, body[index+len(`<html lang="en">`):]...)
+		rendered.body.Reset()
+		rendered.body.Write(updated)
+	}
+}
+
 var requestIDFallback atomic.Uint64
 
 func withRequestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := newRequestID()
 		w.Header().Set("X-Request-ID", id)
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestIDContextKey{}, id)))
+		ctx := context.WithValue(r.Context(), requestIDContextKey{}, id)
+		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, pageContextKey{}, &pageContext{})))
 	})
 }
 
@@ -568,5 +609,6 @@ func (a *App) notFound(w http.ResponseWriter, r *http.Request, title, copy, back
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusNotFound)
+	a.localize(r.Context(), rendered)
 	rendered.commit(w)
 }
