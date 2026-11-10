@@ -31,6 +31,7 @@ import (
 	"github.com/glnarayanan/mithra/internal/imports"
 	"github.com/glnarayanan/mithra/internal/installer"
 	"github.com/glnarayanan/mithra/internal/jobs"
+	"github.com/glnarayanan/mithra/internal/people"
 	"github.com/glnarayanan/mithra/internal/planning"
 	"github.com/glnarayanan/mithra/internal/providers"
 	"github.com/glnarayanan/mithra/internal/secrets"
@@ -78,6 +79,7 @@ type App struct {
 	finance          *finance.Service
 	healthRecords    *health.Service
 	planningRecords  *planning.Service
+	people           *people.Service
 	captureRecords   *capture.Service
 	imports          *imports.Service
 	coaching         *coaching.Service
@@ -107,6 +109,9 @@ type NavigationItem struct {
 	Utility bool
 	// Icon names the dock glyph for primary destinations shown on phones.
 	Icon string
+	// PhoneMenu items are tabs on desktop that move to the account menu on
+	// phones, where the dock has room for only four destinations and Add.
+	PhoneMenu bool
 }
 
 // New opens a verified SQLite database before making a handler available.
@@ -123,7 +128,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		return nil, err
 	}
 
-	templates, err := template.New("mithra").Funcs(templateFuncs).ParseFS(web.Files, "templates/shared/*.html", "templates/auth/*.html", "templates/brief/*.html", "templates/capture/*.html", "templates/finance/*.html", "templates/health/*.html", "templates/help/*.html", "templates/imports/*.html", "templates/planning/*.html", "templates/review/*.html", "templates/settings/*.html")
+	templates, err := template.New("mithra").Funcs(templateFuncs).ParseFS(web.Files, "templates/shared/*.html", "templates/auth/*.html", "templates/brief/*.html", "templates/capture/*.html", "templates/finance/*.html", "templates/health/*.html", "templates/help/*.html", "templates/imports/*.html", "templates/planning/*.html", "templates/family/*.html", "templates/review/*.html", "templates/settings/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse embedded templates: %w", err)
 	}
@@ -195,7 +200,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		return nil, errors.New("reconcile visual PDF staging")
 	}
 	cleanupContext, cleanupCancel := context.WithCancel(context.Background())
-	application := &App{db: db, templates: templates, logger: log.Default(), auth: service, mailer: mailer, providerSettings: providerSettings, openAIClient: cfg.OpenAIClient, sources: sources, jobs: jobs.New(db), finance: financeRecords, healthRecords: healthRecords, planningRecords: planningRecords, captureRecords: captureRecords, imports: importRecords, coaching: coachingRecords, importExtractor: imports.New(cfg.ImportPDF), captureVoiceSlot: make(chan struct{}, 2), captureStop: cleanupCancel, captureDone: make(chan struct{}), origin: origin, secure: cfg.SecureCookies, trustedProxy: cfg.TrustedProxy, trustedProxies: cfg.TrustedProxies, maintenance: maintenance, masterKey: append([]byte(nil), cfg.MasterKey...)}
+	application := &App{db: db, templates: templates, logger: log.Default(), auth: service, mailer: mailer, providerSettings: providerSettings, openAIClient: cfg.OpenAIClient, sources: sources, jobs: jobs.New(db), finance: financeRecords, healthRecords: healthRecords, planningRecords: planningRecords, people: people.New(db), captureRecords: captureRecords, imports: importRecords, coaching: coachingRecords, importExtractor: imports.New(cfg.ImportPDF), captureVoiceSlot: make(chan struct{}, 2), captureStop: cleanupCancel, captureDone: make(chan struct{}), origin: origin, secure: cfg.SecureCookies, trustedProxy: cfg.TrustedProxy, trustedProxies: cfg.TrustedProxies, maintenance: maintenance, masterKey: append([]byte(nil), cfg.MasterKey...)}
 	if databasePath, err := filepath.Abs(cfg.DatabasePath); err == nil {
 		application.backupPaths = installer.Paths{Data: filepath.Dir(databasePath), Database: databasePath, Sources: sourceRoot, Journal: journalPath}
 	}
@@ -263,6 +268,8 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("/health", a.healthLens)
 	mux.HandleFunc("/health/correct", a.correctHealthObservation)
 	mux.HandleFunc("/planning", a.planningLens)
+	mux.HandleFunc("/family", a.family)
+	mux.HandleFunc("/family/", a.familyPerson)
 	mux.HandleFunc("/planning/events/", a.planningICS)
 	mux.HandleFunc("/sources/", a.sourceFile)
 	mux.HandleFunc("/", a.brief)
@@ -341,7 +348,8 @@ func navigationForPath(path string) []NavigationItem {
 		{Path: "/", Label: "Home", Current: path == "/" || path == "/review", Icon: "home"},
 		{Path: "/finance", Label: "Money", Current: path == "/finance", Icon: "money"},
 		{Path: "/health", Label: "Health", Current: path == "/health", Icon: "health"},
-		{Path: "/planning", Label: "Calendar", Current: path == "/planning", Icon: "calendar"},
+		{Path: "/planning", Label: "Calendar", Current: path == "/planning", Icon: "calendar", PhoneMenu: true},
+		{Path: "/family", Label: "Family", Current: path == "/family" || strings.HasPrefix(path, "/family/"), Icon: "family"},
 		{Path: "/imports", Label: "Import", Current: path == "/imports", Utility: true},
 		{Path: "/settings", Label: "Settings", Current: path == "/settings", Utility: true},
 		{Path: "/help", Label: "Help", Current: path == "/help", Utility: true},

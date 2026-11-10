@@ -102,7 +102,17 @@ type HealthRecordRow struct {
 	ShowSubject bool
 }
 
+// PersonFields feeds the shared add and edit fields on Family pages.
+type PersonFields struct {
+	Name, Relationship, BirthDate string
+	Private                       bool
+	Options                       []FamilyOptionView
+}
+
 var templateFuncs = template.FuncMap{
+	"personFields": func(name, relationship, birthDate string, private bool, options []FamilyOptionView) PersonFields {
+		return PersonFields{Name: name, Relationship: relationship, BirthDate: birthDate, Private: private, Options: options}
+	},
 	"healthRow": func(record HealthRecordView, showSubject bool) HealthRecordRow {
 		return HealthRecordRow{Record: record, ShowSubject: showSubject}
 	},

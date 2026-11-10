@@ -1,0 +1,41 @@
+{{define "person.html"}}
+<!doctype html>
+<html lang="en">
+  <head>
+    {{template "head"}}
+    <title>{{.Person.Name}} · Mithra</title>
+  </head>
+  <body class="authenticated-shell">
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    {{template "app-shell" .}}
+    <main id="main-content" tabindex="-1" class="page">
+      <header class="page-head"><div><p class="crumb"><a href="/family">Family</a></p><h1>{{.Person.Name}}</h1><p class="lede">{{.Person.RelationshipLabel}}{{if .Person.Age}}, {{.Person.Age}}{{end}}{{if .Person.BirthLabel}}. {{.Person.BirthLabel}}{{end}}.{{if .Person.Private}} Only you can see this person.{{end}}</p></div></header>
+      {{template "status" .Status}}
+      <section aria-labelledby="person-glance"><h2 id="person-glance" class="visually-hidden">At a glance</h2>
+        <div class="panels">
+          <a class="panel panel-paper" href="#person-health-title"><span class="panel-label">Health records</span><span class="panel-number">{{len .Health.Records}}</span><span class="panel-note">{{if .Health.Records}}Records that name {{.Person.Name}}{{else}}None name {{.Person.Name}} yet{{end}}</span></a>
+          <a class="panel panel-blue" href="#person-health-title"><span class="panel-label">Next appointment</span><span class="panel-number">{{if .Health.NextAppointment}}{{.Health.NextAppointment.Relative}}{{else}}0{{end}}</span><span class="panel-note">{{if .Health.NextAppointment}}{{.Health.NextAppointment.Label}}, {{.Health.NextAppointment.DateLabel}}{{else}}No appointments dated ahead{{end}}</span></a>
+        </div>
+      </section>
+      <div class="cols">
+        <div>
+          <section class="section" aria-labelledby="person-health-title">
+            <div class="section-head"><h2 id="person-health-title">Health</h2><a href="{{.Person.HealthURL}}">Open in Health</a></div>
+            {{if .Health.Series}}<div class="cards">{{range .Health.Series}}<a class="card" href="{{.EvidenceURL}}"><span class="card-head"><span>{{.Analyte}}</span>{{if .RangeStatus}}<span class="pill {{if .RangeOut}}pill-out{{else}}pill-in{{end}}">{{.RangeStatus}}</span>{{end}}</span><span class="card-value">{{.LatestValue}}<small>{{.Unit}}</small></span><span class="card-foot"><span>Latest {{.LatestDate}}</span>{{if .ReferenceRange}}<span>{{.ReferenceRange}}</span>{{end}}</span></a>{{end}}</div>
+            {{else}}<p class="quiet">Health records appear here when an update or import names {{.Person.Name}} as the subject.</p>{{end}}
+            {{if .Health.Appointments}}<ul class="rows" role="list">{{range .Health.Appointments}}<li><a class="row" href="{{.EvidenceURL}}"><span class="mark mark-plan" aria-hidden="true">{{template "icon" "calendar"}}</span><span><span class="row-title">{{.Label}}</span><span class="row-meta"><time datetime="{{.DateISO}}">{{.DateLabel}}</time>{{if .Location}}<span>{{.Location}}</span>{{end}}</span></span><span class="row-value">{{.Relative}}</span></a></li>{{end}}</ul>{{end}}
+            <p class="chart-note">For your records, not medical advice.</p>
+          </section>
+        </div>
+        <div>
+          <section class="section" aria-labelledby="person-edit-title">
+            <div class="section-head"><h2 id="person-edit-title">Details</h2></div>
+            <form method="post" action="{{.Person.URL}}" class="field-grid family-form"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="version" value="{{.Person.Version}}">{{template "person-fields" (personFields .Person.Name .Person.Relationship .Person.BirthDate .Person.Private .Relationships)}}<div class="row-actions"><button type="submit">Save details</button></div></form>
+            <details class="row-details danger-zone"><summary class="button button-quiet">Remove from Family</summary><div class="row-body"><p>Removing {{.Person.Name}} hides them from Family. Health records that name them stay as they are.</p><form method="post" action="{{.Person.URL}}"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="version" value="{{.Person.Version}}"><input type="hidden" name="action" value="archive"><button type="submit" class="button">Remove {{.Person.Name}}</button></form></div></details>
+          </section>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>
+{{end}}

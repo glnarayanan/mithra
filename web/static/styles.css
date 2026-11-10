@@ -618,3 +618,13 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .capture-recent, .imports-recent { display: grid; gap: 0.25rem; }
 .row form { margin: 0; }
 .row-links a { font-weight: 600; }
+@media (min-width: 48rem) { .menu-phone-only { display: none !important; } }
+
+/* Family */
+.family-form { align-items: end; }
+.family-form .row-actions { grid-column: 1 / -1; }
+.field small { font-weight: 400; }
+.crumb { font-size: 0.875rem; margin-bottom: 0.25rem; }
+.crumb a { color: var(--muted); }
+.danger-zone { margin-top: 1.25rem; }
+.danger-zone > summary { display: inline-flex; }

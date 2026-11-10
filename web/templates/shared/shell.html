@@ -28,6 +28,7 @@
       <details class="account-menu">
         <summary aria-label="Account, Import, Settings and Help"><span class="avatar" aria-hidden="true">{{template "icon" "family"}}</span><span class="account-label">Account</span></summary>
         <div class="menu-panel">
+          {{range .Navigation}}{{if .PhoneMenu}}<a class="menu-phone-only" href="{{.Path}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a>{{end}}{{end}}
           {{range .Navigation}}{{if .Utility}}<a href="{{.Path}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a>{{end}}{{end}}
           <div class="theme-switch" data-theme-switch hidden><span id="theme-switch-label">Theme</span><div class="segmented" role="group" aria-labelledby="theme-switch-label"><button type="button" data-theme-choice="system" aria-pressed="true">Auto</button><button type="button" data-theme-choice="day" aria-pressed="false">Day</button><button type="button" data-theme-choice="night" aria-pressed="false">Night</button></div></div>
           <button type="button" class="menu-shortcuts" data-shortcut-help-trigger aria-keyshortcuts="?">Keyboard shortcuts</button>
@@ -38,7 +39,7 @@
   </header>
   <nav class="dock" aria-label="Phone navigation">
     <ul role="list">
-      {{range $i, $item := .Navigation}}{{if not $item.Utility}}{{if eq $i 2}}<li><a class="dock-add" href="/capture" data-quick-capture-trigger aria-haspopup="dialog" aria-controls="quick-capture"><span class="dock-add-tile">{{template "icon" "plus"}}</span>Add</a></li>{{end}}<li><a href="{{$item.Path}}"{{if $item.Current}} aria-current="page"{{end}}>{{template "icon" $item.Icon}}{{$item.Label}}</a></li>{{end}}{{end}}
+      {{range $i, $item := .Navigation}}{{if and (not $item.Utility) (not $item.PhoneMenu)}}{{if eq $i 2}}<li><a class="dock-add" href="/capture" data-quick-capture-trigger aria-haspopup="dialog" aria-controls="quick-capture"><span class="dock-add-tile">{{template "icon" "plus"}}</span>Add</a></li>{{end}}<li><a href="{{$item.Path}}"{{if $item.Current}} aria-current="page"{{end}}>{{template "icon" $item.Icon}}{{$item.Label}}</a></li>{{end}}{{end}}
     </ul>
   </nav>
   <dialog id="quick-capture" class="sheet" aria-labelledby="quick-capture-title">
