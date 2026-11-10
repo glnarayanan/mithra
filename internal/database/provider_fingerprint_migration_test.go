@@ -20,7 +20,7 @@ func TestProviderFingerprintMigrationRemovesSecretDerivedMetadata(t *testing.T) 
 		t.Fatalf("migrations = %d, %v", len(set), err)
 	}
 	path := filepath.Join(t.TempDir(), "mithra.sqlite3")
-	old, err := database.OpenWithMigrations(ctx, path, set[:len(set)-1])
+	old, err := database.OpenWithMigrations(ctx, path, set[:16])
 	if err != nil {
 		t.Fatal(err)
 	}

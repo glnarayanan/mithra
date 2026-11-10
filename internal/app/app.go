@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/glnarayanan/mithra/internal/carelog"
 	"html/template"
 	"log"
 	"net/http"
@@ -31,7 +32,9 @@ import (
 	"github.com/glnarayanan/mithra/internal/imports"
 	"github.com/glnarayanan/mithra/internal/installer"
 	"github.com/glnarayanan/mithra/internal/jobs"
+	"github.com/glnarayanan/mithra/internal/people"
 	"github.com/glnarayanan/mithra/internal/planning"
+	"github.com/glnarayanan/mithra/internal/policy"
 	"github.com/glnarayanan/mithra/internal/providers"
 	"github.com/glnarayanan/mithra/internal/secrets"
 	"github.com/glnarayanan/mithra/internal/storage"
@@ -78,6 +81,8 @@ type App struct {
 	finance          *finance.Service
 	healthRecords    *health.Service
 	planningRecords  *planning.Service
+	people           *people.Service
+	carelog          *carelog.Service
 	captureRecords   *capture.Service
 	imports          *imports.Service
 	coaching         *coaching.Service
@@ -101,11 +106,15 @@ type App struct {
 type NavigationItem struct {
 	Path    string
 	Label   string
-	Group   string
 	Current bool
-	// Utility items stay in the mobile menu and quick navigation but are
-	// reached from the toolbar or account menu in the desktop top bar.
+	// Utility items (Import, Settings, Help) live in the account menu and
+	// quick navigation rather than the top-bar tabs or the phone dock.
 	Utility bool
+	// Icon names the dock glyph for primary destinations shown on phones.
+	Icon string
+	// PhoneMenu items are tabs on desktop that move to the account menu on
+	// phones, where the dock has room for only four destinations and Add.
+	PhoneMenu bool
 }
 
 // New opens a verified SQLite database before making a handler available.
@@ -122,7 +131,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		return nil, err
 	}
 
-	templates, err := template.ParseFS(web.Files, "templates/shared/*.html", "templates/auth/*.html", "templates/brief/*.html", "templates/capture/*.html", "templates/finance/*.html", "templates/health/*.html", "templates/help/*.html", "templates/imports/*.html", "templates/planning/*.html", "templates/review/*.html", "templates/settings/*.html")
+	templates, err := template.New("mithra").Funcs(templateFuncs).ParseFS(web.Files, "templates/shared/*.html", "templates/auth/*.html", "templates/brief/*.html", "templates/capture/*.html", "templates/finance/*.html", "templates/health/*.html", "templates/help/*.html", "templates/imports/*.html", "templates/planning/*.html", "templates/family/*.html", "templates/review/*.html", "templates/settings/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse embedded templates: %w", err)
 	}
@@ -194,7 +203,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		return nil, errors.New("reconcile visual PDF staging")
 	}
 	cleanupContext, cleanupCancel := context.WithCancel(context.Background())
-	application := &App{db: db, templates: templates, logger: log.Default(), auth: service, mailer: mailer, providerSettings: providerSettings, openAIClient: cfg.OpenAIClient, sources: sources, jobs: jobs.New(db), finance: financeRecords, healthRecords: healthRecords, planningRecords: planningRecords, captureRecords: captureRecords, imports: importRecords, coaching: coachingRecords, importExtractor: imports.New(cfg.ImportPDF), captureVoiceSlot: make(chan struct{}, 2), captureStop: cleanupCancel, captureDone: make(chan struct{}), origin: origin, secure: cfg.SecureCookies, trustedProxy: cfg.TrustedProxy, trustedProxies: cfg.TrustedProxies, maintenance: maintenance, masterKey: append([]byte(nil), cfg.MasterKey...)}
+	application := &App{db: db, templates: templates, logger: log.Default(), auth: service, mailer: mailer, providerSettings: providerSettings, openAIClient: cfg.OpenAIClient, sources: sources, jobs: jobs.New(db), finance: financeRecords, healthRecords: healthRecords, planningRecords: planningRecords, people: people.New(db), carelog: carelog.New(db), captureRecords: captureRecords, imports: importRecords, coaching: coachingRecords, importExtractor: imports.New(cfg.ImportPDF), captureVoiceSlot: make(chan struct{}, 2), captureStop: cleanupCancel, captureDone: make(chan struct{}), origin: origin, secure: cfg.SecureCookies, trustedProxy: cfg.TrustedProxy, trustedProxies: cfg.TrustedProxies, maintenance: maintenance, masterKey: append([]byte(nil), cfg.MasterKey...)}
 	if databasePath, err := filepath.Abs(cfg.DatabasePath); err == nil {
 		application.backupPaths = installer.Paths{Data: filepath.Dir(databasePath), Database: databasePath, Sources: sourceRoot, Journal: journalPath}
 	}
@@ -261,7 +270,11 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("/finance/correct", a.correctFinanceRecord)
 	mux.HandleFunc("/health", a.healthLens)
 	mux.HandleFunc("/health/correct", a.correctHealthObservation)
+	mux.HandleFunc("/health/entries", a.healthEntry)
 	mux.HandleFunc("/planning", a.planningLens)
+	mux.HandleFunc("/family", a.family)
+	mux.HandleFunc("/family/", a.familyPerson)
+	mux.HandleFunc("/family/quick", a.familyQuick)
 	mux.HandleFunc("/planning/events/", a.planningICS)
 	mux.HandleFunc("/sources/", a.sourceFile)
 	mux.HandleFunc("/", a.brief)
@@ -337,13 +350,13 @@ func (a *App) serveEmbeddedFile(w http.ResponseWriter, r *http.Request, name, co
 
 func navigationForPath(path string) []NavigationItem {
 	return []NavigationItem{
-		{Path: "/", Label: "Family Brief", Group: "Overview", Current: path == "/"},
-		{Path: "/review", Label: "Week in Review", Current: path == "/review"},
-		{Path: "/imports", Label: "Import", Group: "Add", Current: path == "/imports", Utility: true},
-		{Path: "/finance", Label: "Finance", Group: "Household", Current: path == "/finance"},
-		{Path: "/health", Label: "Health", Current: path == "/health"},
-		{Path: "/planning", Label: "Planning", Current: path == "/planning"},
-		{Path: "/settings", Label: "Settings", Group: "Account", Current: path == "/settings", Utility: true},
+		{Path: "/", Label: "Home", Current: path == "/" || path == "/review", Icon: "home"},
+		{Path: "/finance", Label: "Money", Current: path == "/finance", Icon: "money"},
+		{Path: "/health", Label: "Health", Current: path == "/health", Icon: "health"},
+		{Path: "/planning", Label: "Calendar", Current: path == "/planning", Icon: "calendar", PhoneMenu: true},
+		{Path: "/family", Label: "Family", Current: path == "/family" || strings.HasPrefix(path, "/family/"), Icon: "family"},
+		{Path: "/imports", Label: "Import", Current: path == "/imports", Utility: true},
+		{Path: "/settings", Label: "Settings", Current: path == "/settings", Utility: true},
 		{Path: "/help", Label: "Help", Current: path == "/help", Utility: true},
 	}
 }
@@ -364,12 +377,16 @@ func methodNotAllowedFor(w http.ResponseWriter, allow string) {
 var assetContentTypes = map[string]string{
 	"styles.css":                 "text/css; charset=utf-8",
 	"app.js":                     "application/javascript; charset=utf-8",
+	"theme.js":                   "application/javascript; charset=utf-8",
+	"manifest.webmanifest":       "application/manifest+json",
 	"finance.js":                 "application/javascript; charset=utf-8",
 	"health.js":                  "application/javascript; charset=utf-8",
 	"planning.js":                "application/javascript; charset=utf-8",
 	"capture.js":                 "application/javascript; charset=utf-8",
 	"brief.js":                   "application/javascript; charset=utf-8",
 	"imports.js":                 "application/javascript; charset=utf-8",
+	"babylog.js":                 "application/javascript; charset=utf-8",
+	"quicklog.js":                "application/javascript; charset=utf-8",
 	"favicon.svg":                "image/svg+xml",
 	"fonts/inter-variable.woff2": "font/woff2",
 	"fonts/bricolage.woff2":      "font/woff2",
@@ -487,13 +504,53 @@ func (w *bufferedResponse) commit(destination http.ResponseWriter) {
 
 type requestIDContextKey struct{}
 
+// pageContext remembers who is signed in for this request, so a rendered page
+// can take the household's language without every handler passing it along.
+type pageContextKey struct{}
+
+type pageContext struct {
+	scope    policy.ActorScope
+	signedIn bool
+}
+
+// householdLocale returns the signed-in household's locale, or "".
+func (a *App) householdLocale(ctx context.Context) string {
+	page, ok := ctx.Value(pageContextKey{}).(*pageContext)
+	if !ok || !page.signedIn || a.planningRecords == nil {
+		return ""
+	}
+	locale, err := a.planningRecords.GetLocale(ctx, page.scope)
+	if err != nil {
+		return ""
+	}
+	return locale
+}
+
+// localize sets the page language to the household locale, so the browser's
+// own date and time pickers write dates and times the way the app does.
+func (a *App) localize(ctx context.Context, rendered *bufferedResponse) {
+	locale := a.householdLocale(ctx)
+	if locale == "" || rendered.overflow {
+		return
+	}
+	body := rendered.body.Bytes()
+	if index := bytes.Index(body, []byte(`<html lang="en">`)); index >= 0 && index < 512 {
+		updated := append([]byte{}, body[:index]...)
+		updated = append(updated, []byte(`<html lang="`+locale+`">`)...)
+		updated = append(updated, body[index+len(`<html lang="en">`):]...)
+		rendered.body.Reset()
+		rendered.body.Write(updated)
+	}
+}
+
 var requestIDFallback atomic.Uint64
 
 func withRequestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := newRequestID()
 		w.Header().Set("X-Request-ID", id)
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestIDContextKey{}, id)))
+		ctx := context.WithValue(r.Context(), requestIDContextKey{}, id)
+		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, pageContextKey{}, &pageContext{})))
 	})
 }
 
@@ -526,4 +583,32 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
+}
+
+// NotFoundView is the page shown for an address that leads nowhere.
+type NotFoundView struct {
+	Navigation                            []NavigationItem
+	CSRF, Title, Copy, BackURL, BackLabel string
+}
+
+// notFound answers a browser with a page in the app's own style and any
+// other client with the usual JSON error.
+func (a *App) notFound(w http.ResponseWriter, r *http.Request, title, copy, backURL, backLabel string) {
+	if !strings.Contains(r.Header.Get("Accept"), "text/html") {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	view := NotFoundView{Title: title, Copy: copy, BackURL: backURL, BackLabel: backLabel}
+	if _, csrf, ok := a.authenticated(r); ok {
+		view.Navigation, view.CSRF = navigationForPath(""), csrf
+	}
+	rendered := newBufferedResponse(maxResponseBodyBytes)
+	if err := a.templates.ExecuteTemplate(rendered, "notfound.html", view); err != nil || rendered.overflow {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusNotFound)
+	a.localize(r.Context(), rendered)
+	rendered.commit(w)
 }

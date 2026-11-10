@@ -17,10 +17,10 @@ Record:
 - predeploy backup verify-only result and forced rollback rehearsal result;
 - Arivu immutable checksum/service/health baseline result when present;
 - external HTTPS health result before and after one service restart;
-- two fresh judge logins and the four workflows in `demo-script.md`;
+- two fresh demo logins, and Home, Money, Health and Family each loading;
 - one separately imported household's post-restart result;
 - desktop/tablet/mobile browser result and secret-scan result;
 - final `GO` or `NO-GO`, with exact non-secret failure codes.
 
 Any checksum mismatch, unavailable health endpoint, failed privacy boundary,
-unverified backup, stale deployed commit, or missing judge workflow is `NO-GO`.
+unverified backup, stale deployed commit, or a demo login that fails is `NO-GO`.

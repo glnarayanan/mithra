@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
+	"github.com/glnarayanan/mithra/internal/planning"
 	"github.com/glnarayanan/mithra/internal/policy"
 	"github.com/glnarayanan/mithra/internal/providers"
 	"github.com/glnarayanan/mithra/internal/secrets"
@@ -55,6 +57,36 @@ func (a *App) removeProviderSetting(w http.ResponseWriter, r *http.Request, scop
 		return
 	}
 	a.renderSettings(r.Context(), w, scope, csrf, "Model provider disconnected. Your saved household records remain available.", "")
+}
+
+func (a *App) saveHouseholdCurrency(w http.ResponseWriter, r *http.Request, scope policy.ActorScope, csrf string) {
+	currency := strings.TrimSpace(r.PostForm.Get("currency"))
+	if err := a.planningRecords.SetCurrency(r.Context(), scope, currency); err != nil {
+		message := "Only the household owner can choose the currency sign."
+		if errors.Is(err, planning.ErrInvalidRecord) {
+			message = "Choose one of the listed currencies."
+		}
+		a.renderSettings(r.Context(), w, scope, csrf, "", message)
+		return
+	}
+	status := "Money now shows " + currencyLabels[currency] + "."
+	if currency == "" {
+		status = "Money now shows amounts without a currency sign."
+	}
+	a.renderSettings(r.Context(), w, scope, csrf, status, "")
+}
+
+func (a *App) saveHouseholdLocale(w http.ResponseWriter, r *http.Request, scope policy.ActorScope, csrf string) {
+	locale := strings.TrimSpace(r.PostForm.Get("locale"))
+	if err := a.planningRecords.SetLocale(r.Context(), scope, locale); err != nil {
+		message := "Only the household owner can choose the language and number format."
+		if errors.Is(err, planning.ErrInvalidRecord) {
+			message = "Choose one of the listed formats."
+		}
+		a.renderSettings(r.Context(), w, scope, csrf, "", message)
+		return
+	}
+	a.renderSettings(r.Context(), w, scope, csrf, "Language and number format saved as "+localeLabels[locale][0]+".", "")
 }
 
 func (a *App) saveHouseholdTimezone(w http.ResponseWriter, r *http.Request, scope policy.ActorScope, csrf string) {

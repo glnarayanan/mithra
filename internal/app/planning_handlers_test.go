@@ -56,7 +56,7 @@ func TestPlanningLensCalendarViewsConflictsAndExports(t *testing.T) {
 	if month.Code != http.StatusOK {
 		t.Fatalf("month status=%d body=%s", month.Code, month.Body.String())
 	}
-	for _, required := range []string{"Calendar &amp; plans", "July 2026", "Family trip", "School conversation", "Home contractor", "Assigned owners have overlapping events", "Download .ics", "Open Google Calendar draft", "Changes in Mithra will not update", "Help with calendar exports", "calendar-mobile-agenda", "Plans and milestones", "School transition", "Make the school transition calm", "Meet the teacher", "Depends on availability: after the family trip", "After Family trip", "View original goal", "View original plan", "View original milestone"} {
+	for _, required := range []string{"<h1>Calendar</h1>", "July 2026", "Family trip", "School conversation", "Home contractor", "Assigned owners have overlapping events", "Download .ics", "Open Google Calendar draft", "Changes in Mithra will not update", "Help with calendar exports", "calendar-mobile-agenda", "Plans and milestones", "School transition", "Make the school transition calm", "Meet the teacher", "Depends on availability: after the family trip", "After Family trip", "View original goal", "View original plan", "View original milestone"} {
 		if !strings.Contains(month.Body.String(), required) {
 			t.Fatalf("month missing %q: %s", required, month.Body.String())
 		}
@@ -112,6 +112,23 @@ func TestPlanningLensRequiresSessionAndSettingsConfirmsTimezone(t *testing.T) {
 	bad := serve(application, authenticatedSettingsRequest(session, http.MethodPost, url.Values{"action": {"save_timezone"}, "timezone": {"Mars/Olympus"}}))
 	if bad.Code != http.StatusOK || !strings.Contains(bad.Body.String(), "valid timezone") {
 		t.Fatalf("bad timezone=%d %s", bad.Code, bad.Body.String())
+	}
+	locale := serve(application, authenticatedSettingsRequest(session, http.MethodPost, url.Values{"action": {"save_locale"}, "locale": {"en-IN"}}))
+	if body := locale.Body.String(); locale.Code != http.StatusOK || !strings.Contains(body, "saved as English (India)") || !strings.Contains(body, `<html lang="en-IN">`) {
+		t.Fatalf("saved locale=%d", locale.Code)
+	}
+	if page := serve(application, authenticatedPlanningRequest(session, "/finance")).Body.String(); !strings.Contains(page, `<html lang="en-IN">`) {
+		t.Fatal("pages do not use the household locale")
+	}
+	currency := serve(application, authenticatedSettingsRequest(session, http.MethodPost, url.Values{"action": {"save_currency"}, "currency": {"INR"}}))
+	if currency.Code != http.StatusOK || !strings.Contains(currency.Body.String(), "Money now shows ₹ Indian rupee.") {
+		t.Fatalf("saved currency=%d", currency.Code)
+	}
+	if odd := serve(application, authenticatedSettingsRequest(session, http.MethodPost, url.Values{"action": {"save_currency"}, "currency": {"BTC"}})); !strings.Contains(odd.Body.String(), "Choose one of the listed currencies.") {
+		t.Fatal("an unknown currency was accepted")
+	}
+	if wrong := serve(application, authenticatedSettingsRequest(session, http.MethodPost, url.Values{"action": {"save_locale"}, "locale": {"fr-FR"}})); !strings.Contains(wrong.Body.String(), "Choose one of the listed formats.") {
+		t.Fatal("an unknown locale was accepted")
 	}
 }
 

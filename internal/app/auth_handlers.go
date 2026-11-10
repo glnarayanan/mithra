@@ -14,6 +14,7 @@ import (
 
 	"github.com/glnarayanan/mithra/internal/auth"
 	"github.com/glnarayanan/mithra/internal/household"
+	"github.com/glnarayanan/mithra/internal/planning"
 	"github.com/glnarayanan/mithra/internal/policy"
 	"github.com/glnarayanan/mithra/internal/providers"
 	"github.com/glnarayanan/mithra/internal/secrets"
@@ -45,6 +46,40 @@ type SettingsView struct {
 	ProviderID, ProviderName, ProviderModel, ProviderBaseURL string
 	Providers                                                []providers.ModelProvider
 	Timezone, CSRF, Status, Error                            string
+	Locales                                                  []LocaleOption
+	Currencies                                               []LocaleOption
+}
+
+// LocaleOption is one household language choice in Settings.
+type LocaleOption struct {
+	Value, Label, Example string
+	Selected              bool
+}
+
+var localeLabels = map[string][2]string{
+	"":      {"Each browser decides", "Follows each phone or computer"},
+	"en-IN": {"English (India)", "10/11/2026 and 7,35,000"},
+	"en-GB": {"English (UK)", "10/11/2026 and 735,000"},
+	"en-US": {"English (US)", "11/10/2026 and 735,000"},
+}
+
+var currencyLabels = map[string]string{"": "No sign", "INR": "₹ Indian rupee", "USD": "$ US dollar", "GBP": "£ Pound sterling", "EUR": "€ Euro"}
+
+func currencyOptions(selected string) []LocaleOption {
+	options := []LocaleOption{}
+	for _, value := range append([]string{""}, planning.Currencies...) {
+		options = append(options, LocaleOption{Value: value, Label: currencyLabels[value], Selected: value == selected})
+	}
+	return options
+}
+
+func localeOptions(selected string) []LocaleOption {
+	options := []LocaleOption{}
+	for _, value := range append([]string{""}, planning.Locales...) {
+		label := localeLabels[value]
+		options = append(options, LocaleOption{Value: value, Label: label[0], Example: label[1], Selected: value == selected})
+	}
+	return options
 }
 
 func canonicalOrigin(raw string, secure bool) (*url.URL, error) {
@@ -275,6 +310,10 @@ func (a *App) settings(w http.ResponseWriter, r *http.Request) {
 			a.removeProviderSetting(w, r, scope, csrf)
 		case "save_timezone":
 			a.saveHouseholdTimezone(w, r, scope, csrf)
+		case "save_locale":
+			a.saveHouseholdLocale(w, r, scope, csrf)
+		case "save_currency":
+			a.saveHouseholdCurrency(w, r, scope, csrf)
 		default:
 			a.renderSettings(r.Context(), w, scope, csrf, "", "Choose one available settings action.")
 		}
@@ -314,6 +353,9 @@ func (a *App) sessionScope(r *http.Request) (policy.ActorScope, bool) {
 	scope, err := a.auth.Authenticate(r.Context(), cookie)
 	if err != nil {
 		return policy.ActorScope{}, false
+	}
+	if page, ok := r.Context().Value(pageContextKey{}).(*pageContext); ok {
+		page.scope, page.signedIn = scope, true
 	}
 	return scope, true
 }
@@ -521,11 +563,23 @@ func (a *App) renderSettings(ctx context.Context, w http.ResponseWriter, scope p
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
+	currency, err := a.planningRecords.GetCurrency(ctx, scope)
+	if err != nil {
+		logRequestError(a.logger, ctx, "settings_currency_state_failed")
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	locale, err := a.planningRecords.GetLocale(ctx, scope)
+	if err != nil {
+		logRequestError(a.logger, ctx, "settings_locale_state_failed")
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
 	if !configured {
 		provider, _ := providers.ModelProviderByID(providers.ProviderOpenAI)
 		config.ProviderID, config.Model, config.BaseURL = provider.ID, provider.DefaultModel, provider.BaseURL
 	}
-	a.renderTemplate(ctx, w, "settings.html", SettingsView{Navigation: navigationForPath("/settings"), Members: members, Owner: scope.Role == "owner", ProviderConfigured: configured, ProviderID: config.ProviderID, ProviderName: providerName(config.ProviderID), ProviderModel: config.Model, ProviderBaseURL: config.BaseURL, Providers: providers.ModelProviders(), Timezone: timezone, CSRF: csrf, Status: status, Error: problem})
+	a.renderTemplate(ctx, w, "settings.html", SettingsView{Navigation: navigationForPath("/settings"), Members: members, Owner: scope.Role == "owner", ProviderConfigured: configured, ProviderID: config.ProviderID, ProviderName: providerName(config.ProviderID), ProviderModel: config.Model, ProviderBaseURL: config.BaseURL, Providers: providers.ModelProviders(), Timezone: timezone, Locales: localeOptions(locale), Currencies: currencyOptions(currency), CSRF: csrf, Status: status, Error: problem})
 }
 
 func providerName(id string) string {
@@ -543,6 +597,7 @@ func (a *App) renderTemplate(ctx context.Context, w http.ResponseWriter, name st
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	a.localize(ctx, rendered)
 	rendered.commit(w)
 }
 

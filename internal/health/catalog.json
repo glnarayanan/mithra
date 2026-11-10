@@ -1,0 +1,762 @@
+[
+ {
+  "code": "weight",
+  "canonical_name": "Weight",
+  "category": "Body",
+  "default_unit": "kg",
+  "synonyms": [
+   "Body weight",
+   "Wt"
+  ]
+ },
+ {
+  "code": "height",
+  "canonical_name": "Height",
+  "category": "Body",
+  "default_unit": "cm",
+  "synonyms": [
+   "Length",
+   "Stature"
+  ]
+ },
+ {
+  "code": "head_circumference",
+  "canonical_name": "Head circumference",
+  "category": "Body",
+  "default_unit": "cm",
+  "synonyms": [
+   "HC",
+   "Head size"
+  ]
+ },
+ {
+  "code": "bp_systolic",
+  "canonical_name": "Blood pressure, systolic",
+  "category": "Body",
+  "default_unit": "mmHg",
+  "synonyms": [
+   "Systolic",
+   "SBP"
+  ]
+ },
+ {
+  "code": "bp_diastolic",
+  "canonical_name": "Blood pressure, diastolic",
+  "category": "Body",
+  "default_unit": "mmHg",
+  "synonyms": [
+   "Diastolic",
+   "DBP"
+  ]
+ },
+ {
+  "code": "resting_hr",
+  "canonical_name": "Resting heart rate",
+  "category": "Body",
+  "default_unit": "bpm",
+  "synonyms": [
+   "Heart rate",
+   "Pulse",
+   "HR"
+  ]
+ },
+ {
+  "code": "temperature",
+  "canonical_name": "Temperature",
+  "category": "Body",
+  "default_unit": "°C",
+  "synonyms": [
+   "Body temperature",
+   "Temp"
+  ]
+ },
+ {
+  "code": "hba1c",
+  "canonical_name": "HbA1c",
+  "category": "Diabetes",
+  "default_unit": "%",
+  "default_ref_low": 4.0,
+  "default_ref_high": 5.6,
+  "synonyms": [
+   "Glycated Hemoglobin",
+   "A1C",
+   "Glycosylated Hemoglobin"
+  ]
+ },
+ {
+  "code": "fpg",
+  "canonical_name": "Fasting Glucose",
+  "category": "Diabetes",
+  "default_unit": "mg/dL",
+  "unit_conversions": {
+   "mmol/L": 0.0555
+  },
+  "default_ref_low": 70,
+  "default_ref_high": 100,
+  "synonyms": [
+   "Fasting Blood Sugar",
+   "FBS",
+   "FBG",
+   "Glucose Fasting"
+  ]
+ },
+ {
+  "code": "ppg",
+  "canonical_name": "Postprandial Glucose",
+  "category": "Diabetes",
+  "default_unit": "mg/dL",
+  "default_ref_low": 70,
+  "default_ref_high": 140,
+  "synonyms": [
+   "PP Blood Sugar",
+   "Post Meal Glucose"
+  ]
+ },
+ {
+  "code": "rpg",
+  "canonical_name": "Random Glucose",
+  "category": "Diabetes",
+  "default_unit": "mg/dL",
+  "default_ref_low": 70,
+  "default_ref_high": 140,
+  "synonyms": [
+   "Random Blood Sugar",
+   "RBS"
+  ]
+ },
+ {
+  "code": "fasting_insulin",
+  "canonical_name": "Fasting Insulin",
+  "category": "Diabetes",
+  "default_unit": "µIU/mL",
+  "default_ref_low": 2.6,
+  "default_ref_high": 24.9,
+  "synonyms": [
+   "Insulin Fasting"
+  ]
+ },
+ {
+  "code": "homa_ir",
+  "canonical_name": "HOMA-IR",
+  "category": "Diabetes",
+  "default_unit": "index",
+  "default_ref_low": 0,
+  "default_ref_high": 2.5,
+  "synonyms": [
+   "HOMA IR"
+  ]
+ },
+ {
+  "code": "total_cholesterol",
+  "canonical_name": "Total Cholesterol",
+  "category": "Lipid",
+  "default_unit": "mg/dL",
+  "default_ref_low": 0,
+  "default_ref_high": 200,
+  "synonyms": [
+   "Cholesterol Total",
+   "TC"
+  ]
+ },
+ {
+  "code": "ldl",
+  "canonical_name": "LDL Cholesterol",
+  "category": "Lipid",
+  "default_unit": "mg/dL",
+  "default_ref_low": 0,
+  "default_ref_high": 100,
+  "synonyms": [
+   "LDL-C",
+   "LDL C",
+   "Low Density Lipoprotein"
+  ]
+ },
+ {
+  "code": "hdl",
+  "canonical_name": "HDL Cholesterol",
+  "category": "Lipid",
+  "default_unit": "mg/dL",
+  "default_ref_low": 40,
+  "default_ref_high": 999,
+  "synonyms": [
+   "HDL-C",
+   "HDL C",
+   "High Density Lipoprotein"
+  ]
+ },
+ {
+  "code": "vldl",
+  "canonical_name": "VLDL Cholesterol",
+  "category": "Lipid",
+  "default_unit": "mg/dL",
+  "default_ref_low": 0,
+  "default_ref_high": 30,
+  "synonyms": [
+   "VLDL-C"
+  ]
+ },
+ {
+  "code": "non_hdl",
+  "canonical_name": "Non-HDL Cholesterol",
+  "category": "Lipid",
+  "default_unit": "mg/dL",
+  "default_ref_low": 0,
+  "default_ref_high": 130,
+  "synonyms": [
+   "Non HDL"
+  ]
+ },
+ {
+  "code": "triglycerides",
+  "canonical_name": "Triglycerides",
+  "category": "Lipid",
+  "default_unit": "mg/dL",
+  "default_ref_low": 0,
+  "default_ref_high": 150,
+  "synonyms": [
+   "TG",
+   "Triglyceride"
+  ]
+ },
+ {
+  "code": "tsh",
+  "canonical_name": "TSH",
+  "category": "Thyroid",
+  "default_unit": "µIU/mL",
+  "default_ref_low": 0.4,
+  "default_ref_high": 4.0,
+  "synonyms": [
+   "Thyroid Stimulating Hormone"
+  ]
+ },
+ {
+  "code": "ft3",
+  "canonical_name": "Free T3",
+  "category": "Thyroid",
+  "default_unit": "pg/mL",
+  "default_ref_low": 2.0,
+  "default_ref_high": 4.4,
+  "synonyms": [
+   "FT3",
+   "Free Triiodothyronine"
+  ]
+ },
+ {
+  "code": "ft4",
+  "canonical_name": "Free T4",
+  "category": "Thyroid",
+  "default_unit": "ng/dL",
+  "default_ref_low": 0.8,
+  "default_ref_high": 1.8,
+  "synonyms": [
+   "FT4",
+   "Free Thyroxine"
+  ]
+ },
+ {
+  "code": "tt3",
+  "canonical_name": "Total T3",
+  "category": "Thyroid",
+  "default_unit": "ng/dL",
+  "default_ref_low": 80,
+  "default_ref_high": 200,
+  "synonyms": [
+   "Total Triiodothyronine"
+  ]
+ },
+ {
+  "code": "tt4",
+  "canonical_name": "Total T4",
+  "category": "Thyroid",
+  "default_unit": "µg/dL",
+  "default_ref_low": 5.0,
+  "default_ref_high": 12.0,
+  "synonyms": [
+   "Total Thyroxine"
+  ]
+ },
+ {
+  "code": "vitamin_d",
+  "canonical_name": "Vitamin D (25-OH)",
+  "category": "Vitamins",
+  "default_unit": "ng/mL",
+  "default_ref_low": 30,
+  "default_ref_high": 100,
+  "synonyms": [
+   "25-Hydroxy Vitamin D",
+   "25(OH)D",
+   "Vitamin D3"
+  ]
+ },
+ {
+  "code": "vitamin_b12",
+  "canonical_name": "Vitamin B12",
+  "category": "Vitamins",
+  "default_unit": "pg/mL",
+  "default_ref_low": 200,
+  "default_ref_high": 900,
+  "synonyms": [
+   "B12",
+   "Cobalamin"
+  ]
+ },
+ {
+  "code": "folate",
+  "canonical_name": "Folate",
+  "category": "Vitamins",
+  "default_unit": "ng/mL",
+  "default_ref_low": 3.0,
+  "default_ref_high": 17.0,
+  "synonyms": [
+   "Folic Acid",
+   "Serum Folate"
+  ]
+ },
+ {
+  "code": "ferritin",
+  "canonical_name": "Ferritin",
+  "category": "Iron",
+  "default_unit": "ng/mL",
+  "default_ref_low": 12,
+  "default_ref_high": 300,
+  "synonyms": [
+   "Serum Ferritin"
+  ]
+ },
+ {
+  "code": "serum_iron",
+  "canonical_name": "Serum Iron",
+  "category": "Iron",
+  "default_unit": "µg/dL",
+  "default_ref_low": 60,
+  "default_ref_high": 170,
+  "synonyms": [
+   "Iron Serum"
+  ]
+ },
+ {
+  "code": "tibc",
+  "canonical_name": "TIBC",
+  "category": "Iron",
+  "default_unit": "µg/dL",
+  "default_ref_low": 250,
+  "default_ref_high": 450,
+  "synonyms": [
+   "Total Iron Binding Capacity"
+  ]
+ },
+ {
+  "code": "transferrin_sat",
+  "canonical_name": "Transferrin Saturation",
+  "category": "Iron",
+  "default_unit": "%",
+  "default_ref_low": 20,
+  "default_ref_high": 50,
+  "synonyms": [
+   "Iron Saturation"
+  ]
+ },
+ {
+  "code": "alt",
+  "canonical_name": "ALT",
+  "category": "Liver",
+  "default_unit": "U/L",
+  "default_ref_low": 0,
+  "default_ref_high": 40,
+  "synonyms": [
+   "SGPT",
+   "Alanine Aminotransferase"
+  ]
+ },
+ {
+  "code": "ast",
+  "canonical_name": "AST",
+  "category": "Liver",
+  "default_unit": "U/L",
+  "default_ref_low": 0,
+  "default_ref_high": 40,
+  "synonyms": [
+   "SGOT",
+   "Aspartate Aminotransferase"
+  ]
+ },
+ {
+  "code": "alp",
+  "canonical_name": "ALP",
+  "category": "Liver",
+  "default_unit": "U/L",
+  "default_ref_low": 44,
+  "default_ref_high": 147,
+  "synonyms": [
+   "Alkaline Phosphatase"
+  ]
+ },
+ {
+  "code": "ggt",
+  "canonical_name": "GGT",
+  "category": "Liver",
+  "default_unit": "U/L",
+  "default_ref_low": 0,
+  "default_ref_high": 61,
+  "synonyms": [
+   "Gamma GT",
+   "Gamma Glutamyl Transferase"
+  ]
+ },
+ {
+  "code": "bilirubin_total",
+  "canonical_name": "Bilirubin (Total)",
+  "category": "Liver",
+  "default_unit": "mg/dL",
+  "default_ref_low": 0.1,
+  "default_ref_high": 1.2,
+  "synonyms": [
+   "Total Bilirubin"
+  ]
+ },
+ {
+  "code": "bilirubin_direct",
+  "canonical_name": "Bilirubin (Direct)",
+  "category": "Liver",
+  "default_unit": "mg/dL",
+  "default_ref_low": 0,
+  "default_ref_high": 0.3,
+  "synonyms": [
+   "Direct Bilirubin",
+   "Conjugated Bilirubin"
+  ]
+ },
+ {
+  "code": "albumin",
+  "canonical_name": "Albumin",
+  "category": "Liver",
+  "default_unit": "g/dL",
+  "default_ref_low": 3.5,
+  "default_ref_high": 5.5,
+  "synonyms": [
+   "Serum Albumin"
+  ]
+ },
+ {
+  "code": "total_protein",
+  "canonical_name": "Total Protein",
+  "category": "Liver",
+  "default_unit": "g/dL",
+  "default_ref_low": 6.0,
+  "default_ref_high": 8.3,
+  "synonyms": [
+   "Serum Total Protein"
+  ]
+ },
+ {
+  "code": "creatinine",
+  "canonical_name": "Creatinine",
+  "category": "Kidney",
+  "default_unit": "mg/dL",
+  "default_ref_low": 0.6,
+  "default_ref_high": 1.2,
+  "synonyms": [
+   "Serum Creatinine"
+  ]
+ },
+ {
+  "code": "urea",
+  "canonical_name": "Urea",
+  "category": "Kidney",
+  "default_unit": "mg/dL",
+  "default_ref_low": 15,
+  "default_ref_high": 40,
+  "synonyms": [
+   "Blood Urea",
+   "BUN equivalent"
+  ]
+ },
+ {
+  "code": "bun",
+  "canonical_name": "BUN",
+  "category": "Kidney",
+  "default_unit": "mg/dL",
+  "default_ref_low": 7,
+  "default_ref_high": 20,
+  "synonyms": [
+   "Blood Urea Nitrogen"
+  ]
+ },
+ {
+  "code": "egfr",
+  "canonical_name": "eGFR",
+  "category": "Kidney",
+  "default_unit": "mL/min/1.73m²",
+  "default_ref_low": 90,
+  "default_ref_high": 999,
+  "synonyms": [
+   "Estimated GFR",
+   "GFR"
+  ]
+ },
+ {
+  "code": "uric_acid",
+  "canonical_name": "Uric Acid",
+  "category": "Kidney",
+  "default_unit": "mg/dL",
+  "default_ref_low": 3.5,
+  "default_ref_high": 7.2,
+  "synonyms": [
+   "Serum Uric Acid"
+  ]
+ },
+ {
+  "code": "hemoglobin",
+  "canonical_name": "Hemoglobin",
+  "category": "CBC",
+  "default_unit": "g/dL",
+  "default_ref_low": 12.0,
+  "default_ref_high": 16.0,
+  "synonyms": [
+   "Hb",
+   "HGB"
+  ]
+ },
+ {
+  "code": "hematocrit",
+  "canonical_name": "Hematocrit",
+  "category": "CBC",
+  "default_unit": "%",
+  "default_ref_low": 36,
+  "default_ref_high": 48,
+  "synonyms": [
+   "Hct",
+   "PCV"
+  ]
+ },
+ {
+  "code": "rbc",
+  "canonical_name": "RBC",
+  "category": "CBC",
+  "default_unit": "million/µL",
+  "default_ref_low": 4.0,
+  "default_ref_high": 5.5,
+  "synonyms": [
+   "Red Blood Cell Count",
+   "Erythrocyte Count"
+  ]
+ },
+ {
+  "code": "wbc",
+  "canonical_name": "WBC",
+  "category": "CBC",
+  "default_unit": "K/µL",
+  "default_ref_low": 4.0,
+  "default_ref_high": 11.0,
+  "synonyms": [
+   "White Blood Cell Count",
+   "Leukocyte Count"
+  ]
+ },
+ {
+  "code": "platelets",
+  "canonical_name": "Platelets",
+  "category": "CBC",
+  "default_unit": "K/µL",
+  "default_ref_low": 150,
+  "default_ref_high": 400,
+  "synonyms": [
+   "Platelet Count",
+   "PLT"
+  ]
+ },
+ {
+  "code": "mcv",
+  "canonical_name": "MCV",
+  "category": "CBC",
+  "default_unit": "fL",
+  "default_ref_low": 80,
+  "default_ref_high": 100,
+  "synonyms": [
+   "Mean Corpuscular Volume"
+  ]
+ },
+ {
+  "code": "mch",
+  "canonical_name": "MCH",
+  "category": "CBC",
+  "default_unit": "pg",
+  "default_ref_low": 27,
+  "default_ref_high": 33,
+  "synonyms": [
+   "Mean Corpuscular Hemoglobin"
+  ]
+ },
+ {
+  "code": "mchc",
+  "canonical_name": "MCHC",
+  "category": "CBC",
+  "default_unit": "g/dL",
+  "default_ref_low": 32,
+  "default_ref_high": 36,
+  "synonyms": [
+   "Mean Corpuscular Hemoglobin Concentration"
+  ]
+ },
+ {
+  "code": "rdw",
+  "canonical_name": "RDW",
+  "category": "CBC",
+  "default_unit": "%",
+  "default_ref_low": 11.5,
+  "default_ref_high": 14.5,
+  "synonyms": [
+   "Red Cell Distribution Width"
+  ]
+ },
+ {
+  "code": "neutrophils_pct",
+  "canonical_name": "Neutrophils %",
+  "category": "CBC",
+  "default_unit": "%",
+  "default_ref_low": 40,
+  "default_ref_high": 70,
+  "synonyms": [
+   "Neutrophil Percentage"
+  ]
+ },
+ {
+  "code": "lymphocytes_pct",
+  "canonical_name": "Lymphocytes %",
+  "category": "CBC",
+  "default_unit": "%",
+  "default_ref_low": 20,
+  "default_ref_high": 40,
+  "synonyms": [
+   "Lymphocyte Percentage"
+  ]
+ },
+ {
+  "code": "esr",
+  "canonical_name": "ESR",
+  "category": "Inflammation",
+  "default_unit": "mm/hr",
+  "default_ref_low": 0,
+  "default_ref_high": 20,
+  "synonyms": [
+   "Erythrocyte Sedimentation Rate"
+  ]
+ },
+ {
+  "code": "crp",
+  "canonical_name": "CRP",
+  "category": "Inflammation",
+  "default_unit": "mg/L",
+  "default_ref_low": 0,
+  "default_ref_high": 5,
+  "synonyms": [
+   "C-Reactive Protein"
+  ]
+ },
+ {
+  "code": "sodium",
+  "canonical_name": "Sodium",
+  "category": "Electrolytes",
+  "default_unit": "mEq/L",
+  "default_ref_low": 136,
+  "default_ref_high": 145,
+  "synonyms": [
+   "Na",
+   "Serum Sodium"
+  ]
+ },
+ {
+  "code": "potassium",
+  "canonical_name": "Potassium",
+  "category": "Electrolytes",
+  "default_unit": "mEq/L",
+  "default_ref_low": 3.5,
+  "default_ref_high": 5.1,
+  "synonyms": [
+   "K",
+   "Serum Potassium"
+  ]
+ },
+ {
+  "code": "chloride",
+  "canonical_name": "Chloride",
+  "category": "Electrolytes",
+  "default_unit": "mEq/L",
+  "default_ref_low": 98,
+  "default_ref_high": 107,
+  "synonyms": [
+   "Cl",
+   "Serum Chloride"
+  ]
+ },
+ {
+  "code": "calcium",
+  "canonical_name": "Calcium",
+  "category": "Electrolytes",
+  "default_unit": "mg/dL",
+  "default_ref_low": 8.5,
+  "default_ref_high": 10.5,
+  "synonyms": [
+   "Serum Calcium",
+   "Ca"
+  ]
+ },
+ {
+  "code": "phosphorus",
+  "canonical_name": "Phosphorus",
+  "category": "Electrolytes",
+  "default_unit": "mg/dL",
+  "default_ref_low": 2.5,
+  "default_ref_high": 4.5,
+  "synonyms": [
+   "Phosphate",
+   "Serum Phosphorus"
+  ]
+ },
+ {
+  "code": "magnesium",
+  "canonical_name": "Magnesium",
+  "category": "Electrolytes",
+  "default_unit": "mg/dL",
+  "default_ref_low": 1.7,
+  "default_ref_high": 2.2,
+  "synonyms": [
+   "Serum Magnesium",
+   "Mg"
+  ]
+ },
+ {
+  "code": "cortisol_am",
+  "canonical_name": "Cortisol (AM)",
+  "category": "Hormones",
+  "default_unit": "µg/dL",
+  "default_ref_low": 6.0,
+  "default_ref_high": 18.0,
+  "synonyms": [
+   "Morning Cortisol",
+   "Serum Cortisol"
+  ]
+ },
+ {
+  "code": "testosterone_total",
+  "canonical_name": "Total Testosterone",
+  "category": "Hormones",
+  "default_unit": "ng/dL",
+  "default_ref_low": 300,
+  "default_ref_high": 1000,
+  "synonyms": [
+   "Testosterone"
+  ]
+ },
+ {
+  "code": "psa",
+  "canonical_name": "PSA",
+  "category": "Hormones",
+  "default_unit": "ng/mL",
+  "default_ref_low": 0,
+  "default_ref_high": 4.0,
+  "synonyms": [
+   "Prostate Specific Antigen"
+  ]
+ }
+]

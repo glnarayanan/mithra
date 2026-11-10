@@ -4,7 +4,7 @@
   function install(root) {
     if (!root || typeof root.querySelector !== "function") return;
     var form = root.querySelector("[data-coaching-refresh]");
-    var status = root.querySelector("[data-coaching-status]");
+    var status = root.querySelector("[data-status]");
     if (!form || !status || typeof form.addEventListener !== "function") return;
     form.addEventListener("submit", function () {
       status.textContent = "Sending the household records you can see to your model provider…";

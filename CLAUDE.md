@@ -20,6 +20,6 @@ mithrahq.com, Mithra, HealthTrends and TinyTots.
 - Bricolage Grotesque for display, Inter for text, both self-hosted. No CDNs.
 - Keep each app's shape and colour: Mithra blue square, HealthTrends coral
   arch, TinyTots mustard circle.
-- Mithra has no night theme yet. Copy states facts from records and never gives advice.
+- Mithra has a day theme and a navy night theme. Copy states facts from records and never gives advice.
 - Check changed screens at phone and desktop widths, in every theme the app
   ships, before committing.

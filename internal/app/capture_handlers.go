@@ -123,7 +123,7 @@ func (a *App) captureText(r *http.Request, w http.ResponseWriter, scope policy.A
 		a.renderCapture(r, w, scope, csrf, "", "The update was processed but could not be confirmed. Review it below.")
 		return
 	}
-	http.Redirect(w, r, "/?captured=1#capture", http.StatusSeeOther)
+	http.Redirect(w, r, "/?captured=1", http.StatusSeeOther)
 }
 
 func (a *App) answerCapture(r *http.Request, w http.ResponseWriter, scope policy.ActorScope, csrf string) {
@@ -289,8 +289,8 @@ func (a *App) renderCapture(r *http.Request, w http.ResponseWriter, scope policy
 }
 
 func captureItemView(receipt capture.Capture, now time.Time) CaptureItemView {
-	kind := strings.Title(receipt.RecordFamily)
-	if kind == "" {
+	kind := areaLabel(receipt.RecordFamily)
+	if receipt.RecordFamily == "" {
 		kind = "Update"
 	}
 	title := receipt.Summary

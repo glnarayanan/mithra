@@ -2,41 +2,34 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#202022">
-    <meta name="referrer" content="same-origin">
-    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/assets/styles.css">
-    <script defer src="/assets/app.js"></script>
+    {{template "head"}}
     <script src="/assets/planning.js" defer></script>
-    <title>Planning · Mithra</title>
+    <title>Calendar · Mithra</title>
   </head>
   <body class="authenticated-shell">
     <a class="skip-link" href="#main-content">Skip to main content</a>
     {{template "app-shell" .}}
-    <main id="main-content" tabindex="-1" class="planning-main">
-      <section class="planning-heading"><div class="page-shell planning-heading-row"><div><h1>Calendar &amp; plans</h1><p class="introduction-copy">See household dates, plans, and milestones together.</p></div>{{if .Timezone}}<p class="planning-timezone">Times shown in <strong>{{.Timezone}}</strong>.</p>{{else}}<p class="planning-timezone"><a href="/settings#timezone">Set your household timezone</a> before exporting timed events.</p>{{end}}</div></section>
-      <div class="page-shell planning-content">
-        {{if .Status}}<p class="status-message" role="status" aria-live="polite">{{.Status}}</p>{{end}}
-        {{if .Error}}<div class="finance-error" role="alert"><p>{{.Error}}</p></div>{{end}}
-        <section class="calendar-section" aria-labelledby="calendar-title">
-          <div class="calendar-toolbar">
-            <div><h2 id="calendar-title">{{.PeriodLabel}}</h2></div>
-            <div class="calendar-controls" aria-label="Calendar controls"><a href="{{.PreviousURL}}" aria-label="Previous {{.View}}">Previous</a><a href="{{.TodayURL}}">Today</a><a href="{{.NextURL}}" aria-label="Next {{.View}}">Next</a></div>
-          </div>
-          <nav class="calendar-view-switcher" aria-label="Calendar view"><a href="{{.MonthURL}}" {{if eq .View "month"}}aria-current="page"{{end}}>Month</a><a href="{{.WeekURL}}" {{if eq .View "week"}}aria-current="page"{{end}}>Week</a><a href="{{.AgendaURL}}" {{if eq .View "agenda"}}aria-current="page"{{end}}>Agenda</a></nav>
-          {{if ne .View "agenda"}}
-          <div class="calendar-wide-view">
-            <div class="calendar-weekdays" aria-hidden="true">{{range .WeekdayLabels}}<span>{{.}}</span>{{end}}</div>
-            <div class="calendar-grid" role="grid" aria-label="{{.PeriodLabel}}" data-calendar-grid>{{range .CalendarDays}}<section class="calendar-day{{if not .InPeriod}} calendar-day-muted{{end}}{{if .IsToday}} calendar-day-today{{end}}" role="gridcell"><a class="calendar-day-number" data-calendar-day href="{{.FocusURL}}" aria-label="{{.AccessibleDate}}">{{.DayNumber}}</a>{{if .Events}}<ol class="calendar-day-events">{{range .Events}}<li><a href="{{.AgendaURL}}">{{if .TimeLabel}}<span>{{.TimeLabel}}</span>{{end}}<strong>{{.Title}}</strong></a></li>{{end}}</ol>{{end}}</section>{{end}}</div>
-          </div>
-          {{end}}
-          <div class="calendar-agenda{{if ne .View "agenda"}} calendar-mobile-agenda{{end}}" aria-label="Agenda for {{.PeriodLabel}}">{{if .Agenda}}{{range .Agenda}}<article class="agenda-event" id="event-{{.ID}}"><time datetime="{{.DateTime}}">{{.DateLabel}}{{if .TimeLabel}} · {{.TimeLabel}}{{end}}</time><div><h3>{{.Title}}</h3>{{if .Owner}}<p>For {{.Owner}}</p>{{end}}{{if .Location}}<p>{{.Location}}</p>{{end}}{{if .Conflict}}<p class="calendar-conflict">{{.Conflict}}</p>{{end}}</div><div class="event-actions"><a href="{{.SourceURL}}">View original</a>{{if .Exportable}}<a href="{{.ICSURL}}">Download .ics</a><a href="{{.GoogleURL}}" target="_blank" rel="noopener">Open Google Calendar draft</a>{{else}}<span>Add a complete date to export</span>{{end}}</div></article>{{end}}{{else}}<div class="empty-state"><h3>No calendar events in this period</h3><p>Undated milestones remain with their plan until a date is recorded.</p></div>{{end}}</div>
-          <p class="calendar-sync-note">Calendar exports are one-time copies. Changes in Mithra will not update them automatically. <a href="/help#calendar-export">Help with calendar exports</a></p>
-        </section>
-        {{if .Plans}}<section class="plans-section" aria-labelledby="plans-title"><div class="section-heading"><div><h2 id="plans-title">Plans and milestones</h2></div><p>See each plan’s goal, timing, and dependencies together.</p></div><div class="plan-grid">{{range .Plans}}<article class="plan-card"><p>{{.Goal}}{{if .GoalSourceURL}} · <a href="{{.GoalSourceURL}}">View original goal</a>{{end}}</p><h3>{{.Title}}</h3>{{if .SourceURL}}<a href="{{.SourceURL}}">View original plan</a>{{end}}{{if .Owner}}<p>For {{.Owner}}</p>{{end}}{{if .Constraint}}<p class="plan-constraint">Depends on {{.Constraint}}</p>{{end}}{{if .Milestones}}<ol>{{range .Milestones}}<li><span>{{.State}}</span><strong>{{.Title}}</strong>{{if .DueLabel}}<time datetime="{{.DueISO}}">{{.DueLabel}}</time>{{end}}{{if .Dependency}}<small>After {{.Dependency}}</small>{{end}}{{if .SourceURL}}<a href="{{.SourceURL}}">View original milestone</a>{{end}}</li>{{end}}</ol>{{end}}</article>{{end}}</div></section>{{end}}
-      </div>
+    <main id="main-content" tabindex="-1" class="page">
+      <header class="page-head">
+        <div><h1>Calendar</h1><p class="lede">{{if .Timezone}}Household dates, plans and milestones. Times shown in {{.Timezone}}.{{else}}Household dates, plans and milestones. <a href="/settings#timezone">Set your household timezone</a> before exporting timed events.{{end}}</p></div>
+        <nav class="segmented calendar-view-switch" aria-label="Calendar view"><a href="{{.MonthURL}}"{{if eq .View "month"}} aria-current="page"{{end}}>Month</a><a href="{{.WeekURL}}"{{if eq .View "week"}} aria-current="page"{{end}}>Week</a><a href="{{.AgendaURL}}"{{if eq .View "agenda"}} aria-current="page"{{end}}>Agenda</a></nav>
+      </header>
+      {{template "status" .Status}}
+      {{if .Error}}<section class="notice notice-error" role="alert"><p>{{.Error}}</p></section>{{end}}
+      <section class="section calendar-section" aria-labelledby="calendar-title">
+        <div class="calendar-toolbar"><h2 id="calendar-title">{{.PeriodLabel}}</h2><div class="calendar-nav"><a class="button" href="{{.PreviousURL}}" aria-label="Previous {{.View}}">Previous</a><a class="button" href="{{.TodayURL}}">Today</a><a class="button" href="{{.NextURL}}" aria-label="Next {{.View}}">Next</a></div></div>
+        {{if ne .View "agenda"}}
+        <div class="calendar-wide-view">
+          <div class="calendar-weekdays" aria-hidden="true">{{range .WeekdayLabels}}<span>{{.}}</span>{{end}}</div>
+          <div class="calendar-grid{{if eq .View "week"}} calendar-grid-week{{end}}" role="grid" aria-label="{{.PeriodLabel}}" data-calendar-grid>{{range .CalendarDays}}<div class="calendar-day{{if not .InPeriod}} calendar-day-muted{{end}}{{if .IsToday}} calendar-day-today{{end}}" role="gridcell"><a class="calendar-day-number" data-calendar-day href="{{.FocusURL}}" aria-label="{{.AccessibleDate}}"{{if .IsToday}} aria-current="date"{{end}}>{{.DayNumber}}</a>{{if .Events}}<ol class="calendar-day-events">{{range .Events}}<li><a href="{{.AgendaURL}}">{{if .TimeLabel}}<span class="event-time">{{.TimeLabel}}</span> {{end}}{{.Title}}</a></li>{{end}}</ol>{{end}}</div>{{end}}</div>
+        </div>
+        {{end}}
+        <div class="calendar-agenda{{if ne .View "agenda"}} calendar-mobile-agenda{{end}}" aria-label="Agenda for {{.PeriodLabel}}">{{if .Agenda}}<ul class="rows" role="list">{{range .Agenda}}<li class="agenda-event" id="event-{{.ID}}"><div class="row"><span class="mark mark-plan" aria-hidden="true">{{template "icon" "calendar"}}</span><span><span class="row-title">{{.Title}}</span><span class="row-meta">{{if .Owner}}<span>For {{.Owner}}</span>{{end}}{{if .Location}}<span>{{.Location}}</span>{{end}}{{if .Conflict}}<span class="calendar-conflict">{{.Conflict}}</span>{{end}}</span></span><span class="row-value"><time datetime="{{.DateTime}}">{{.DateLabel}}</time>{{if .TimeLabel}}<small>{{.TimeLabel}}</small>{{end}}</span></div><p class="row-actions event-actions"><a href="{{.SourceURL}}">View original</a>{{if .Exportable}}<a href="{{.ICSURL}}">Download .ics</a><a href="{{.GoogleURL}}" target="_blank" rel="noopener">Open Google Calendar draft</a>{{else}}<span class="quiet">Add a complete date to export</span>{{end}}</p></li>{{end}}</ul>{{else}}<div class="empty empty-quiet"><h3>No calendar events in this period</h3><p>Undated milestones stay with their plan until a date is recorded.</p></div>{{end}}</div>
+        <p class="chart-note">Calendar exports are one-time copies. Changes in Mithra will not update them automatically. <a href="/help#calendar-export">Help with calendar exports</a></p>
+      </section>
+      {{if .Plans}}<section class="section" aria-labelledby="plans-title"><div class="section-head"><h2 id="plans-title">Plans and milestones</h2><p>Each plan’s goal, timing and dependencies together.</p></div>
+        <div class="plan-list">{{range .Plans}}<article class="plan"><div class="plan-head"><h3>{{.Title}}</h3><p class="row-meta"><span>Goal: {{.Goal}}</span>{{if .Owner}}<span>For {{.Owner}}</span>{{end}}</p>{{if .Constraint}}<p class="plan-constraint">Depends on {{.Constraint}}</p>{{end}}<p class="row-actions">{{if .SourceURL}}<a class="button button-small" href="{{.SourceURL}}">View original plan</a>{{end}}{{if .GoalSourceURL}}<a class="button button-small button-quiet" href="{{.GoalSourceURL}}">View original goal</a>{{end}}</p></div>{{if .Milestones}}<ol class="rows" role="list">{{range .Milestones}}<li><div class="row"><span class="mark mark-note" aria-hidden="true">{{template "icon" "note"}}</span><span><span class="row-title">{{.Title}}</span><span class="row-meta"><span>{{.State}}</span>{{if .Dependency}}<span>After {{.Dependency}}</span>{{end}}{{if .SourceURL}}<a href="{{.SourceURL}}">View original milestone</a>{{end}}</span></span><span class="row-value">{{if .DueLabel}}<time datetime="{{.DueISO}}">{{.DueLabel}}</time>{{else}}<small>No date</small>{{end}}</span></div></li>{{end}}</ol>{{end}}</article>{{end}}</div>
+      </section>{{end}}
     </main>
   </body>
 </html>

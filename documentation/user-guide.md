@@ -68,10 +68,40 @@ appointments, and routines together; it does not diagnose or recommend
 treatment. When results cannot be compared safely, Mithra keeps them separate
 until you enter a corrected value and unit.
 
+The household owner can choose a **Language and number format** and a
+**Currency on Money** in **Settings**. English (India) groups figures as
+7,35,000. The currency sign is display only: Money shows it before every
+amount, and Mithra never converts between currencies.
+
 **Planning** keeps goals, milestones, constraints, and household dates
 connected. Confirm the household timezone in **Settings** before exporting
 timed events. Downloading an `.ics` file or opening a Google Calendar draft is
 a one-time export: later changes in Mithra do not update another calendar.
+
+## Family and the baby log
+
+**Family** lists the adults who sign in and the people you look after, such as
+a child or a parent. A person's page gathers the health records that name them,
+their medicines, habits and notes.
+
+A child under three also gets the **baby log**, the part of Mithra that used
+to be TinyTots. Both adults log to the same record:
+
+- **Feeds.** Start a breast feed and press **Finish feed** when it ends, or
+  open **Earlier time or minutes** to log one after the fact. Bottles take
+  the amount offered and taken.
+- **Diapers and spit-ups** are one tap each. **Earlier time** logs one you
+  forgot; a time later than now is read as yesterday.
+- **Weights and milestones** keep their own lists. **Import weights from
+  TinyTots** reads a TinyTots CSV export and adds only its weight rows.
+  Importing the same file twice adds nothing new.
+- **Remove** takes an entry out of the log, and **Undo** brings it back.
+
+The page shows the time since the last feed started, today's counts and
+averages for the last seven days. These describe what was logged and are not
+medical advice. When the phone has no connection, entries wait on the phone
+and show as unsent until the connection returns. Home shows the same clock for
+each young child.
 
 ## Family Brief and Week in Review
 

@@ -121,10 +121,14 @@
       if (dialog.open) return;
       previousFocus = invoker || root.activeElement || triggers[0];
       dialog.showModal();
-      textarea.focus();
+      // On a touch screen, keep the keyboard closed so the quick baby buttons
+      // stay in view; focus the sheet's title instead of the text box.
+      var title = dialog.querySelector("#quick-capture-title");
+      var touch = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+      if (touch && title) title.focus(); else textarea.focus();
     }
     Array.prototype.forEach.call(triggers, function (trigger) {
-      trigger.addEventListener("click", function () { openDialog(trigger); });
+      trigger.addEventListener("click", function (event) { if (event && typeof event.preventDefault === "function") event.preventDefault(); openDialog(trigger); });
     });
     close.addEventListener("click", closeDialog);
     dialog.addEventListener("cancel", function (event) { event.preventDefault(); closeDialog(); });
@@ -135,6 +139,30 @@
         openDialog(root.activeElement);
       }
     });
+  }
+
+  function installThemeSwitch(root, storage) {
+    if (!root || typeof root.querySelector !== "function") return;
+    var group = root.querySelector("[data-theme-switch]");
+    var html = root.documentElement;
+    if (!group || !html) return;
+    var buttons = group.querySelectorAll("[data-theme-choice]");
+    function current() {
+      try { return storage && storage.getItem("mithra-theme") || "system"; } catch (error) { return "system"; }
+    }
+    function apply(choice) {
+      if (choice === "day" || choice === "night") html.setAttribute("data-theme", choice); else html.removeAttribute("data-theme");
+      Array.prototype.forEach.call(buttons, function (button) { button.setAttribute("aria-pressed", String(button.getAttribute("data-theme-choice") === choice)); });
+    }
+    Array.prototype.forEach.call(buttons, function (button) {
+      button.addEventListener("click", function () {
+        var choice = button.getAttribute("data-theme-choice") || "system";
+        try { if (storage) { if (choice === "system") storage.removeItem("mithra-theme"); else storage.setItem("mithra-theme", choice); } } catch (error) { /* storage unavailable: theme lasts for this page */ }
+        apply(choice);
+      });
+    });
+    group.hidden = false;
+    apply(current());
   }
 
   function installQuickNavigation(root) {
@@ -242,10 +270,35 @@
       }
     }
 
+    // Young children get their own destinations: their page, and straight
+    // to logging a feed or a weight. Fetched once, the first time it opens.
+    var peopleLoaded = false;
+    function loadPeople() {
+      if (peopleLoaded || typeof global.fetch !== "function") return;
+      peopleLoaded = true;
+      global.fetch("/family/quick", { credentials: "same-origin", headers: { Accept: "application/json" } })
+        .then(function (response) { return response.ok ? response.json() : []; })
+        .then(function (babies) {
+          (babies || []).forEach(function (baby) {
+            if (!baby || !baby.name || !baby.pageUrl || baby.pageUrl.charAt(0) !== "/") return;
+            var page = baby.pageUrl.split("#")[0];
+            destinations.push({ label: baby.name, path: page });
+            destinations.push({ label: "Log a feed for " + baby.name, path: page + "#baby-log" });
+            destinations.push({ label: "Log a weight for " + baby.name, path: page + "#baby-weights" });
+          });
+          if (dialog.open) {
+            filtered = filterQuickNavigation(destinations, search.value);
+            renderResults();
+          }
+        })
+        .catch(function () { /* offline: the page list is enough */ });
+    }
+
     function openPalette() {
       if (dialog.open || typeof dialog.showModal !== "function") {
         return;
       }
+      loadPeople();
       filtered = destinations.slice();
       activeIndex = 0;
       previousFocus = root.activeElement;
@@ -552,6 +605,7 @@
     }
     installQuickNavigation(root);
     installQuickCapture(root);
+    installThemeSwitch(root, global && global.localStorage ? global.localStorage : null);
     installShortcutHelp(root);
     installSourcePreview(root);
     installProviderSettings(root);
@@ -572,6 +626,7 @@
     isEditableControl: isEditableControl,
     navigationDestinations: navigationDestinations,
     installProviderSettings: installProviderSettings,
+    installThemeSwitch: installThemeSwitch,
     restoreFocus: restoreFocus,
     reportPageErrors: reportPageErrors,
     setStatus: setStatus,

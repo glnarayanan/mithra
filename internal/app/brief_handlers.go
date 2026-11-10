@@ -14,7 +14,16 @@ import (
 type EvidenceView struct{ URL, Label string }
 type CoachingItemView struct {
 	Title, Copy, When, Meta, Reason, NextStep, EvidenceURL, EvidenceLabel string
-	Evidence                                                              []EvidenceView
+	// Area picks the row mark: money, health, plan or private.
+	Area string
+	// MetaParts are short facts shown side by side under the title.
+	MetaParts []string
+	// Relative is a short distance from today, such as "in 9 days".
+	Relative string
+	Private  bool
+	Evidence []EvidenceView
+	// HealthComparison marks a row whose disclaimer moved to the section.
+	HealthComparison bool
 }
 type CoachingHistoryView struct{ Generated, Model, Summary string }
 type CoachingNudgeView struct {
@@ -23,7 +32,7 @@ type CoachingNudgeView struct {
 }
 type BriefView struct {
 	Navigation                                              []NavigationItem
-	CSRF, Status, Freshness                                 string
+	CSRF, Status, Freshness, Today                          string
 	Stale, PersonalStale, HasRecords, HasShared, CanRefresh bool
 	AIConfigured, Owner                                     bool
 	Lead                                                    CoachingItemView
@@ -32,10 +41,13 @@ type BriefView struct {
 	InsightGenerated, InsightModel                          string
 	Nudges                                                  []CoachingNudgeView
 	Capture                                                 CaptureView
+	Babies                                                  []BabyPanelView
+	HealthNote                                              bool
 }
 type WeekReviewView struct {
 	Navigation                                           []NavigationItem
 	CSRF, Status, Period, WeeklyStatus, WeeklyStatusCopy string
+	Today                                                string
 	PrivateStatus, PrivateStatusCopy                     string
 	Stale, PrivateStale, CanRefresh                      bool
 	Priorities, Progress, Soon, Later, OnlyYou           []CoachingItemView
@@ -48,7 +60,7 @@ type WeekReviewView struct {
 
 func (a *App) brief(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
-		writeError(w, http.StatusNotFound, "not found")
+		a.notFound(w, r, "This page isn’t in Mithra", "The address may be mistyped, or the page has moved.", "/", "Back to Home")
 		return
 	}
 	if !allowsRead(r.Method) {
@@ -208,11 +220,22 @@ func (a *App) renderBrief(r *http.Request, w http.ResponseWriter, scope policy.A
 	configured := providerErr == nil
 	evidence := evidenceMap(overview.SharedContext, overview.PersonalContext)
 	view := BriefView{Navigation: navigationForPath("/"), CSRF: csrf, Status: status, HasRecords: overview.HasRecords, HasShared: overview.Shared.Lead.Title != "", CanRefresh: configured && overview.HasRecords && csrf != "", AIConfigured: configured, Owner: scope.Role == "owner", Stale: overview.SharedCache.Stale, PersonalStale: overview.PersonalCache.Stale, Lead: itemView(overview.Shared.Lead, evidence), Insights: itemViews(overview.Shared.Insights, evidence), Dates: itemViews(overview.Shared.Dates, evidence), Priorities: itemViews(overview.Shared.Priorities, evidence), OnlyYou: itemViews(privateItems(overview.Personal), evidence), InsightHistory: historyViews(overview.SharedHistory), InsightGenerated: insightGenerated(overview.SharedCache), InsightModel: overview.SharedCache.Model, Capture: CaptureView{CSRF: csrf, ProviderConfigured: configured, VoiceSupported: configured && providerConfig.ProviderID == providers.ProviderOpenAI}}
+	view.Today = a.householdNow(r.Context(), scope).Format("Monday, 2 January")
+	view.Priorities = withoutTitles(view.Priorities, view.Dates)
+	if len(withoutTitles([]CoachingItemView{view.Lead}, view.Dates, view.Priorities)) == 0 {
+		view.Lead = CoachingItemView{}
+	}
 	view.Freshness = freshness(overview.SharedCache, "Up to date")
 	if view.Status == "" && view.Stale {
 		view.Status = "A newer update is available. Dates and sources are still up to date."
 	}
 	view.Nudges = a.nudgeViews(r.Context(), scope, append(contextReviewFacts(overview.SharedContext), contextReviewFacts(overview.PersonalContext)...))
+	view.Babies = a.babyPanels(r.Context(), scope)
+	for _, list := range [][]CoachingItemView{view.Insights, view.OnlyYou, view.Priorities} {
+		for _, item := range list {
+			view.HealthNote = view.HealthNote || item.HealthComparison
+		}
+	}
 	a.renderTemplate(r.Context(), w, "brief.html", view)
 }
 
@@ -234,7 +257,8 @@ func (a *App) renderWeek(r *http.Request, w http.ResponseWriter, scope policy.Ac
 		Navigation:        navigationForPath("/review"),
 		CSRF:              csrf,
 		Status:            status,
-		Period:            from.Format("2 Jan") + " – " + now.Format("2 Jan 2006"),
+		Period:            from.Format("2 Jan") + " to " + now.Format("2 Jan 2006"),
+		Today:             a.householdNow(r.Context(), scope).Format("Monday, 2 January"),
 		WeeklyStatus:      review.Shared.Status.Label,
 		WeeklyStatusCopy:  review.Shared.Status.Copy,
 		PrivateStatus:     review.Personal.Status.Label,
@@ -333,8 +357,29 @@ func contextReviewFacts(context coaching.Context) []coaching.Fact {
 }
 func itemView(item coaching.Item, evidence map[string]coaching.Fact) CoachingItemView {
 	view := CoachingItemView{Title: item.Title, Copy: item.Copy, When: item.When}
+	// The section states this once instead of on every row.
+	if copy, ok := strings.CutSuffix(view.Copy, " This is a record comparison, not health advice."); ok {
+		view.Copy, view.HealthComparison = copy, true
+	}
+	if family, ok := strings.CutPrefix(item.Copy, "Recorded in "); ok && strings.HasSuffix(family, ".") && !strings.Contains(family, " ") {
+		view.MetaParts = []string{areaLabel(strings.TrimSuffix(family, "."))}
+		view.Copy = ""
+	}
+	if date, ok := parseISODate(item.When); ok && len(strings.TrimSpace(item.When)) == 10 {
+		view.When = humanDate(date)
+		view.Relative = relativeDays(date, time.Now())
+	} else if item.When != "" {
+		// A period such as "1 Aug 2026 to 1 Nov 2026" reads better beside the copy.
+		view.MetaParts = append([]string{item.When}, view.MetaParts...)
+		view.When = ""
+	}
 	seen := map[string]struct{}{}
 	for _, evidenceID := range item.EvidenceIDs {
+		fact, found := evidence[evidenceID]
+		if found && view.Area == "" {
+			view.Area = areaForFamily(fact.Family)
+			view.Private = fact.Visibility == policy.Personal
+		}
 		if fact, ok := evidence[evidenceID]; ok && fact.SourceID != "" {
 			url := sourceURL(fact.SourceID)
 			if _, exists := seen[url]; exists {
@@ -359,7 +404,10 @@ func itemViews(items []coaching.Item, evidence map[string]coaching.Fact) []Coach
 func reviewEventViews(events []coaching.ReviewEvent, evidence map[string]coaching.Fact) []CoachingItemView {
 	out := make([]CoachingItemView, 0, len(events))
 	for _, event := range events {
-		view := CoachingItemView{Title: event.Title, Copy: event.Copy, When: reviewDate(event.When), Reason: event.Reason, NextStep: event.NextStep, Meta: reviewEventMeta(event)}
+		view := CoachingItemView{Title: event.Title, Copy: event.Copy, When: reviewDate(event.When), Reason: event.Reason, NextStep: event.NextStep, Meta: reviewEventMeta(event), MetaParts: reviewEventParts(event), Area: areaForFamily(event.Fact.Family), Private: event.Visibility == "Only you"}
+		if date, ok := parseISODate(event.When); ok {
+			view.Relative = relativeDays(date, time.Now())
+		}
 		seen := map[string]struct{}{}
 		for _, evidenceID := range event.EvidenceIDs {
 			fact, ok := evidence[evidenceID]
@@ -382,19 +430,87 @@ func reviewEventViews(events []coaching.ReviewEvent, evidence map[string]coachin
 }
 
 func reviewEventMeta(event coaching.ReviewEvent) string {
-	parts := make([]string, 0, 5)
-	if event.When != "" {
-		parts = append(parts, reviewDate(event.When))
+	return strings.Join(reviewEventParts(event), ", ")
+}
+
+// reviewEventParts lists the short facts shown beside a review row. Visibility
+// is shown as a chip instead, so it is left out here.
+func reviewEventParts(event coaching.ReviewEvent) []string {
+	parts := make([]string, 0, 4)
+	if event.Domain != "" {
+		parts = append(parts, areaNames(event.Domain))
 	}
-	if event.Time != "" {
-		parts = append(parts, event.Time)
+	if date, ok := parseISODate(event.When); ok {
+		label := humanDate(date)
+		if event.Time != "" {
+			label += ", " + event.Time
+		}
+		parts = append(parts, label)
+	} else if event.When != "" {
+		parts = append(parts, event.When)
 	}
-	for _, value := range []string{event.Domain, event.Visibility, event.Status} {
-		if value != "" {
-			parts = append(parts, value)
+	if event.Status != "" {
+		parts = append(parts, strings.ReplaceAll(event.Status, " · ", ", "))
+	}
+	return parts
+}
+
+// areaNames rewrites coaching's domain names ("Planning + finance") to the
+// navigation's names ("Calendar and Money").
+func areaNames(domain string) string {
+	parts := strings.Split(domain, "+")
+	for index, part := range parts {
+		parts[index] = areaLabel(strings.ToLower(strings.TrimSpace(part)))
+	}
+	return strings.Join(parts, " and ")
+}
+
+// areaLabel names a record family the way the navigation does.
+func areaLabel(family string) string {
+	switch family {
+	case "finance":
+		return "Money"
+	case "planning":
+		return "Calendar"
+	case "health":
+		return "Health"
+	}
+	if family == "" {
+		return "Household"
+	}
+	return strings.ToUpper(family[:1]) + family[1:]
+}
+
+// withoutTitles drops items already shown elsewhere on the page, so each
+// record appears once.
+func withoutTitles(items []CoachingItemView, shown ...[]CoachingItemView) []CoachingItemView {
+	seen := map[string]struct{}{}
+	for _, list := range shown {
+		for _, item := range list {
+			seen[item.Title] = struct{}{}
 		}
 	}
-	return strings.Join(parts, " · ")
+	out := items[:0:0]
+	for _, item := range items {
+		if _, ok := seen[item.Title]; !ok {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+func areaForFamily(family string) string {
+	switch family {
+	case "finance":
+		return "money"
+	case "health":
+		return "health"
+	case "planning":
+		return "plan"
+	case "baby", "care":
+		return "baby"
+	}
+	return "note"
 }
 func reviewDate(value string) string {
 	date, err := time.Parse("2006-01-02", value)
@@ -513,4 +629,22 @@ func (a *App) nudgeViews(ctx context.Context, scope policy.ActorScope, facts []c
 		out = append(out, CoachingNudgeView{ID: n.ID, Family: n.Family, RecordID: n.RecordID, Title: fact.Content, Copy: "Add an update when you have one, or mark this as reviewed.", LensURL: "/" + n.Family, LensLabel: strings.Title(n.Family), FollowUpEnabled: n.FollowUpEnabled})
 	}
 	return out
+}
+
+// householdNow is the current time in the household timezone, falling back to
+// UTC until the owner confirms one in Settings.
+func (a *App) householdNow(ctx context.Context, scope policy.ActorScope) time.Time {
+	now := time.Now()
+	if a.planningRecords == nil {
+		return now.UTC()
+	}
+	zone, err := a.planningRecords.GetTimezone(ctx, scope)
+	if err != nil || zone == "" {
+		return now.UTC()
+	}
+	location, err := time.LoadLocation(zone)
+	if err != nil {
+		return now.UTC()
+	}
+	return now.In(location)
 }
