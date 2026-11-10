@@ -60,6 +60,7 @@ type ImportOptionView struct {
 type ImportIssueView struct{ FieldID, Message, Locator string }
 type ImportRecentView struct {
 	ID, FileName, Summary, Visibility, SourceURL string
+	SummaryParts                                 []string
 	CanReplace                                   bool
 }
 type ImportVisualConsentView struct {
@@ -316,11 +317,12 @@ func (a *App) importsView(r *http.Request, scope policy.ActorScope, csrf, status
 		}
 	}
 	for _, item := range recent {
-		summary := fmt.Sprintf("%d records · Source kept", item.Records)
+		parts := []string{fmt.Sprintf("%d records", item.Records), "Source kept"}
 		if item.State == "superseded" {
-			summary += " · Prior version"
+			parts = append(parts, "Prior version")
 		}
-		view.Recent = append(view.Recent, ImportRecentView{ID: item.ID, FileName: item.FileName, Summary: summary, Visibility: map[policy.Visibility]string{policy.Personal: "Only you", policy.Shared: "Shared"}[item.Visibility], SourceURL: sourceURL(item.SourceID), CanReplace: item.State == "committed"})
+		summary := strings.Join(parts, ", ")
+		view.Recent = append(view.Recent, ImportRecentView{ID: item.ID, FileName: item.FileName, Summary: summary, SummaryParts: parts, Visibility: map[policy.Visibility]string{policy.Personal: "Only you", policy.Shared: "Shared"}[item.Visibility], SourceURL: sourceURL(item.SourceID), CanReplace: item.State == "committed"})
 	}
 	return view
 }

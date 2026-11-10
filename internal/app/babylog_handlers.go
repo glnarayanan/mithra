@@ -40,11 +40,21 @@ type BabyLogView struct {
 	Milestones                 []BabyEntryView
 	Undo                       *BabyUndoView
 	Error                      string
+	// ErrorCard names the log pad card a refused entry came from, so the
+	// message and the typed values return to that card.
+	ErrorCard string
+	Values    map[string]string
+	// NextSide preselects the breast not used last; LastSide states it.
+	NextSide, LastSide string
+	// RunningX is where a running feed starts on the strip, if it does.
+	RunningX string
 }
 
 type BabyEntryView struct {
 	ID, Kind, Title, Value, TimeLabel, TimeISO, DateLabel, Who, Note string
+	Type, Clock, Relative                                            string
 	Meta                                                             []string
+	Details                                                          map[string]string
 	Running                                                          bool
 }
 
@@ -74,7 +84,7 @@ func clockLabel(t time.Time) string { return t.Format("15:04") }
 
 func babyEntry(e carelog.Event, location *time.Location) BabyEntryView {
 	at := e.OccurredAt.In(location)
-	view := BabyEntryView{ID: e.ID, Kind: "baby", TimeLabel: clockLabel(at), TimeISO: at.Format(time.RFC3339), DateLabel: shortDate(at), Running: e.Running()}
+	view := BabyEntryView{ID: e.ID, Kind: "baby", TimeLabel: clockLabel(at), TimeISO: at.Format(time.RFC3339), DateLabel: shortDate(at), Running: e.Running(), Type: e.Type, Clock: at.Format("15:04"), Details: e.Details}
 	d := e.Details
 	switch e.Type {
 	case carelog.Feed:
@@ -155,6 +165,7 @@ func formatAmount(value float64) string {
 // babyLogView builds the log from the last seven days of entries.
 func babyLogView(person people.Person, events, weights []carelog.Event, now time.Time) BabyLogView {
 	location := now.Location()
+	var lastSideAt time.Time
 	view := BabyLogView{Enabled: true, LogURL: "/family/" + url.PathEscape(person.ID) + "/log", TodayLabel: now.Format("Monday 2 January")}
 	today := carelog.Summarise(events, now)
 	view.Feeds, view.Wet, view.Dirty, view.SpitUps = today.Feeds, today.Wet, today.Dirty, today.SpitUps
@@ -178,6 +189,27 @@ func babyLogView(person people.Person, events, weights []carelog.Event, now time
 	if today.Running != nil {
 		running := babyEntry(*today.Running, location)
 		view.Running = &running
+		start := today.Running.OccurredAt
+		if start.Before(now.Add(-24 * time.Hour)) {
+			start = now.Add(-24 * time.Hour)
+		}
+		view.RunningX = strconv.FormatFloat(12+start.Sub(now.Add(-24*time.Hour)).Hours()/24*296, 'f', 1, 64)
+	}
+	view.NextSide = "left"
+	for _, e := range events {
+		if e.Type == carelog.Feed && e.Details["side"] != "" {
+			if view.LastSide == "" || e.OccurredAt.After(lastSideAt) {
+				view.LastSide, lastSideAt = e.Details["side"], e.OccurredAt
+			}
+		}
+	}
+	switch view.LastSide {
+	case "left":
+		view.NextSide = "right"
+	case "right":
+		view.NextSide = "left"
+	case "both":
+		view.NextSide = "both"
 	}
 	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
 	dayStart := now.Add(-24 * time.Hour)
@@ -221,7 +253,9 @@ func babyLogView(person people.Person, events, weights []carelog.Event, now time
 			}
 		}
 		if !e.OccurredAt.Before(midnight) && e.Type != carelog.Weight && e.Type != carelog.Milestone {
-			view.Entries = append(view.Entries, babyEntry(e, location))
+			entry := babyEntry(e, location)
+			entry.Relative = agoLabel(now.Sub(e.OccurredAt))
+			view.Entries = append(view.Entries, entry)
 		}
 	}
 	if len(view.Entries) > 6 {
@@ -369,7 +403,7 @@ func (a *App) familyLog(w http.ResponseWriter, r *http.Request, scope policy.Act
 	}
 	now := a.householdNow(r.Context(), scope)
 	if a.carelog == nil || !showsBabyLog(person, now) {
-		http.NotFound(w, r)
+		a.notFound(w, r, "There’s no baby log here", "The baby log is kept for a child under three.", "/family/"+url.PathEscape(person.ID), "Back to "+person.Name)
 		return
 	}
 	back := "/family/" + url.PathEscape(person.ID)
@@ -397,6 +431,23 @@ func (a *App) familyLog(w http.ResponseWriter, r *http.Request, scope policy.Act
 			return
 		}
 		http.Redirect(w, r, back+"?logged="+url.QueryEscape(eventID)+"#baby-log", http.StatusSeeOther)
+	case "edit":
+		at, err := entryTime(r, now)
+		if err != nil {
+			fail(err)
+			return
+		}
+		fields := map[string]string{}
+		for _, key := range []string{"mode", "side", "duration_min", "milk_type", "offered_ml", "consumed_ml", "kind", "size", "kg", "title"} {
+			if value := boundedField(r, key, 600); value != "" {
+				fields[key] = value
+			}
+		}
+		if _, err := a.carelog.Update(r.Context(), scope, person.ID, eventID, at, fields); err != nil {
+			fail(err)
+			return
+		}
+		http.Redirect(w, r, back+"?changed="+url.QueryEscape(eventID)+"#baby-log", http.StatusSeeOther)
 	case "delete":
 		if err := a.carelog.Delete(r.Context(), scope, person.ID, eventID); err != nil {
 			fail(err)
@@ -537,7 +588,29 @@ func (a *App) babyUndo(ctx context.Context, scope policy.ActorScope, person peop
 		if entry.Running {
 			message = entry.Title + " started at " + entry.TimeLabel + "."
 		}
+		if event.Type == carelog.Diaper {
+			if recent, err := a.carelog.List(ctx, scope, person.ID, event.OccurredAt.Add(-2*time.Minute)); err == nil {
+				for _, other := range recent {
+					if other.ID != event.ID && other.Type == carelog.Diaper && other.Details["kind"] == event.Details["kind"] && !other.OccurredAt.After(event.OccurredAt) {
+						gap := "under a minute"
+						if minutes := int(event.OccurredAt.Sub(other.OccurredAt).Minutes()); minutes >= 1 {
+							gap = strconv.Itoa(minutes) + " min"
+						}
+						message += " Another " + strings.ToLower(entry.Title) + " was logged " + gap + " before it."
+						break
+					}
+				}
+			}
+		}
 		return &BabyUndoView{Message: message, Action: "delete", EventID: event.ID}, ""
+	}
+	if id := query.Get("changed"); id != "" && len(id) <= 64 {
+		event, err := a.carelog.Get(ctx, scope, person.ID, id)
+		if err != nil {
+			return nil, status
+		}
+		entry := babyEntry(event, a.householdNow(ctx, scope).Location())
+		return nil, entry.Title + " at " + entry.TimeLabel + " updated."
 	}
 	if id := query.Get("removed"); id != "" && len(id) <= 64 {
 		return &BabyUndoView{Message: "Entry removed from the log.", Action: "restore", EventID: id}, ""
@@ -651,4 +724,116 @@ func withoutWeight(series []HealthSeriesView) []HealthSeriesView {
 		}
 	}
 	return out
+}
+
+// noteBabyWeights tells the Health page when a child's weights live in the
+// baby log, so two counts of the same thing never disagree silently.
+func (a *App) noteBabyWeights(ctx context.Context, scope policy.ActorScope, list []people.Person, now time.Time, view *HealthView) {
+	if a.carelog == nil {
+		return
+	}
+	notes := map[string]string{}
+	for _, person := range list {
+		if !showsBabyLog(person, now) {
+			continue
+		}
+		logged, err := a.carelog.Weights(ctx, scope, person.ID)
+		if err != nil || len(logged) == 0 {
+			continue
+		}
+		notes[strings.ToLower(person.Name)] = "Health records only. " + person.Name + "'s baby log has " + plural(len(logged), "weight", "weights") + "."
+	}
+	if len(notes) == 0 {
+		return
+	}
+	apply := func(series []HealthSeriesView) {
+		for i := range series {
+			if health.CanonicalAnalyte(series[i].Analyte) == "Weight" {
+				subject := series[i].Subject
+				if subject == "" {
+					subject = view.Person
+				}
+				series[i].Note = notes[strings.ToLower(strings.TrimSpace(subject))]
+			}
+		}
+	}
+	apply(view.Series)
+	for g := range view.Groups {
+		apply(view.Groups[g].Series)
+	}
+}
+
+func babyErrorCard(r *http.Request) (string, map[string]string) {
+	values := map[string]string{}
+	for _, key := range []string{"side", "duration_min", "milk_type", "offered_ml", "consumed_ml", "kg", "title", "date", "time"} {
+		values[key] = boundedField(r, key, 200)
+	}
+	switch action := boundedField(r, "action", 32); action {
+	case carelog.Feed:
+		if boundedField(r, "mode", 16) == "bottle" {
+			return "bottle", values
+		}
+		return "breast", values
+	case carelog.Diaper, carelog.SpitUp, carelog.Weight, carelog.Milestone, "import_weights":
+		return action, values
+	}
+	return "", values
+}
+
+// QuickBaby feeds the baby row at the top of the Add sheet.
+type QuickBaby struct {
+	Name     string `json:"name"`
+	LogURL   string `json:"logUrl"`
+	PageURL  string `json:"pageUrl"`
+	NextSide string `json:"nextSide"`
+	Running  string `json:"running,omitempty"`
+}
+
+// familyQuick lists the young children whose log the Add sheet can reach.
+func (a *App) familyQuick(w http.ResponseWriter, r *http.Request) {
+	if !allowsRead(r.Method) {
+		methodNotAllowed(w)
+		return
+	}
+	scope, ok := a.sessionScope(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "sign in again")
+		return
+	}
+	out := []QuickBaby{}
+	if a.carelog != nil {
+		if list, err := a.people.List(r.Context(), scope); err == nil {
+			now := a.householdNow(r.Context(), scope)
+			for _, person := range list {
+				if !showsBabyLog(person, now) {
+					continue
+				}
+				events, err := a.carelog.List(r.Context(), scope, person.ID, now.Add(-7*24*time.Hour))
+				if err != nil {
+					continue
+				}
+				log := babyLogView(person, events, nil, now)
+				item := QuickBaby{Name: person.Name, LogURL: log.LogURL, PageURL: "/family/" + url.PathEscape(person.ID) + "#baby-log", NextSide: log.NextSide}
+				if log.Running != nil {
+					item.Running = log.Running.ID
+				}
+				out = append(out, item)
+			}
+		}
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, out)
+}
+
+// agoLabel states how long ago something happened, in the plain words the
+// timeline uses.
+func agoLabel(d time.Duration) string {
+	switch minutes := int(d.Minutes()); {
+	case minutes < 1:
+		return "just now"
+	case minutes < 60:
+		return strconv.Itoa(minutes) + " min ago"
+	default:
+		return strconv.Itoa(minutes/60) + " h ago"
+	}
 }

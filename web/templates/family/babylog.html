@@ -4,13 +4,25 @@
 
 {{define "baby-entry-row"}}<li><div class="row"><span class="mark mark-{{.Kind}}" aria-hidden="true"></span><span><span class="row-title">{{.Title}}</span><span class="row-meta">{{range .Meta}}<span>{{.}}</span>{{end}}{{if .Who}}<span>{{.Who}}</span>{{end}}{{if .Note}}<span>{{.Note}}</span>{{end}}</span></span><span class="row-value">{{if .Value}}{{.Value}}<small><time datetime="{{.TimeISO}}">{{.DateLabel}}</time></small>{{else}}<time datetime="{{.TimeISO}}">{{.TimeLabel}}</time>{{end}}</span></div></li>{{end}}
 
-{{define "baby-today-row"}}<li><div class="row"><span class="mark mark-{{.Entry.Kind}}" aria-hidden="true"></span><span><span class="row-title">{{.Entry.Title}}</span><span class="row-meta">{{range .Entry.Meta}}<span>{{.}}</span>{{end}}{{if .Entry.Who}}<span>{{.Entry.Who}}</span>{{end}}{{if .Entry.Note}}<span>{{.Entry.Note}}</span>{{end}}</span></span><span class="row-value"><time datetime="{{.Entry.TimeISO}}">{{.Entry.TimeLabel}}</time><form method="post" action="{{.LogURL}}"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="delete"><input type="hidden" name="event" value="{{.Entry.ID}}"><button type="submit" class="link-button" aria-label="Remove {{.Entry.Title}} at {{.Entry.TimeLabel}}">Remove</button></form></span></div></li>{{end}}
+{{define "baby-today-row"}}{{$e := .Entry}}<li><details class="entry-edit"><summary class="row"><span class="mark mark-{{$e.Kind}}" aria-hidden="true"></span><span><span class="row-title">{{$e.Title}}</span><span class="row-meta">{{range $e.Meta}}<span>{{.}}</span>{{end}}{{if $e.Who}}<span>{{$e.Who}}</span>{{end}}{{if $e.Note}}<span>{{$e.Note}}</span>{{end}}</span></span><span class="row-value"><time datetime="{{$e.TimeISO}}">{{$e.TimeLabel}}</time>{{if $e.Relative}}<small>{{$e.Relative}}</small>{{end}}</span><span class="edit-cue" aria-hidden="true">Edit</span></summary>
+<div class="entry-edit-panel"><form method="post" action="{{.LogURL}}" class="entry-edit-form"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="edit"><input type="hidden" name="event" value="{{$e.ID}}">{{with $e.Details.mode}}<input type="hidden" name="mode" value="{{.}}">{{end}}
+<div class="field-grid"><label class="field"><span>{{if eq $e.Type "feed"}}Started at{{else}}Time{{end}}</span><input type="time" name="time" value="{{$e.Clock}}" required></label>
+{{if eq $e.Type "feed"}}{{if ne $e.Details.mode "bottle"}}<label class="field"><span>Side</span><select name="side"><option value="left"{{if eq $e.Details.side "left"}} selected{{end}}>Left</option><option value="right"{{if eq $e.Details.side "right"}} selected{{end}}>Right</option><option value="both"{{if eq $e.Details.side "both"}} selected{{end}}>Both</option></select></label>{{if not $e.Running}}<label class="field"><span>Minutes</span><input type="number" name="duration_min" min="1" max="300" inputmode="numeric" value="{{$e.Details.duration_min}}"></label>{{end}}{{end}}
+{{if $e.Details.milk_type}}<label class="field"><span>Bottle</span><select name="milk_type"><option value="formula"{{if eq $e.Details.milk_type "formula"}} selected{{end}}>Formula</option><option value="expressed"{{if eq $e.Details.milk_type "expressed"}} selected{{end}}>Expressed</option></select></label><label class="field"><span>Offered, ml</span><input type="number" name="offered_ml" min="1" max="500" inputmode="numeric" value="{{$e.Details.offered_ml}}"></label><label class="field"><span>Taken, ml</span><input type="number" name="consumed_ml" min="0" max="500" inputmode="numeric" value="{{$e.Details.consumed_ml}}"></label>{{end}}{{end}}
+{{if eq $e.Type "diaper"}}<label class="field"><span>Diaper</span><select name="kind"><option value="wet"{{if eq $e.Details.kind "wet"}} selected{{end}}>Wet</option><option value="dirty"{{if eq $e.Details.kind "dirty"}} selected{{end}}>Dirty</option><option value="both"{{if eq $e.Details.kind "both"}} selected{{end}}>Wet and dirty</option></select></label>{{end}}
+{{if eq $e.Type "spitup"}}<label class="field"><span>Size</span><select name="size"><option value="small"{{if eq $e.Details.size "small"}} selected{{end}}>Small</option><option value="medium"{{if eq $e.Details.size "medium"}} selected{{end}}>Medium</option><option value="large"{{if eq $e.Details.size "large"}} selected{{end}}>Large</option></select></label>{{end}}
+</div><div class="entry-edit-actions"><button type="submit" class="button button-small">Save changes</button><button type="submit" form="remove-{{$e.ID}}" class="link-button" aria-label="Remove {{$e.Title}} at {{$e.TimeLabel}}">Remove</button></div></form>
+<form method="post" action="{{.LogURL}}" id="remove-{{$e.ID}}" class="entry-remove"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="delete"><input type="hidden" name="event" value="{{$e.ID}}"></form></div></details></li>{{end}}
+
+{{define "baby-sides"}}<fieldset class="choice-chips"><legend>Breast feed</legend><label><input type="radio" name="side" value="left"{{if eq .NextSide "left"}} checked{{end}}><span>Left</span></label><label><input type="radio" name="side" value="right"{{if eq .NextSide "right"}} checked{{end}}><span>Right</span></label><label><input type="radio" name="side" value="both"{{if eq .NextSide "both"}} checked{{end}}><span>Both</span></label></fieldset>{{if .LastSide}}<p class="hint">Last feed: {{if eq .LastSide "both"}}both sides{{else}}{{.LastSide}}{{end}}</p>{{end}}{{end}}
+
+{{define "baby-card-error"}}{{if .Show}}<p class="field-error" id="baby-error-{{.Card}}" role="alert" tabindex="-1" data-focus-on-load>{{.Message}}</p>{{end}}{{end}}
 
 {{define "baby-log"}}{{$b := .Baby}}{{$csrf := .CSRF}}
 <section class="section baby-log" id="baby-log" aria-labelledby="baby-log-title" data-baby-log>
   <div class="section-head"><h2 id="baby-log-title">Baby log</h2><span class="chip chip-unsent" data-outbox-status hidden></span></div>
-  {{if $b.Undo}}<div class="status-message undo-message" role="status"><span>{{$b.Undo.Message}}</span><form method="post" action="{{$b.LogURL}}"><input type="hidden" name="csrf" value="{{$csrf}}"><input type="hidden" name="action" value="{{$b.Undo.Action}}"><input type="hidden" name="event" value="{{$b.Undo.EventID}}"><button type="submit" class="button button-small">Undo</button></form></div>{{end}}
-  {{if $b.Error}}<p class="notice notice-error" role="alert">{{$b.Error}}</p>{{end}}
+  {{if $b.Undo}}<div class="status-message undo-message" role="status" tabindex="-1" data-focus-on-load><span>{{$b.Undo.Message}}</span><form method="post" action="{{$b.LogURL}}"><input type="hidden" name="csrf" value="{{$csrf}}"><input type="hidden" name="action" value="{{$b.Undo.Action}}"><input type="hidden" name="event" value="{{$b.Undo.EventID}}"><button type="submit" class="button button-small">Undo</button></form></div>{{end}}
+  {{if and $b.Error (not $b.ErrorCard)}}<p class="notice notice-error" role="alert" tabindex="-1" data-focus-on-load>{{$b.Error}}</p>{{end}}
   <div class="cols baby-cols">
     <div>
       <div class="baby-hero"{{if $b.SinceISO}} data-since="{{$b.SinceISO}}"{{end}}>
@@ -28,31 +40,37 @@
         <p class="since since-empty">No feeds logged</p>
         <p class="baby-hero-note">Feeds from the last seven days show here.</p>
         {{end}}
-        <svg class="baby-strip" viewBox="0 0 320 40" role="img" aria-label="{{$b.Strip.Label}}"><rect class="strip-bg" x="0" y="0" width="320" height="40" rx="10"></rect>{{range $b.Strip.Feeds}}<circle class="strip-feed" cx="{{.}}" cy="13" r="4.5"></circle>{{end}}{{range $b.Strip.Diapers}}<circle class="strip-diaper" cx="{{.}}" cy="28" r="3.5"></circle>{{end}}</svg>
+        <svg class="baby-strip" viewBox="0 0 320 40" role="img" aria-label="{{$b.Strip.Label}}"><rect class="strip-bg" x="0" y="0" width="320" height="40" rx="10"></rect>{{if $b.RunningX}}<line class="strip-running" x1="{{$b.RunningX}}" y1="13" x2="308" y2="13"></line>{{end}}{{range $b.Strip.Feeds}}<circle class="strip-feed" cx="{{.}}" cy="13" r="4.5"></circle>{{end}}{{range $b.Strip.Diapers}}<circle class="strip-diaper" cx="{{.}}" cy="28" r="3.5"></circle>{{end}}</svg>
         <p class="strip-axis" aria-hidden="true"><span>24 h ago</span><span>12 h</span><span>Now</span></p>
         <p class="strip-legend"><span class="legend-feed">Feeds</span><span class="legend-diaper">Diapers</span></p>
       </div>
 
       <div class="log-pad">
         <form method="post" action="{{$b.LogURL}}" class="log-card" data-care-form>{{template "baby-hidden" $csrf}}<input type="hidden" name="action" value="feed"><input type="hidden" name="mode" value="breast">
-          <fieldset class="choice-chips"><legend>Breast feed</legend><label><input type="radio" name="side" value="left" checked><span>Left</span></label><label><input type="radio" name="side" value="right"><span>Right</span></label><label><input type="radio" name="side" value="both"><span>Both</span></label></fieldset>
-          {{if $b.Running}}<p class="hint">A feed is running. Finish it above before starting another, or log a past feed with its minutes.</p><details class="log-more"><summary>Log a past feed</summary><div class="field-grid"><label class="field"><span>Started at</span><input type="time" name="time"></label><label class="field"><span>Minutes</span><input type="number" name="duration_min" min="1" max="300" inputmode="numeric" required></label></div><button type="submit" class="button button-block">Log past feed</button></details>{{else}}<details class="log-more"><summary>Earlier time or minutes</summary><div class="field-grid"><label class="field"><span>Started at</span><input type="time" name="time"></label><label class="field"><span>Minutes, if finished</span><input type="number" name="duration_min" min="1" max="300" inputmode="numeric"></label></div></details>
+          {{if $b.Running}}<p class="log-card-title">Breast feed</p><p class="hint">A feed is running. Finish it above before starting another.</p>
+          <details class="log-more"{{if eq $b.ErrorCard "breast"}} open{{end}}><summary>Log a past feed</summary>{{template "baby-sides" $b}}<div class="field-grid"><label class="field"><span>Started at</span><input type="time" name="time" value="{{index $b.Values "time"}}"></label><label class="field"><span>Minutes</span><input type="number" name="duration_min" min="1" max="300" inputmode="numeric" required value="{{index $b.Values "duration_min"}}"></label></div>{{template "baby-card-error" (babyCardError $b "breast")}}<button type="submit" class="button button-block">Log past feed</button></details>
+          {{else}}{{template "baby-sides" $b}}
+          <details class="log-more"{{if eq $b.ErrorCard "breast"}} open{{end}}><summary>Earlier time or minutes</summary><div class="field-grid"><label class="field"><span>Started at</span><input type="time" name="time" value="{{index $b.Values "time"}}"></label><label class="field"><span>Minutes, if finished</span><input type="number" name="duration_min" min="1" max="300" inputmode="numeric" value="{{index $b.Values "duration_min"}}"></label></div></details>
+          {{template "baby-card-error" (babyCardError $b "breast")}}
           <button type="submit" class="button button-feed button-block">Start breast feed</button>{{end}}
         </form>
-        <form method="post" action="{{$b.LogURL}}" class="log-card" data-care-form>{{template "baby-hidden" $csrf}}<input type="hidden" name="action" value="feed"><input type="hidden" name="mode" value="bottle">
-          <fieldset class="choice-chips"><legend>Bottle</legend><label><input type="radio" name="milk_type" value="formula" checked><span>Formula</span></label><label><input type="radio" name="milk_type" value="expressed"><span>Expressed</span></label></fieldset>
-          <div class="field-grid log-amounts"><label class="field"><span>Offered, ml</span><input type="number" name="offered_ml" min="0" max="2000" step="5" inputmode="numeric"></label><label class="field"><span>Taken, ml</span><input type="number" name="consumed_ml" min="0" max="2000" step="5" inputmode="numeric"></label></div>
+        <form method="post" action="{{$b.LogURL}}" class="log-card" data-care-form data-bottle-form>{{template "baby-hidden" $csrf}}<input type="hidden" name="action" value="feed"><input type="hidden" name="mode" value="bottle">
+          <fieldset class="choice-chips"><legend>Bottle</legend><label><input type="radio" name="milk_type" value="formula"{{if ne (index $b.Values "milk_type") "expressed"}} checked{{end}}><span>Formula</span></label><label><input type="radio" name="milk_type" value="expressed"{{if eq (index $b.Values "milk_type") "expressed"}} checked{{end}}><span>Expressed</span></label></fieldset>
+          <div class="field-grid log-amounts"><label class="field"><span>Offered, ml</span><input type="number" name="offered_ml" min="0" max="2000" step="5" inputmode="numeric" value="{{index $b.Values "offered_ml"}}" data-offered></label><label class="field"><span>Taken, ml</span><input type="number" name="consumed_ml" min="0" max="2000" step="5" inputmode="numeric" value="{{index $b.Values "consumed_ml"}}" data-taken{{if eq $b.ErrorCard "bottle"}} aria-invalid="true" aria-describedby="baby-error-bottle"{{end}}></label></div>
+          {{template "baby-card-error" (babyCardError $b "bottle")}}
           {{template "baby-time"}}
-          <button type="submit" class="button button-block">Log bottle</button>
+          <button type="submit" class="button button-feed button-block">Log bottle</button>
         </form>
         <form method="post" action="{{$b.LogURL}}" class="log-card" data-care-form>{{template "baby-hidden" $csrf}}<input type="hidden" name="action" value="diaper">
           <p class="log-card-title" id="log-diaper">Diaper</p>
           <div class="log-buttons" role="group" aria-labelledby="log-diaper"><button type="submit" name="kind" value="wet" class="button">Wet</button><button type="submit" name="kind" value="dirty" class="button">Dirty</button><button type="submit" name="kind" value="both" class="button">Both</button></div>
+          {{template "baby-card-error" (babyCardError $b "diaper")}}
           {{template "baby-time"}}
         </form>
         <form method="post" action="{{$b.LogURL}}" class="log-card" data-care-form>{{template "baby-hidden" $csrf}}<input type="hidden" name="action" value="spitup">
           <p class="log-card-title" id="log-spitup">Spit-up</p>
           <div class="log-buttons" role="group" aria-labelledby="log-spitup"><button type="submit" name="size" value="small" class="button">Small</button><button type="submit" name="size" value="medium" class="button">Medium</button><button type="submit" name="size" value="large" class="button">Large</button></div>
+          {{template "baby-card-error" (babyCardError $b "spitup")}}
           {{template "baby-time"}}
         </form>
       </div>
@@ -73,7 +91,7 @@
       <section class="baby-block" aria-labelledby="baby-patterns-title">
         <div class="section-head"><h3 id="baby-patterns-title">Last {{if $b.PatternDays}}{{if eq $b.PatternDays 1}}day{{else}}{{$b.PatternDays}} days{{end}}{{else}}7 days{{end}}</h3></div>
         {{if $b.Patterns}}<div class="cards cards-two">{{range $b.Patterns}}<div class="card"><span class="card-head">{{.Label}}</span><span class="card-value">{{.Value}}{{if .Unit}}<small>{{.Unit}}</small>{{end}}</span><span class="card-foot">{{.Note}}</span></div>{{end}}</div>
-        <p class="chart-note">These numbers describe what was logged. They are not medical advice.</p>
+        <p class="chart-note">These numbers describe what was logged. They are not medical advice. <a href="/help#baby-averages">How they are worked out</a>.</p>
         {{else}}<p class="quiet">Averages appear once something is logged.</p>{{end}}
       </section>
 
@@ -82,11 +100,11 @@
         {{if $b.LatestWeight}}<div class="card"><span class="card-head">Latest</span><span class="card-value">{{$b.LatestWeight}}<small>kg</small></span>{{if $b.WeightPoints}}<svg class="spark" viewBox="0 0 240 84" role="img" aria-label="Weight over time, {{len $b.Weights}} entries"><polyline class="spark-line" points="{{$b.WeightPoints}}"></polyline>{{range $b.WeightDots}}<circle class="spark-dot" cx="{{.X}}" cy="{{.Y}}" r="3"></circle>{{end}}</svg>{{end}}<span class="card-foot">{{with index $b.Weights 0}}Logged {{.DateLabel}}{{end}}{{if gt (len $b.Weights) 1}}, {{len $b.Weights}} weights in all{{end}}</span></div>
         <ul class="rows" role="list">{{range $i, $w := $b.Weights}}{{if lt $i 6}}{{template "baby-entry-row" $w}}{{end}}{{end}}</ul>
         {{else}}<p class="quiet">No weights logged yet.</p>{{end}}
-        <details class="entry-details"><summary class="button button-small">Log a weight</summary>
-          <form method="post" action="{{$b.LogURL}}" class="field-grid entry-form" data-care-form>{{template "baby-hidden" $csrf}}<input type="hidden" name="action" value="weight"><label class="field"><span>Weight, kg</span><input type="number" name="kg" min="0.01" max="100" step="0.001" inputmode="decimal" required></label><label class="field"><span>Date</span><input type="date" name="date"></label><div class="row-actions"><button type="submit">Save weight</button></div></form>
+        <details class="entry-details"{{if eq $b.ErrorCard "weight"}} open{{end}}><summary class="button button-small">Log a weight</summary>
+          <form method="post" action="{{$b.LogURL}}" class="field-grid entry-form" data-care-form>{{template "baby-hidden" $csrf}}<input type="hidden" name="action" value="weight"><label class="field"><span>Weight, kg</span><input type="number" name="kg" min="0.01" max="100" step="0.001" inputmode="decimal" required value="{{index $b.Values "kg"}}"></label><label class="field"><span>Date</span><input type="date" name="date" value="{{index $b.Values "date"}}"></label>{{template "baby-card-error" (babyCardError $b "weight")}}<div class="row-actions"><button type="submit" class="button button-feed">Save weight</button></div></form>
         </details>
-        <details class="entry-details"><summary class="button button-small">Import weights from TinyTots</summary>
-          <form method="post" action="{{$b.LogURL}}" enctype="multipart/form-data" class="stack entry-form"><input type="hidden" name="csrf" value="{{$csrf}}"><input type="hidden" name="action" value="import_weights"><label class="field"><span>TinyTots CSV export</span><input type="file" name="file" accept=".csv,text/csv" required></label><p class="hint">Only weight rows are added. Feeds, diapers and other rows in the file are skipped. Importing the same file again adds nothing new.</p><div class="row-actions"><button type="submit">Import weights</button></div></form>
+        <details class="entry-details"{{if eq $b.ErrorCard "import_weights"}} open{{end}}><summary class="button button-small">Import weights from TinyTots</summary>
+          <form method="post" action="{{$b.LogURL}}" enctype="multipart/form-data" class="stack entry-form"><input type="hidden" name="csrf" value="{{$csrf}}"><input type="hidden" name="action" value="import_weights"><label class="field"><span>TinyTots CSV export</span><input type="file" name="file" accept=".csv,text/csv" required></label>{{template "baby-card-error" (babyCardError $b "import_weights")}}<p class="hint">Only weight rows are added. Feeds, diapers and other rows in the file are skipped. Importing the same file again adds nothing new.</p><div class="row-actions"><button type="submit">Import weights</button></div></form>
         </details>
       </section>
 
@@ -94,8 +112,8 @@
         <div class="section-head"><h3 id="baby-milestones-title">Milestones</h3></div>
         {{if $b.Milestones}}<ul class="rows" role="list">{{range $b.Milestones}}<li><div class="row"><span class="mark mark-baby" aria-hidden="true"></span><span><span class="row-title">{{.Title}}</span><span class="row-meta">{{if .Who}}<span>{{.Who}}</span>{{end}}{{if .Note}}<span>{{.Note}}</span>{{end}}</span></span><span class="row-value"><time datetime="{{.TimeISO}}">{{.DateLabel}}</time></span></div></li>{{end}}</ul>
         {{else}}<p class="quiet">No milestones logged yet.</p>{{end}}
-        <details class="entry-details"><summary class="button button-small">Log a milestone</summary>
-          <form method="post" action="{{$b.LogURL}}" class="field-grid entry-form" data-care-form>{{template "baby-hidden" $csrf}}<input type="hidden" name="action" value="milestone"><label class="field"><span>Milestone</span><input name="title" maxlength="160" placeholder="For example: First smile" required></label><label class="field"><span>Date</span><input type="date" name="date"></label><div class="row-actions"><button type="submit">Save milestone</button></div></form>
+        <details class="entry-details"{{if eq $b.ErrorCard "milestone"}} open{{end}}><summary class="button button-small">Log a milestone</summary>
+          <form method="post" action="{{$b.LogURL}}" class="field-grid entry-form" data-care-form>{{template "baby-hidden" $csrf}}<input type="hidden" name="action" value="milestone"><label class="field"><span>Milestone</span><input name="title" maxlength="160" placeholder="For example: First smile" required value="{{index $b.Values "title"}}"></label><label class="field"><span>Date</span><input type="date" name="date" value="{{index $b.Values "date"}}"></label>{{template "baby-card-error" (babyCardError $b "milestone")}}<div class="row-actions"><button type="submit" class="button button-feed">Save milestone</button></div></form>
         </details>
       </section>
     </div>

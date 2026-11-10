@@ -182,3 +182,25 @@ func TestSummariseCountsSinceMidnightAndMedianGap(t *testing.T) {
 		t.Fatalf("empty=%#v", empty)
 	}
 }
+
+func TestUpdateCorrectsTimeAndDetails(t *testing.T) {
+	ctx := context.Background()
+	service, owner, _, _ := newFixture(t)
+	bottle, err := service.Create(ctx, owner, "baby", Input{Type: Feed, OccurredAt: fixedNow.Add(-time.Hour), Fields: map[string]string{"mode": "bottle", "offered_ml": "90", "consumed_ml": "60"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := service.Update(ctx, owner, "baby", bottle.ID, fixedNow.Add(-90*time.Minute), map[string]string{"mode": "bottle", "milk_type": "expressed", "offered_ml": "90", "consumed_ml": "80"})
+	if err != nil || updated.Details["consumed_ml"] != "80" || updated.Details["milk_type"] != "expressed" || !updated.OccurredAt.Equal(fixedNow.Add(-90*time.Minute)) {
+		t.Fatalf("updated=%#v %v", updated, err)
+	}
+	var inputErr *InputError
+	if _, err := service.Update(ctx, owner, "baby", bottle.ID, time.Time{}, map[string]string{"mode": "bottle"}); !errors.As(err, &inputErr) {
+		t.Fatalf("empty bottle err=%v", err)
+	}
+	running, _ := service.Create(ctx, owner, "baby", Input{Type: Feed, OccurredAt: fixedNow.Add(-10 * time.Minute), Fields: map[string]string{"mode": "breast", "side": "left"}})
+	moved, err := service.Update(ctx, owner, "baby", running.ID, fixedNow.Add(-15*time.Minute), map[string]string{"mode": "breast", "side": "right"})
+	if err != nil || !moved.Running() || moved.Details["side"] != "right" {
+		t.Fatalf("moved=%#v %v", moved, err)
+	}
+}

@@ -53,6 +53,8 @@ type HealthSeriesView struct {
 	RangeStatus                                                                                                                                                      string
 	RangeOut                                                                                                                                                         bool
 	Readings                                                                                                                                                         int
+	// Note says when a young child's baby log holds more weights than Health.
+	Note string
 }
 type HealthChartMarkerView struct{ X, Y, Label, Value string }
 type HealthConflictView struct{ RecordID, Version, Analyte, Reason, EvidenceURL string }
@@ -99,6 +101,7 @@ func (a *App) healthLens(w http.ResponseWriter, r *http.Request) {
 		for _, person := range list {
 			view.Subjects = appendUnique(view.Subjects, person.Name)
 		}
+		a.noteBabyWeights(r.Context(), scope, list, now, &view)
 	}
 	if log, err := a.healthRecords.CareLogFor(r.Context(), scope, view.Person, now.AddDate(0, 0, -6).Format("2006-01-02")); err == nil {
 		view.Care = careView(log, now, view.Person == "")

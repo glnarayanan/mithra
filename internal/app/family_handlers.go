@@ -32,10 +32,10 @@ type FamilyOptionView struct {
 }
 
 type FamilyPersonView struct {
-	ID, Name, Relationship, RelationshipLabel, BirthDate, BirthLabel, Age, URL, HealthURL string
-	Version                                                                               int64
-	Private                                                                               bool
-	HealthRecords                                                                         int
+	ID, Name, Relationship, RelationshipLabel, BirthDate, BirthLabel, Age, URL, HealthURL, Fact string
+	Version                                                                                     int64
+	Private                                                                                     bool
+	HealthRecords                                                                               int
 }
 
 // PersonView is one person's page.
@@ -140,8 +140,19 @@ func (a *App) renderFamily(ctx context.Context, w http.ResponseWriter, scope pol
 		}
 	}
 	now := a.householdNow(ctx, scope)
+	facts := map[string]string{}
+	for _, panel := range a.babyPanels(ctx, scope) {
+		switch {
+		case panel.Running:
+			facts[strings.TrimSuffix(panel.URL, "#baby-log")] = "Feeding now"
+		case panel.HasFeed:
+			facts[strings.TrimSuffix(panel.URL, "#baby-log")] = "Fed " + strconv.Itoa(panel.SinceHours) + "h " + strconv.Itoa(panel.SinceMinutes) + "m ago"
+		}
+	}
 	for _, person := range list {
-		view.People = append(view.People, familyPersonView(person, now, counts[person.Name]))
+		row := familyPersonView(person, now, counts[person.Name])
+		row.Fact = facts[row.URL]
+		view.People = append(view.People, row)
 	}
 	rendered := newBufferedResponse(maxResponseBodyBytes)
 	if err := a.templates.ExecuteTemplate(rendered, "family.html", view); err != nil || rendered.overflow {
@@ -164,12 +175,12 @@ func (a *App) familyPerson(w http.ResponseWriter, r *http.Request) {
 	}
 	id, sub, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/family/"), "/")
 	if id == "" || len(id) > 64 || (sub != "" && sub != "log") {
-		http.NotFound(w, r)
+		a.notFound(w, r, "That person isn’t in Family", "They may have been removed, or the address is mistyped.", "/family", "Back to Family")
 		return
 	}
 	person, err := a.people.Get(r.Context(), scope, id)
 	if err != nil {
-		http.NotFound(w, r)
+		a.notFound(w, r, "That person isn’t in Family", "They may have been removed, or the address is mistyped.", "/family", "Back to Family")
 		return
 	}
 	if sub == "log" {
@@ -238,6 +249,9 @@ func (a *App) renderPerson(ctx context.Context, w http.ResponseWriter, r *http.R
 	}
 	if problem != "" {
 		view.Baby.Error = problem
+		if r.Method == http.MethodPost {
+			view.Baby.ErrorCard, view.Baby.Values = babyErrorCard(r)
+		}
 	} else if view.Baby.Enabled {
 		view.Baby.Undo, view.Status = a.babyUndo(ctx, scope, person, r.URL.Query(), view.Status)
 	}

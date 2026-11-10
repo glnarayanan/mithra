@@ -60,7 +60,7 @@ type WeekReviewView struct {
 
 func (a *App) brief(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
-		writeError(w, http.StatusNotFound, "not found")
+		a.notFound(w, r, "This page isn’t in Mithra", "The address may be mistyped, or the page has moved.", "/", "Back to Home")
 		return
 	}
 	if !allowsRead(r.Method) {

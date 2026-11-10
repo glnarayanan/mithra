@@ -96,6 +96,12 @@ type BabyRow struct {
 	LogURL, CSRF string
 }
 
+// BabyCardError places a refused entry's message inside its own card.
+type BabyCardError struct {
+	Show          bool
+	Card, Message string
+}
+
 // FinanceRecordRow pairs a record with the CSRF token its forms need.
 type FinanceRecordRow struct {
 	Record FinanceRecordView
@@ -132,6 +138,9 @@ type HealthEntryForm struct {
 var templateFuncs = template.FuncMap{
 	"babyRow": func(entry BabyEntryView, logURL, csrf string) BabyRow {
 		return BabyRow{Entry: entry, LogURL: logURL, CSRF: csrf}
+	},
+	"babyCardError": func(b BabyLogView, card string) BabyCardError {
+		return BabyCardError{Show: b.ErrorCard == card && b.Error != "", Card: card, Message: b.Error}
 	},
 	"careBlock": func(care CareView, form HealthEntryForm) CareBlock { return CareBlock{Care: care, Form: form} },
 	"entryForm": func(csrf, back, subject string, subjects []string, catalog []HealthCatalogOption) HealthEntryForm {

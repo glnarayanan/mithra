@@ -22,6 +22,34 @@
   const log = document.querySelector("[data-baby-log]");
   if (!log) return;
 
+  // After a post, bring the message about it into view and announce it.
+  const message = log.querySelector("[data-focus-on-load]");
+  if (message) {
+    message.focus({ preventScroll: true });
+    message.scrollIntoView({ block: "center" });
+  }
+
+  // Check a bottle before it is sent: an amount is needed, and taken
+  // cannot be more than offered.
+  log.querySelectorAll("form[data-bottle-form]").forEach((form) => {
+    const offered = form.querySelector("[data-offered]");
+    const taken = form.querySelector("[data-taken]");
+    if (!offered || !taken) return;
+    const check = () => {
+      let problem = "";
+      if (offered.value === "" && taken.value === "") problem = "Enter how much was offered or taken, in ml.";
+      else if (offered.value !== "" && taken.value !== "" && Number(taken.value) > Number(offered.value)) problem = "Taken can’t be more than offered.";
+      taken.setCustomValidity(problem);
+      if (problem) taken.setAttribute("aria-invalid", "true"); else taken.removeAttribute("aria-invalid");
+    };
+    offered.addEventListener("input", check);
+    taken.addEventListener("input", check);
+    form.addEventListener("submit", (event) => {
+      check();
+      if (!form.checkValidity()) { event.preventDefault(); event.stopImmediatePropagation(); taken.reportValidity(); }
+    }, true);
+  });
+
   const read = () => {
     try { return JSON.parse(localStorage.getItem(KEY) || "[]"); } catch { return []; }
   };

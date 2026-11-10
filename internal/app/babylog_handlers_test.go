@@ -65,7 +65,7 @@ func TestBabyLogOnChildPage(t *testing.T) {
 	}
 	post(url.Values{"action": {"diaper"}, "kind": {"both"}})
 	post(url.Values{"action": {"feed"}, "mode": {"bottle"}, "milk_type": {"formula"}, "offered_ml": {"90"}, "consumed_ml": {"60"}})
-	if bad := post(url.Values{"action": {"feed"}, "mode": {"bottle"}, "offered_ml": {"60"}, "consumed_ml": {"90"}}); bad.Code != http.StatusBadRequest || !strings.Contains(bad.Body.String(), "Consumed cannot be more than offered") {
+	if bad := post(url.Values{"action": {"feed"}, "mode": {"bottle"}, "offered_ml": {"60"}, "consumed_ml": {"90"}}); bad.Code != http.StatusBadRequest || !strings.Contains(bad.Body.String(), "Taken can’t be more than offered") {
 		t.Fatalf("bad bottle status=%d", bad.Code)
 	}
 	body = page("/family/" + baby.ID)
@@ -117,5 +117,67 @@ func TestBabyLogOnChildPage(t *testing.T) {
 	}
 	if weights, _ := application.carelog.Weights(ctx, scope, baby.ID); len(weights) != 2 || weights[0].Details["kg"] != "3.2" || weights[0].Source != "import" {
 		t.Fatalf("weights=%#v", weights)
+	}
+}
+
+func TestBabyLogCorrectionsAndPlainPages(t *testing.T) {
+	application, mailer := newAuthTestApp(t, "owner@example.com")
+	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
+	scope := ownerScope(t, application, session)
+	ctx := context.Background()
+	baby, err := application.people.Create(ctx, scope, people.Draft{Name: "Meera", Relationship: "child", BirthDate: time.Now().AddDate(0, -1, 0).Format("2006-01-02")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	logPath := "/family/" + baby.ID + "/log"
+	post := func(values url.Values) *httptest.ResponseRecorder {
+		return serve(application, authenticatedHealthRequest(session, http.MethodPost, logPath, values))
+	}
+	page := func(target string) string {
+		target, _, _ = strings.Cut(target, "#")
+		return serve(application, authenticatedHealthRequest(session, http.MethodGet, target, nil)).Body.String()
+	}
+
+	// A bottle without an amount stays on the bottle card with the values kept.
+	empty := post(url.Values{"action": {"feed"}, "mode": {"bottle"}, "milk_type": {"expressed"}})
+	if empty.Code != http.StatusBadRequest || !strings.Contains(empty.Body.String(), "Enter how much was offered or taken, in ml.") || !strings.Contains(empty.Body.String(), `id="baby-error-bottle"`) {
+		t.Fatalf("empty bottle status=%d", empty.Code)
+	}
+
+	// A diaper logged twice in a row says so, and an edit changes the entry.
+	post(url.Values{"action": {"diaper"}, "kind": {"wet"}})
+	twice := post(url.Values{"action": {"diaper"}, "kind": {"wet"}})
+	if body := page(twice.Header().Get("Location")); !strings.Contains(body, "Another wet diaper was logged under a minute before it.") {
+		t.Fatal("no note on a repeated diaper")
+	}
+	events, _ := application.carelog.List(ctx, scope, baby.ID, time.Now().Add(-time.Hour))
+	clock := time.Now().Add(-30 * time.Minute).In(application.householdNow(ctx, scope).Location()).Format("15:04")
+	edited := post(url.Values{"action": {"edit"}, "event": {events[0].ID}, "time": {clock}, "kind": {"dirty"}})
+	if edited.Code != http.StatusSeeOther || !strings.Contains(edited.Header().Get("Location"), "?changed=") {
+		t.Fatalf("edit status=%d", edited.Code)
+	}
+	if body := page(edited.Header().Get("Location")); !strings.Contains(body, "Dirty diaper at "+clock+" updated.") || !strings.Contains(body, "Save changes") {
+		t.Fatal("edit status or form missing")
+	}
+	if got, _ := application.carelog.Get(ctx, scope, baby.ID, events[0].ID); got.Details["kind"] != "dirty" {
+		t.Fatalf("edited kind=%q", got.Details["kind"])
+	}
+
+	// Family shows the fact from the log, and the Add sheet gets quick buttons.
+	post(url.Values{"action": {"feed"}, "mode": {"breast"}, "side": {"left"}})
+	if body := page("/family"); !strings.Contains(body, "Feeding now") {
+		t.Fatal("family row has no baby fact")
+	}
+	quick := serve(application, authenticatedHealthRequest(session, http.MethodGet, "/family/quick", nil))
+	if quick.Code != http.StatusOK || !strings.Contains(quick.Body.String(), "Meera") {
+		t.Fatalf("quick status=%d body=%q", quick.Code, quick.Body.String())
+	}
+
+	// A missing page is a page, not a bare error.
+	request := authenticatedHealthRequest(session, http.MethodGet, "/family/nobody-here", nil)
+	request.Header.Set("Accept", "text/html")
+	missing := serve(application, request)
+	if missing.Code != http.StatusNotFound || !strings.Contains(missing.Body.String(), "<html") || !strings.Contains(missing.Body.String(), "Back to") {
+		t.Fatalf("not found status=%d", missing.Code)
 	}
 }

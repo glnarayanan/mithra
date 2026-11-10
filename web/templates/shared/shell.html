@@ -45,6 +45,7 @@
   <dialog id="quick-capture" class="sheet" aria-labelledby="quick-capture-title">
     <div class="sheet-body">
       <div class="sheet-head"><h2 id="quick-capture-title">Add</h2><button type="button" class="icon-button" data-quick-capture-close aria-label="Close">×</button></div>
+      <div class="quick-baby" data-quick-baby hidden></div>
       <form method="post" action="/capture" class="stack" data-capture-composer>
         <input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="text">
         <label class="field"><span>Type or say it</span><textarea name="update" maxlength="12000" rows="4" placeholder="For example: paid ₹2,400 for the electricity bill today" required></textarea></label>
@@ -57,6 +58,7 @@
     </div>
   </dialog>
   <script defer src="/assets/capture.js"></script>
+  <script defer src="/assets/quicklog.js"></script>
 </div>
 {{end}}
 

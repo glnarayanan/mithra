@@ -273,6 +273,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("/planning", a.planningLens)
 	mux.HandleFunc("/family", a.family)
 	mux.HandleFunc("/family/", a.familyPerson)
+	mux.HandleFunc("/family/quick", a.familyQuick)
 	mux.HandleFunc("/planning/events/", a.planningICS)
 	mux.HandleFunc("/sources/", a.sourceFile)
 	mux.HandleFunc("/", a.brief)
@@ -384,6 +385,7 @@ var assetContentTypes = map[string]string{
 	"brief.js":                   "application/javascript; charset=utf-8",
 	"imports.js":                 "application/javascript; charset=utf-8",
 	"babylog.js":                 "application/javascript; charset=utf-8",
+	"quicklog.js":                "application/javascript; charset=utf-8",
 	"favicon.svg":                "image/svg+xml",
 	"fonts/inter-variable.woff2": "font/woff2",
 	"fonts/bricolage.woff2":      "font/woff2",
@@ -540,4 +542,31 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
+}
+
+// NotFoundView is the page shown for an address that leads nowhere.
+type NotFoundView struct {
+	Navigation                            []NavigationItem
+	CSRF, Title, Copy, BackURL, BackLabel string
+}
+
+// notFound answers a browser with a page in the app's own style and any
+// other client with the usual JSON error.
+func (a *App) notFound(w http.ResponseWriter, r *http.Request, title, copy, backURL, backLabel string) {
+	if !strings.Contains(r.Header.Get("Accept"), "text/html") {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	view := NotFoundView{Title: title, Copy: copy, BackURL: backURL, BackLabel: backLabel}
+	if _, csrf, ok := a.authenticated(r); ok {
+		view.Navigation, view.CSRF = navigationForPath(backURL), csrf
+	}
+	rendered := newBufferedResponse(maxResponseBodyBytes)
+	if err := a.templates.ExecuteTemplate(rendered, "notfound.html", view); err != nil || rendered.overflow {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusNotFound)
+	rendered.commit(w)
 }

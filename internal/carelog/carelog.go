@@ -146,8 +146,11 @@ func Validate(in Input) (map[string]string, error) {
 				o, _ := strconv.ParseFloat(offered, 64)
 				c, _ := strconv.ParseFloat(consumed, 64)
 				if c > o {
-					return nil, &InputError{"Consumed cannot be more than offered. Lower one of them."}
+					return nil, &InputError{"Taken can’t be more than offered. Lower one of them."}
 				}
+			}
+			if offered == "" && consumed == "" {
+				return nil, &InputError{"Enter how much was offered or taken, in ml."}
 			}
 			if offered != "" {
 				out["offered_ml"] = offered
@@ -267,6 +270,51 @@ func (s *Service) Finish(ctx context.Context, actor policy.ActorScope, personID,
 	details["duration_min"] = strconv.Itoa(minutes)
 	raw, _ := json.Marshal(details)
 	if _, err := s.db.ExecContext(ctx, `UPDATE care_events SET ended_at=?,details_json=?,updated_at=? WHERE id=? AND household_id=? AND deleted_at=''`, endedAt.UTC().Format(time.RFC3339), string(raw), s.now().UTC().Format(time.RFC3339Nano), eventID, actor.HouseholdID); err != nil {
+		return Event{}, err
+	}
+	return s.Get(ctx, actor, personID, eventID)
+}
+
+// Update corrects an entry's time and details. A running feed stays running
+// unless minutes are given.
+func (s *Service) Update(ctx context.Context, actor policy.ActorScope, personID, eventID string, occurredAt time.Time, fields map[string]string) (Event, error) {
+	event, err := s.Get(ctx, actor, personID, eventID)
+	if err != nil {
+		return Event{}, err
+	}
+	if fields == nil {
+		fields = map[string]string{}
+	}
+	if fields["note"] == "" {
+		fields["note"] = event.Details["note"]
+	}
+	details, err := Validate(Input{Type: event.Type, EndedAt: event.EndedAt, Fields: fields})
+	if err != nil {
+		return Event{}, err
+	}
+	if !event.Running() {
+		delete(details, "running")
+	}
+	if occurredAt.IsZero() {
+		occurredAt = event.OccurredAt
+	}
+	if occurredAt.After(s.now().Add(5 * time.Minute)) {
+		return Event{}, &InputError{"That time is in the future. Choose a time that has passed."}
+	}
+	ended := ""
+	if !event.EndedAt.IsZero() {
+		if event.Type == Feed && details["duration_min"] != "" {
+			minutes, _ := strconv.Atoi(details["duration_min"])
+			event.EndedAt = occurredAt.Add(time.Duration(minutes) * time.Minute)
+		}
+		ended = event.EndedAt.UTC().Format(time.RFC3339)
+	} else if event.Running() && details["duration_min"] != "" {
+		delete(details, "running")
+		minutes, _ := strconv.Atoi(details["duration_min"])
+		ended = occurredAt.Add(time.Duration(minutes) * time.Minute).UTC().Format(time.RFC3339)
+	}
+	raw, _ := json.Marshal(details)
+	if _, err := s.db.ExecContext(ctx, `UPDATE care_events SET occurred_at=?,ended_at=?,details_json=?,updated_at=? WHERE id=? AND household_id=? AND person_id=? AND deleted_at=''`, occurredAt.UTC().Format(time.RFC3339), ended, string(raw), s.now().UTC().Format(time.RFC3339Nano), eventID, actor.HouseholdID, personID); err != nil {
 		return Event{}, err
 	}
 	return s.Get(ctx, actor, personID, eventID)
