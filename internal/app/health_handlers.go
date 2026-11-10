@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -28,6 +29,13 @@ type HealthView struct {
 	Appointments []HealthAppointmentView
 	Routines     []HealthRoutineView
 	Records      []HealthRecordView
+	// Person narrows every list to one subject; People offers the switch.
+	Person          string
+	People          []HealthRangeView
+	ScopeOptions    []HealthRangeView
+	NextAppointment *HealthAppointmentView
+	// ShowSubject is true when the lists mix more than one person.
+	ShowSubject bool
 }
 
 type HealthRangeView struct {
@@ -38,12 +46,18 @@ type HealthSeriesView struct {
 	ID, Subject, Analyte, FirstValue, FirstDate, LatestValue, Unit, LatestDate, ReferenceRange, AccessibleSummary, Points, Trendline, Change, Direction, EvidenceURL string
 	Markers                                                                                                                                                          []HealthChartMarkerView
 	HasTrend                                                                                                                                                         bool
+	RangeStatus                                                                                                                                                      string
+	RangeOut                                                                                                                                                         bool
+	Readings                                                                                                                                                         int
 }
 type HealthChartMarkerView struct{ X, Y, Label, Value string }
 type HealthConflictView struct{ RecordID, Version, Analyte, Reason, EvidenceURL string }
-type HealthAppointmentView struct{ Label, Subject, Location, DateISO, DateLabel, EvidenceURL string }
+type HealthAppointmentView struct{ Label, Subject, Location, DateISO, DateLabel, Relative, EvidenceURL string }
 type HealthRoutineView struct{ Label, Subject, Schedule, EvidenceURL string }
-type HealthRecordView struct{ Label, Subject, Date, Observed, Context, Scope, EvidenceURL string }
+type HealthRecordView struct {
+	Label, Subject, Date, DateISO, Observed, Context, Scope, EvidenceURL string
+	Private                                                              bool
+}
 
 func (a *App) healthLens(w http.ResponseWriter, r *http.Request) {
 	if !allowsRead(r.Method) {
@@ -71,7 +85,7 @@ func (a *App) healthLens(w http.ResponseWriter, r *http.Request) {
 		a.renderHealth(r.Context(), w, HealthView{Navigation: navigationForPath("/health"), CSRF: csrf, Scope: string(filter), Range: rangeValue, Error: "Your records were not changed. Try this view again."})
 		return
 	}
-	view := healthView(summary, filter, csrf, time.Now(), rangeValue)
+	view := healthViewFor(summary, filter, csrf, time.Now(), rangeValue, r.URL.Query().Get("person"))
 	if r.URL.Query().Get("corrected") == "1" {
 		view.Status = "The corrected value and unit are now active. The original source remains linked."
 	}
@@ -118,6 +132,11 @@ func (a *App) renderHealth(ctx context.Context, w http.ResponseWriter, view Heal
 	if view.Ranges == nil {
 		view.Ranges = healthRangeOptions(view.Range, view.Scope)
 	}
+	if view.ScopeOptions == nil {
+		for _, option := range []struct{ value, label string }{{string(health.AllRecords), "Everything"}, {string(health.SharedRecords), "Shared"}, {string(health.PersonalRecords), "Only you"}} {
+			view.ScopeOptions = append(view.ScopeOptions, HealthRangeView{Label: option.label, URL: healthURL(view.Range, option.value, view.Person), Current: option.value == view.Scope})
+		}
+	}
 	rendered := newBufferedResponse(maxResponseBodyBytes)
 	if err := a.templates.ExecuteTemplate(rendered, "health.html", view); err != nil || rendered.overflow {
 		logRequestError(a.logger, ctx, "health_render_failed")
@@ -129,8 +148,42 @@ func (a *App) renderHealth(ctx context.Context, w http.ResponseWriter, view Heal
 }
 
 func healthView(summary health.Summary, filter health.ScopeFilter, csrf string, now time.Time, rangeValue string) HealthView {
+	return healthViewFor(summary, filter, csrf, now, rangeValue, "")
+}
+
+// healthViewFor builds the Health page, narrowed to one person when person
+// names a subject found in the records.
+func healthViewFor(summary health.Summary, filter health.ScopeFilter, csrf string, now time.Time, rangeValue, person string) HealthView {
 	rangeValue = healthRange(rangeValue)
-	view := HealthView{Navigation: navigationForPath("/health"), CSRF: csrf, Scope: string(filter), Range: rangeValue, Ranges: healthRangeOptions(rangeValue, string(filter)), HasRecords: len(summary.Observations)+len(summary.Appointments)+len(summary.Routines) > 0}
+	people := healthSubjects(summary)
+	person = strings.TrimSpace(person)
+	known := false
+	for _, subject := range people {
+		if subject == person {
+			known = true
+		}
+	}
+	if !known {
+		person = ""
+	}
+	if person != "" {
+		summary = summaryForSubject(summary, person)
+	}
+	view := HealthView{Navigation: navigationForPath("/health"), CSRF: csrf, Scope: string(filter), Range: rangeValue, Person: person, HasRecords: len(summary.Observations)+len(summary.Appointments)+len(summary.Routines) > 0}
+	view.Ranges = make([]HealthRangeView, 0, 4)
+	for _, option := range []struct{ value, label string }{{"3", "3 months"}, {"6", "6 months"}, {"12", "12 months"}, {"all", "All time"}} {
+		view.Ranges = append(view.Ranges, HealthRangeView{Label: option.label, URL: healthURL(option.value, string(filter), person), Current: option.value == rangeValue})
+	}
+	for _, option := range []struct{ value, label string }{{string(health.AllRecords), "Everything"}, {string(health.SharedRecords), "Shared"}, {string(health.PersonalRecords), "Only you"}} {
+		view.ScopeOptions = append(view.ScopeOptions, HealthRangeView{Label: option.label, URL: healthURL(rangeValue, option.value, person), Current: option.value == string(filter)})
+	}
+	view.ShowSubject = len(people) > 1 && person == ""
+	if len(people) > 1 {
+		view.People = append(view.People, HealthRangeView{Label: "Everyone", URL: healthURL(rangeValue, string(filter), ""), Current: person == ""})
+		for _, subject := range people {
+			view.People = append(view.People, HealthRangeView{Label: subject, URL: healthURL(rangeValue, string(filter), subject), Current: subject == person})
+		}
+	}
 	seriesForRange := summary.Series
 	if rangeValue != "all" {
 		seriesForRange = health.SeriesSince(summary.Series, now.AddDate(0, -healthRangeMonths(rangeValue), 0))
@@ -140,17 +193,8 @@ func healthView(summary health.Summary, filter health.ScopeFilter, csrf string, 
 		latest := series.Observations[len(series.Observations)-1]
 		firstDate, _ := time.Parse("2006-01-02", first.ObservedOn)
 		date, _ := time.Parse("2006-01-02", latest.ObservedOn)
-		reference := ""
-		if latest.ReferenceLow != nil || latest.ReferenceHigh != nil {
-			low, high := "…", "…"
-			if latest.ReferenceLow != nil {
-				low = latest.ReferenceLow.PlainString()
-			}
-			if latest.ReferenceHigh != nil {
-				high = latest.ReferenceHigh.PlainString()
-			}
-			reference = low + "–" + high + " " + latest.ReferenceUnit
-		}
+		reference := healthReference(latest)
+		rangeStatus, rangeOut := healthRangeStatus(latest, series.Unit)
 		parts := make([]string, 0, len(series.Observations))
 		for _, item := range series.Observations {
 			parts = append(parts, item.ObservedOn+" "+item.Value.PlainString()+" "+series.Unit)
@@ -161,7 +205,7 @@ func healthView(summary health.Summary, filter health.ScopeFilter, csrf string, 
 		if len(series.Observations) > 1 {
 			summary += " Change " + trend.Change + " " + series.Unit + ", direction " + trend.Direction + ". A linear trendline is shown."
 		}
-		view.Series = append(view.Series, HealthSeriesView{ID: strconv.Itoa(index + 1), Subject: series.Subject, Analyte: series.Analyte, FirstValue: first.Value.PlainString(), FirstDate: firstDate.Format("2 Jan 2006"), LatestValue: latest.Value.PlainString(), Unit: series.Unit, LatestDate: date.Format("2 Jan 2006"), ReferenceRange: strings.TrimSpace(reference), AccessibleSummary: summary, Points: points, Trendline: trendline, Markers: markers, Change: trend.Change, Direction: trend.Direction, HasTrend: len(series.Observations) > 1, EvidenceURL: healthSourceURL(latest.SourceID)})
+		view.Series = append(view.Series, HealthSeriesView{ID: strconv.Itoa(index + 1), Subject: series.Subject, Analyte: series.Analyte, FirstValue: first.Value.PlainString(), FirstDate: shortDate(firstDate), LatestValue: latest.Value.PlainString(), Unit: series.Unit, LatestDate: shortDate(date), ReferenceRange: strings.TrimSpace(reference), AccessibleSummary: summary, Points: points, Trendline: trendline, Markers: markers, Change: trend.Change, Direction: trend.Direction, HasTrend: len(series.Observations) > 1, EvidenceURL: healthSourceURL(latest.SourceID), RangeStatus: rangeStatus, RangeOut: rangeOut, Readings: len(series.Observations)})
 	}
 	for _, conflict := range summary.Conflicts {
 		view.Conflicts = append(view.Conflicts, HealthConflictView{RecordID: conflict.RecordID, Version: strconv.FormatInt(conflict.Version, 10), Analyte: conflict.Analyte, Reason: conflict.Reason, EvidenceURL: healthSourceURL(conflict.SourceID)})
@@ -172,10 +216,15 @@ func healthView(summary health.Summary, filter health.ScopeFilter, csrf string, 
 			continue
 		}
 		date, _ := time.Parse("2006-01-02", appointment.ScheduledOn)
-		view.Appointments = append(view.Appointments, HealthAppointmentView{Label: appointment.Label, Subject: appointment.Subject, Location: appointment.Location, DateISO: appointment.ScheduledOn, DateLabel: date.Format("2 Jan 2006"), EvidenceURL: healthSourceURL(appointment.SourceID)})
+		view.Appointments = append(view.Appointments, HealthAppointmentView{Label: appointment.Label, Subject: appointment.Subject, Location: appointment.Location, DateISO: appointment.ScheduledOn, DateLabel: humanDate(date), Relative: relativeDays(date, now), EvidenceURL: healthSourceURL(appointment.SourceID)})
+	}
+	sort.SliceStable(view.Appointments, func(i, j int) bool { return view.Appointments[i].DateISO < view.Appointments[j].DateISO })
+	if len(view.Appointments) > 0 {
+		next := view.Appointments[0]
+		view.NextAppointment = &next
 	}
 	for _, routine := range summary.Routines {
-		view.Routines = append(view.Routines, HealthRoutineView{Label: routine.Label, Subject: routine.Subject, Schedule: routine.Cadence + " · next recorded " + routine.NextDueOn, EvidenceURL: healthSourceURL(routine.SourceID)})
+		view.Routines = append(view.Routines, HealthRoutineView{Label: routine.Label, Subject: routine.Subject, Schedule: routineSchedule(routine), EvidenceURL: healthSourceURL(routine.SourceID)})
 	}
 	for _, observation := range summary.Observations {
 		date, _ := time.Parse("2006-01-02", observation.ObservedOn)
@@ -184,8 +233,9 @@ func healthView(summary health.Summary, filter health.ScopeFilter, csrf string, 
 		if observation.Visibility == policy.Personal {
 			scope = "Only you"
 		}
-		view.Records = append(view.Records, HealthRecordView{Label: observation.Analyte, Subject: observation.Subject, Date: date.Format("2 Jan 2006"), Observed: observation.OriginalValue + " " + observation.Unit, Context: context, Scope: scope, EvidenceURL: healthSourceURL(observation.SourceID)})
+		view.Records = append(view.Records, HealthRecordView{Label: observation.Analyte, Subject: observation.Subject, Date: humanDate(date), DateISO: observation.ObservedOn, Observed: strings.TrimSpace(observation.OriginalValue + " " + observation.Unit), Context: context, Scope: scope, Private: observation.Visibility == policy.Personal, EvidenceURL: healthSourceURL(observation.SourceID)})
 	}
+	sort.SliceStable(view.Records, func(i, j int) bool { return view.Records[i].DateISO > view.Records[j].DateISO })
 	return view
 }
 
@@ -213,13 +263,126 @@ func healthRangeOptions(rangeValue, scope string) []HealthRangeView {
 	options := []struct{ value, label string }{{"3", "3 months"}, {"6", "6 months"}, {"12", "12 months"}, {"all", "All time"}}
 	result := make([]HealthRangeView, 0, len(options))
 	for _, option := range options {
-		query := url.Values{"range": {option.value}}
-		if scope != "" && scope != string(health.AllRecords) {
-			query.Set("scope", scope)
-		}
-		result = append(result, HealthRangeView{Label: option.label, URL: "/health?" + query.Encode(), Current: option.value == rangeValue})
+		result = append(result, HealthRangeView{Label: option.label, URL: healthURL(option.value, scope, ""), Current: option.value == rangeValue})
 	}
 	return result
+}
+
+func healthURL(rangeValue, scope, person string) string {
+	query := url.Values{"range": {rangeValue}}
+	if scope != "" && scope != string(health.AllRecords) {
+		query.Set("scope", scope)
+	}
+	if person != "" {
+		query.Set("person", person)
+	}
+	return "/health?" + query.Encode()
+}
+
+// healthSubjects lists the people named in the records, in first-seen order.
+func healthSubjects(summary health.Summary) []string {
+	seen := map[string]bool{}
+	var subjects []string
+	add := func(subject string) {
+		subject = strings.TrimSpace(subject)
+		if subject != "" && !seen[subject] {
+			seen[subject] = true
+			subjects = append(subjects, subject)
+		}
+	}
+	for _, series := range summary.Series {
+		add(series.Subject)
+	}
+	for _, observation := range summary.Observations {
+		add(observation.Subject)
+	}
+	for _, appointment := range summary.Appointments {
+		add(appointment.Subject)
+	}
+	for _, routine := range summary.Routines {
+		add(routine.Subject)
+	}
+	return subjects
+}
+
+func summaryForSubject(summary health.Summary, subject string) health.Summary {
+	result := health.Summary{Conflicts: summary.Conflicts}
+	for _, series := range summary.Series {
+		if strings.TrimSpace(series.Subject) == subject {
+			result.Series = append(result.Series, series)
+		}
+	}
+	for _, observation := range summary.Observations {
+		if strings.TrimSpace(observation.Subject) == subject {
+			result.Observations = append(result.Observations, observation)
+		}
+	}
+	for _, appointment := range summary.Appointments {
+		if strings.TrimSpace(appointment.Subject) == subject {
+			result.Appointments = append(result.Appointments, appointment)
+		}
+	}
+	for _, routine := range summary.Routines {
+		if strings.TrimSpace(routine.Subject) == subject {
+			result.Routines = append(result.Routines, routine)
+		}
+	}
+	return result
+}
+
+// healthReference writes the lab's reported range as plain words.
+func healthReference(latest health.Observation) string {
+	unit := strings.TrimSpace(latest.ReferenceUnit)
+	switch {
+	case latest.ReferenceLow != nil && latest.ReferenceHigh != nil:
+		return strings.TrimSpace("Lab range " + latest.ReferenceLow.PlainString() + " to " + latest.ReferenceHigh.PlainString() + " " + unit)
+	case latest.ReferenceLow != nil:
+		return strings.TrimSpace("Lab range from " + latest.ReferenceLow.PlainString() + " " + unit)
+	case latest.ReferenceHigh != nil:
+		return strings.TrimSpace("Lab range up to " + latest.ReferenceHigh.PlainString() + " " + unit)
+	}
+	return ""
+}
+
+// healthRangeStatus compares the latest value with the lab's own range, only
+// when both use the same unit. It states position, never meaning.
+func healthRangeStatus(latest health.Observation, unit string) (string, bool) {
+	if latest.ReferenceLow == nil && latest.ReferenceHigh == nil {
+		return "", false
+	}
+	if reference := strings.TrimSpace(latest.ReferenceUnit); reference != "" && !strings.EqualFold(reference, strings.TrimSpace(unit)) {
+		return "", false
+	}
+	value, err := strconv.ParseFloat(latest.Value.PlainString(), 64)
+	if err != nil {
+		return "", false
+	}
+	if latest.ReferenceLow != nil {
+		if low, err := strconv.ParseFloat(latest.ReferenceLow.PlainString(), 64); err == nil && value < low {
+			return "Below lab range", true
+		}
+	}
+	if latest.ReferenceHigh != nil {
+		if high, err := strconv.ParseFloat(latest.ReferenceHigh.PlainString(), 64); err == nil && value > high {
+			return "Above lab range", true
+		}
+	}
+	return "In lab range", false
+}
+
+func routineSchedule(routine health.Routine) string {
+	schedule := strings.TrimSpace(routine.Cadence)
+	if date, ok := parseISODate(routine.NextDueOn); ok {
+		next := "next recorded " + humanDate(date)
+		if schedule == "" {
+			return next
+		}
+		return schedule + ", " + next
+	}
+	if schedule == "" && routine.NextDueOn != "" {
+		return "next recorded " + routine.NextDueOn
+	}
+	return schedule
 }
 
 func healthPoints(observations []health.Observation, trendline []float64) (string, string, []HealthChartMarkerView) {
@@ -276,6 +439,6 @@ func joinPresent(values ...string) string {
 	if len(result) == 0 {
 		return "Not supplied"
 	}
-	return strings.Join(result, " · ")
+	return strings.Join(result, ", ")
 }
 func healthSourceURL(id string) string { return "/sources/" + url.PathEscape(id) }

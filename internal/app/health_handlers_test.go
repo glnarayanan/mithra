@@ -52,7 +52,7 @@ func TestHealthLensRendersFactualSeriesConflictDatesAndCorrection(t *testing.T) 
 	}
 	page := serve(application, authenticatedHealthRequest(session, http.MethodGet, "/health", nil))
 	body := page.Body.String()
-	for _, required := range []string{"Health trends", "For your records, not medical advice.", "does not diagnose", "Glucose", "105", "mg/dL", "Values kept separate", "Correct value", "Help with corrections", "Annual check-up", "Recorded routine", "View original report"} {
+	for _, required := range []string{"<h1>Health</h1>", "For your records, not medical advice.", "does not diagnose", "Glucose", "105", "mg/dL", "Values kept separate", "Correct value", "Help with corrections", "Annual check-up", "Recorded routine", "View original report"} {
 		if !strings.Contains(body, required) {
 			t.Fatalf("health lens missing %q: %s", required, body)
 		}
@@ -143,11 +143,11 @@ func TestHealthRangeControlsRemainVisibleWithoutPoints(t *testing.T) {
 func TestHealthAnalyticsEscapesSeriesContent(t *testing.T) {
 	application := newTestApp(t)
 	response := httptest.NewRecorder()
-	application.renderHealth(context.Background(), response, HealthView{Scope: "all", HasRecords: true, Series: []HealthSeriesView{{ID: "1", Subject: "Alex", Analyte: `<script>alert("private")</script>`, FirstValue: "70", FirstDate: "1 May 2026", LatestValue: "72", LatestDate: "1 July 2026", Unit: "kg", AccessibleSummary: "Two reported values.", Points: "16,68 224,16", Trendline: "16,68 224,16", Markers: []HealthChartMarkerView{{X: "16", Y: "68", Label: "2026-05-01", Value: "70"}}, HasTrend: true, Direction: "up", Change: "2", EvidenceURL: "/sources/example"}}})
+	application.renderHealth(context.Background(), response, HealthView{Scope: "all", HasRecords: true, Series: []HealthSeriesView{{ID: "1", Subject: "Alex", Analyte: `<script>alert("private")</script>`, FirstValue: "70", FirstDate: "1 May 2026", LatestValue: "72", LatestDate: "1 July 2026", Unit: "kg", AccessibleSummary: "Two reported values.", Points: "16,68 224,16", Trendline: "16,68 224,16", Markers: []HealthChartMarkerView{{X: "16", Y: "68", Label: "2026-05-01", Value: "70"}}, HasTrend: true, Direction: "up", Change: "2", Readings: 2, EvidenceURL: "/sources/example"}}})
 	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), `<script>alert`) || !strings.Contains(response.Body.String(), "&lt;script&gt;") {
 		t.Fatalf("series content was not escaped: %d %q", response.Code, response.Body.String())
 	}
-	for _, text := range []string{"class=\"analytics-chart\"", "1 May 2026", "1 July 2026", "range=6"} {
+	for _, text := range []string{"analytics-chart\"", "1 May 2026", "1 July 2026", "range=6"} {
 		if !strings.Contains(response.Body.String(), text) {
 			t.Fatalf("health analytics missing %q: %q", text, response.Body.String())
 		}
@@ -163,4 +163,38 @@ func authenticatedHealthRequest(session browserSession, method, target string, v
 	}
 	values.Set("csrf", session.csrf.Value)
 	return authForm(method, target, values, []*http.Cookie{session.session, session.csrf})
+}
+
+func TestHealthPersonSwitchNarrowsEveryList(t *testing.T) {
+	value := func(text string) health.Value {
+		parsed, err := health.ParseValue(text)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return parsed
+	}
+	low, high := value("70"), value("100")
+	summary := health.Summary{
+		Series: []health.Series{
+			{Analyte: "Glucose", Subject: "Alex", Unit: "mg/dL", Observations: []health.Observation{{Subject: "Alex", ObservedOn: "2026-07-01", Value: value("105"), Unit: "mg/dL", ReferenceLow: &low, ReferenceHigh: &high, ReferenceUnit: "mg/dL"}}},
+			{Analyte: "Weight", Subject: "Sam", Unit: "kg", Observations: []health.Observation{{Subject: "Sam", ObservedOn: "2026-07-01", Value: value("12"), Unit: "kg"}}},
+		},
+		Observations: []health.Observation{{Subject: "Alex", Analyte: "Glucose", ObservedOn: "2026-07-01"}, {Subject: "Sam", Analyte: "Weight", ObservedOn: "2026-07-01"}},
+		Appointments: []health.Appointment{{Subject: "Sam", Label: "Check-up", ScheduledOn: "2026-07-30"}},
+	}
+	now := time.Date(2026, time.July, 21, 12, 0, 0, 0, time.UTC)
+	everyone := healthViewFor(summary, health.AllRecords, "csrf", now, "3", "")
+	if len(everyone.People) != 3 || !everyone.People[0].Current || len(everyone.Series) != 2 || everyone.NextAppointment == nil {
+		t.Fatalf("everyone view=%#v", everyone)
+	}
+	if everyone.Series[0].RangeStatus != "Above lab range" || !everyone.Series[0].RangeOut || everyone.Series[0].ReferenceRange != "Lab range 70 to 100 mg/dL" {
+		t.Fatalf("range status=%#v", everyone.Series[0])
+	}
+	sam := healthViewFor(summary, health.AllRecords, "csrf", now, "3", "Sam")
+	if sam.Person != "Sam" || len(sam.Series) != 1 || len(sam.Records) != 1 || len(sam.Appointments) != 1 || !strings.Contains(sam.Ranges[0].URL, "person=Sam") {
+		t.Fatalf("person view=%#v", sam)
+	}
+	if unknown := healthViewFor(summary, health.AllRecords, "csrf", now, "3", "Nobody"); unknown.Person != "" || len(unknown.Series) != 2 {
+		t.Fatalf("unknown person must show everyone: %#v", unknown)
+	}
 }

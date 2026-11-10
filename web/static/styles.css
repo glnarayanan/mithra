@@ -558,3 +558,13 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .topbar, .dock, .skip-link { display: none !important; }
   body { background: white; }
 }
+
+/* Health */
+.spark-trend { fill: none; stroke: var(--muted); stroke-width: 1.25; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
+.segmented-people { margin: 0 0 1.25rem; max-width: 100%; overflow-x: auto; }
+.more-records { margin-top: 0.75rem; }
+.more-records > summary { list-style: none; cursor: pointer; }
+.more-records > summary::-webkit-details-marker { display: none; }
+.more-records[open] > summary { margin-bottom: 0.5rem; }
+.section-head .segmented, .page-head .segmented { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+@media (max-width: 47.99rem) { .section-head .segmented > a { padding: 0 0.7rem; } }

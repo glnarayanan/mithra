@@ -30,6 +30,14 @@ func humanDate(date time.Time) string {
 	return date.Format("Mon 2 Jan")
 }
 
+// shortDate reads "17 Nov", adding the year only when it is not this year.
+func shortDate(date time.Time) string {
+	if date.Year() != time.Now().Year() {
+		return date.Format("2 Jan 2006")
+	}
+	return date.Format("2 Jan")
+}
+
 // relativeDays describes a calendar date against today: "today", "tomorrow",
 // "in 9 days", "yesterday" or "3 days ago".
 func relativeDays(date, now time.Time) string {
@@ -88,7 +96,16 @@ type FinanceRecordRow struct {
 	CSRF   string
 }
 
+// HealthRecordRow pairs a health record with whether to name its subject.
+type HealthRecordRow struct {
+	Record      HealthRecordView
+	ShowSubject bool
+}
+
 var templateFuncs = template.FuncMap{
+	"healthRow": func(record HealthRecordView, showSubject bool) HealthRecordRow {
+		return HealthRecordRow{Record: record, ShowSubject: showSubject}
+	},
 	"recordRow": func(record FinanceRecordView, csrf string) FinanceRecordRow {
 		return FinanceRecordRow{Record: record, CSRF: csrf}
 	},
