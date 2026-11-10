@@ -46,6 +46,8 @@ type PersonView struct {
 	Person        FamilyPersonView
 	Relationships []FamilyOptionView
 	Health        HealthView
+	Care          CareView
+	Catalog       []HealthCatalogOption
 }
 
 var relationshipLabels = map[string]string{"child": "Child", "parent": "Parent", "adult": "Adult", "other": "Other"}
@@ -203,6 +205,13 @@ func (a *App) familyPerson(w http.ResponseWriter, r *http.Request) {
 	view := PersonView{Navigation: navigationForPath("/family/"), CSRF: csrf, Relationships: relationshipOptions(person.Relationship)}
 	if r.URL.Query().Get("saved") == "1" {
 		view.Status = "Details saved."
+	}
+	if status := healthEntryStatus(r.URL.Query().Get("entry")); status != "" {
+		view.Status = status
+	}
+	view.Catalog = healthCatalogOptions()
+	if log, err := a.healthRecords.CareLogFor(r.Context(), scope, person.Name, now.AddDate(0, 0, -6).Format("2006-01-02")); err == nil {
+		view.Care = careView(log, now, false)
 	}
 	summary, err := a.healthRecords.Summarize(r.Context(), scope, health.AllRecords)
 	if err == nil {

@@ -36,6 +36,10 @@ type HealthView struct {
 	NextAppointment *HealthAppointmentView
 	// ShowSubject is true when the lists mix more than one person.
 	ShowSubject bool
+	Groups      []HealthGroupView
+	Care        CareView
+	Catalog     []HealthCatalogOption
+	Subjects    []string
 }
 
 type HealthRangeView struct {
@@ -85,7 +89,23 @@ func (a *App) healthLens(w http.ResponseWriter, r *http.Request) {
 		a.renderHealth(r.Context(), w, HealthView{Navigation: navigationForPath("/health"), CSRF: csrf, Scope: string(filter), Range: rangeValue, Error: "Your records were not changed. Try this view again."})
 		return
 	}
-	view := healthViewFor(summary, filter, csrf, time.Now(), rangeValue, r.URL.Query().Get("person"))
+	now := a.householdNow(r.Context(), scope)
+	view := healthViewFor(summary, filter, csrf, now, rangeValue, r.URL.Query().Get("person"))
+	view.Catalog = healthCatalogOptions()
+	if status := healthEntryStatus(r.URL.Query().Get("entry")); status != "" {
+		view.Status = status
+	}
+	if list, err := a.people.List(r.Context(), scope); err == nil {
+		for _, person := range list {
+			view.Subjects = appendUnique(view.Subjects, person.Name)
+		}
+	}
+	if log, err := a.healthRecords.CareLogFor(r.Context(), scope, view.Person, now.AddDate(0, 0, -6).Format("2006-01-02")); err == nil {
+		view.Care = careView(log, now, view.Person == "")
+		if view.Care.Medicines != nil || view.Care.Habits != nil || view.Care.Notes != nil {
+			view.HasRecords = true
+		}
+	}
 	if r.URL.Query().Get("corrected") == "1" {
 		view.Status = "The corrected value and unit are now active. The original source remains linked."
 	}
@@ -131,6 +151,9 @@ func (a *App) renderHealth(ctx context.Context, w http.ResponseWriter, view Heal
 	view.Range = healthRange(view.Range)
 	if view.Ranges == nil {
 		view.Ranges = healthRangeOptions(view.Range, view.Scope)
+	}
+	if view.Groups == nil {
+		view.Groups = groupSeries(view.Series)
 	}
 	if view.ScopeOptions == nil {
 		for _, option := range []struct{ value, label string }{{string(health.AllRecords), "Everything"}, {string(health.SharedRecords), "Shared"}, {string(health.PersonalRecords), "Only you"}} {
@@ -236,6 +259,8 @@ func healthViewFor(summary health.Summary, filter health.ScopeFilter, csrf strin
 		view.Records = append(view.Records, HealthRecordView{Label: observation.Analyte, Subject: observation.Subject, Date: humanDate(date), DateISO: observation.ObservedOn, Observed: strings.TrimSpace(observation.OriginalValue + " " + observation.Unit), Context: context, Scope: scope, Private: observation.Visibility == policy.Personal, EvidenceURL: healthSourceURL(observation.SourceID)})
 	}
 	sort.SliceStable(view.Records, func(i, j int) bool { return view.Records[i].DateISO > view.Records[j].DateISO })
+	view.Groups = groupSeries(view.Series)
+	view.Subjects = people
 	return view
 }
 
@@ -266,6 +291,15 @@ func healthRangeOptions(rangeValue, scope string) []HealthRangeView {
 		result = append(result, HealthRangeView{Label: option.label, URL: healthURL(option.value, scope, ""), Current: option.value == rangeValue})
 	}
 	return result
+}
+
+func appendUnique(list []string, value string) []string {
+	for _, existing := range list {
+		if existing == value {
+			return list
+		}
+	}
+	return append(list, value)
 }
 
 func healthURL(rangeValue, scope, person string) string {

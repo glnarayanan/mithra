@@ -109,7 +109,25 @@ type PersonFields struct {
 	Options                       []FamilyOptionView
 }
 
+// CareBlock pairs care rows with the form details their buttons need.
+type CareBlock struct {
+	Care CareView
+	Form HealthEntryForm
+}
+
+// HealthEntryForm feeds the shared typed-entry forms. Subject is fixed on a
+// person's page and chosen from Subjects on the Health page.
+type HealthEntryForm struct {
+	CSRF, Return, Subject string
+	Subjects              []string
+	Catalog               []HealthCatalogOption
+}
+
 var templateFuncs = template.FuncMap{
+	"careBlock": func(care CareView, form HealthEntryForm) CareBlock { return CareBlock{Care: care, Form: form} },
+	"entryForm": func(csrf, back, subject string, subjects []string, catalog []HealthCatalogOption) HealthEntryForm {
+		return HealthEntryForm{CSRF: csrf, Return: back, Subject: subject, Subjects: subjects, Catalog: catalog}
+	},
 	"personFields": func(name, relationship, birthDate string, private bool, options []FamilyOptionView) PersonFields {
 		return PersonFields{Name: name, Relationship: relationship, BirthDate: birthDate, Private: private, Options: options}
 	},

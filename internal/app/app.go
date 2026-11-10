@@ -267,6 +267,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("/finance/correct", a.correctFinanceRecord)
 	mux.HandleFunc("/health", a.healthLens)
 	mux.HandleFunc("/health/correct", a.correctHealthObservation)
+	mux.HandleFunc("/health/entries", a.healthEntry)
 	mux.HandleFunc("/planning", a.planningLens)
 	mux.HandleFunc("/family", a.family)
 	mux.HandleFunc("/family/", a.familyPerson)

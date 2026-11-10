@@ -650,3 +650,19 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   :root:not([data-theme="day"]) :is(.baby-panel, .baby-hero) { box-shadow: inset 0 0 0 1px var(--line); }
 }
 @media (max-width: 47.99rem) { .calendar-view-switch { display: none; } }
+
+/* Typed health entries */
+.group-title { font: 600 0.9375rem var(--text); color: var(--muted); margin: 1.25rem 0 0.6rem; }
+.entry-details { margin-top: 1rem; }
+.entry-details > summary { list-style: none; cursor: pointer; display: inline-flex; }
+.entry-details > summary::-webkit-details-marker { display: none; }
+.entry-details[open] > summary { margin-bottom: 0.85rem; }
+.entry-form { padding: 1rem; border-radius: var(--radius-card); background: var(--surface); align-items: end; }
+.entry-form .row-actions, .entry-form .field-wide { grid-column: 1 / -1; }
+.habit-days { display: flex; gap: 0.25rem; margin-top: 0.4rem; }
+.habit-day { width: 0.875rem; height: 0.875rem; border-radius: 0.2rem; box-shadow: inset 0 0 0 1px var(--field-edge); }
+.habit-day.done { background: var(--coral); box-shadow: none; }
+.habit-log { display: flex; gap: 0.4rem; align-items: center; }
+.habit-log input { width: 5rem; min-height: 2.25rem; padding: 0.3rem 0.5rem; }
+.note-content { color: var(--ink); white-space: pre-line; margin-top: 0; }
+.row-note { align-items: start; }

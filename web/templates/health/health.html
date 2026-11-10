@@ -18,6 +18,7 @@
       {{if .Error}}<section class="notice notice-error" role="alert" aria-labelledby="health-error-title"><h2 id="health-error-title">Health records are temporarily unavailable</h2><p>{{.Error}}</p></section>
       {{else if not .HasRecords}}
       <section class="empty" aria-labelledby="health-empty-title"><h2 id="health-empty-title">No health records yet</h2><p>Import a report or add an appointment, measurement or routine to see it here.</p><div class="empty-actions"><a class="button button-primary" href="/capture" data-quick-capture-trigger>Add an update</a><a class="button" href="/imports">Import a report</a></div></section>
+      <section class="section" aria-labelledby="health-first-entry-title"><div class="section-head"><h2 id="health-first-entry-title">Or type a measurement</h2></div>{{$form := entryForm .CSRF "/health" .Person .Subjects .Catalog}}{{template "entry-lists" $form}}{{template "measurement-form" $form}}</section>
       {{else}}
       <section aria-labelledby="health-glance"><h2 id="health-glance" class="visually-hidden">At a glance</h2>
         <div class="panels">
@@ -31,9 +32,11 @@
           <section class="section" aria-labelledby="health-series-title">
             <div class="section-head"><h2 id="health-series-title">Measurements</h2><nav class="segmented" aria-label="Measurement range">{{range .Ranges}}<a href="{{.URL}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a>{{end}}</nav></div>
             {{if .Series}}
-            <div class="cards">{{range .Series}}<a class="card" href="{{.EvidenceURL}}"><span class="card-head"><span>{{if $.ShowSubject}}{{.Subject}}, {{end}}{{.Analyte}}</span>{{if .RangeStatus}}<span class="pill {{if .RangeOut}}pill-out{{else}}pill-in{{end}}">{{.RangeStatus}}</span>{{end}}</span><span class="card-value">{{.LatestValue}}<small>{{.Unit}}</small></span><svg class="spark analytics-chart" viewBox="0 0 240 84" role="img" aria-labelledby="series-title-{{.ID}} series-desc-{{.ID}}"><title id="series-title-{{.ID}}">{{.Analyte}} reported values</title><desc id="series-desc-{{.ID}}">{{.AccessibleSummary}}</desc>{{if .HasTrend}}<polyline class="spark-trend" points="{{.Trendline}}"></polyline>{{end}}<polyline class="spark-line" points="{{.Points}}"></polyline>{{range .Markers}}<circle class="spark-dot" cx="{{.X}}" cy="{{.Y}}" r="3"><title>{{.Label}}: {{.Value}}</title></circle>{{end}}</svg><span class="card-foot"><span>Latest {{.LatestDate}}{{if gt .Readings 1}}, {{.Readings}} readings since {{.FirstDate}}{{end}}</span>{{if .ReferenceRange}}<span>{{.ReferenceRange}}</span>{{end}}{{if .HasTrend}}<span>Change {{.Change}} {{.Unit}} across this range</span>{{end}}</span></a>{{end}}</div>
+            {{range .Groups}}{{if gt (len $.Groups) 1}}<h3 class="group-title">{{.Category}}</h3>{{end}}<div class="cards">{{range .Series}}<a class="card" href="{{.EvidenceURL}}"><span class="card-head"><span>{{if $.ShowSubject}}{{.Subject}}, {{end}}{{.Analyte}}</span>{{if .RangeStatus}}<span class="pill {{if .RangeOut}}pill-out{{else}}pill-in{{end}}">{{.RangeStatus}}</span>{{end}}</span><span class="card-value">{{.LatestValue}}<small>{{.Unit}}</small></span><svg class="spark analytics-chart" viewBox="0 0 240 84" role="img" aria-labelledby="series-title-{{.ID}} series-desc-{{.ID}}"><title id="series-title-{{.ID}}">{{.Analyte}} reported values</title><desc id="series-desc-{{.ID}}">{{.AccessibleSummary}}</desc>{{if .HasTrend}}<polyline class="spark-trend" points="{{.Trendline}}"></polyline>{{end}}<polyline class="spark-line" points="{{.Points}}"></polyline>{{range .Markers}}<circle class="spark-dot" cx="{{.X}}" cy="{{.Y}}" r="3"><title>{{.Label}}: {{.Value}}</title></circle>{{end}}</svg><span class="card-foot"><span>Latest {{.LatestDate}}{{if gt .Readings 1}}, {{.Readings}} readings since {{.FirstDate}}{{end}}</span>{{if .ReferenceRange}}<span>{{.ReferenceRange}}</span>{{end}}{{if .HasTrend}}<span>Change {{.Change}} {{.Unit}} across this range</span>{{end}}</span></a>{{end}}</div>{{end}}
             <p class="chart-note">The solid line joins recorded values. The dashed line is a calculated direction only and does not say whether a change is good or bad. Only results with matching context and units are shown together.</p>
             {{else}}<p class="quiet">No comparable measurements fall in this range. Choose a longer period to look back.</p>{{end}}
+            {{$form := entryForm .CSRF "/health" .Person .Subjects .Catalog}}{{template "entry-lists" $form}}
+            <details class="entry-details"><summary class="button">Add a measurement</summary>{{template "measurement-form" $form}}</details>
           </section>
           {{if .Conflicts}}
           <section class="section" aria-labelledby="health-conflicts-title">
@@ -48,6 +51,22 @@
           </section>
         </div>
         <div>
+          {{$form := entryForm .CSRF "/health" .Person .Subjects .Catalog}}
+          <section class="section" aria-labelledby="health-medicines-title">
+            <div class="section-head"><h2 id="health-medicines-title">Medicines</h2></div>
+            {{template "care-medicines" (careBlock .Care $form)}}
+            <details class="entry-details"><summary class="button button-small">Add a medicine</summary>{{template "medicine-form" $form}}</details>
+          </section>
+          <section class="section" aria-labelledby="health-habits-title">
+            <div class="section-head"><h2 id="health-habits-title">Habits</h2></div>
+            {{template "care-habits" (careBlock .Care $form)}}
+            <details class="entry-details"><summary class="button button-small">Add a habit</summary>{{template "habit-form" $form}}</details>
+          </section>
+          <section class="section" aria-labelledby="health-notes-title">
+            <div class="section-head"><h2 id="health-notes-title">Notes from appointments</h2></div>
+            {{template "care-notes" (careBlock .Care $form)}}
+            <details class="entry-details"><summary class="button button-small">Add a note</summary>{{template "note-form" $form}}</details>
+          </section>
           <section class="section" aria-labelledby="health-appointments-title">
             <div class="section-head"><h2 id="health-appointments-title">Appointments</h2><a href="/planning">Calendar</a></div>
             {{if .Appointments}}<ul class="rows" role="list">{{range .Appointments}}<li><a class="row" href="{{.EvidenceURL}}"><span class="mark mark-plan" aria-hidden="true">{{template "icon" "calendar"}}</span><span><span class="row-title">{{.Label}}</span><span class="row-meta">{{if $.ShowSubject}}<span>{{.Subject}}</span>{{end}}{{if .Location}}<span>{{.Location}}</span>{{end}}<time datetime="{{.DateISO}}">{{.DateLabel}}</time></span></span><span class="row-value">{{.Relative}}</span></a></li>{{end}}</ul>{{else}}<p class="quiet">No appointments are dated ahead.</p>{{end}}
