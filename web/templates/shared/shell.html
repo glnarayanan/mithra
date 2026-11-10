@@ -1,4 +1,8 @@
-{{define "head"}}
+{{define "head"}}{{template "head-public"}}
+    <script defer src="/assets/app.js"></script>
+{{end}}
+
+{{define "head-public"}}
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#fbfaf7" media="(prefers-color-scheme: light)">
@@ -9,7 +13,6 @@
     <link rel="manifest" href="/assets/manifest.webmanifest">
     <link rel="stylesheet" href="/assets/styles.css">
     <script src="/assets/theme.js"></script>
-    <script defer src="/assets/app.js"></script>
 {{end}}
 
 {{define "icon"}}<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">{{if eq . "home"}}<path d="M4 11 12 4l8 7v9h-5v-6H9v6H4z"/>{{else if eq . "money"}}<rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/>{{else if eq . "health"}}<path d="M5 20V11a7 7 0 0 1 14 0v9"/>{{else if eq . "calendar"}}<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>{{else if eq . "family"}}<circle cx="9" cy="9" r="3"/><circle cx="17" cy="10" r="2.2"/><path d="M3.5 19c.8-3 3-4.5 5.5-4.5s4.7 1.5 5.5 4.5M15 15c2.5-.4 4.6.7 5.5 4"/>{{else if eq . "plus"}}<path d="M12 5v14M5 12h14"/>{{else if eq . "search"}}<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>{{else if eq . "note"}}<path d="M6 4h12v16H6zM9 9h6M9 13h6M9 17h3"/>{{else if eq . "upload"}}<path d="M12 16V4M7 9l5-5 5 5M5 20h14"/>{{else if eq . "mic"}}<path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm6-3a6 6 0 0 1-12 0M12 18v3M9 21h6"/>{{end}}</svg>{{end}}

@@ -70,7 +70,7 @@ func TestOwnerOpenAISettingsValidateEncryptPreserveAndRemove(t *testing.T) {
 	firstKey := "sk-mithra-valid-first-key"
 	save := authenticatedSettingsRequest(owner, http.MethodPost, url.Values{"action": {"save_provider"}, "provider": {"openai"}, "model": {"gpt-5.4-mini"}, "base_url": {"https://api.openai.com/v1"}, "api_key": {firstKey}})
 	saved := serve(application, save)
-	if saved.Code != http.StatusOK || !strings.Contains(saved.Body.String(), "Model provider connected") || !strings.Contains(saved.Body.String(), "Connected to OpenAI · gpt-5.4-mini") || strings.Contains(saved.Body.String(), firstKey) {
+	if saved.Code != http.StatusOK || !strings.Contains(saved.Body.String(), "Model provider connected") || !strings.Contains(saved.Body.String(), "Connected to OpenAI, gpt-5.4-mini") || strings.Contains(saved.Body.String(), firstKey) {
 		t.Fatalf("saved settings = %d %q", saved.Code, saved.Body.String())
 	}
 	var ciphertext []byte

@@ -2,38 +2,34 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#202022">
-    <meta name="referrer" content="same-origin">
-    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/assets/styles.css">
+    {{template "head-public"}}
     <title>{{.Title}} · Mithra</title>
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to main content</a>
     <main id="main-content" tabindex="-1" class="auth-main">
-      <section class="auth-welcome" aria-label="Mithra"><a class="brand brand-inverse" href="/auth/login" aria-label="Mithra sign in"><span class="brand-mark" aria-hidden="true">M</span><span>Mithra</span></a><div><h2>Health, money, and plans—together.</h2><p>Private by default. Shared when you choose.</p></div></section>
+      <section class="auth-welcome" aria-label="Mithra"><a class="brand brand-inverse" href="/auth/login" aria-label="Mithra sign in"><span class="brand-mark" aria-hidden="true"></span><span>Mithra</span></a><div><h2>Health, money and plans, kept together.</h2><p>Private by default. Shared when you choose.</p></div></section>
       <section class="auth-card" aria-labelledby="page-title">
         <h1 id="page-title">{{.Heading}}</h1>
-        {{if .Copy}}<p class="introduction-copy">{{.Copy}}</p>{{end}}
-        {{if .Status}}<p class="status-message" role="status" aria-live="polite">{{.Status}}</p>{{end}}
+        {{if .Copy}}<p class="lede">{{.Copy}}</p>{{end}}
+        {{template "status" .Status}}
         {{if .Error}}<p class="form-message form-error" role="alert">{{.Error}}</p>{{end}}
         <form method="post" action="{{.Action}}" class="auth-form">
           {{if .Password}}
-          <label for="password">New password</label>
-          <input id="password" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required autofocus>
-          <button type="submit">Save password</button>
+          <label class="field" for="password"><span>New password</span>
+          <input id="password" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required autofocus></label>
+          <p class="hint">At least 12 characters.</p>
+          <button type="submit" class="button button-primary button-block">Save password</button>
           {{else if eq .Title "Sign in"}}
-          <label for="email">Email</label>
-          <input id="email" name="email" type="email" autocomplete="username" maxlength="254" required autofocus>
-          <label for="password">Password</label>
-          <input id="password" name="password" type="password" autocomplete="current-password" minlength="12" maxlength="128" required>
-          <button type="submit">Sign in</button>
+          <label class="field" for="email"><span>Email</span>
+          <input id="email" name="email" type="email" autocomplete="username" maxlength="254" required autofocus></label>
+          <label class="field" for="password"><span>Password</span>
+          <input id="password" name="password" type="password" autocomplete="current-password" minlength="12" maxlength="128" required></label>
+          <button type="submit" class="button button-primary button-block">Sign in</button>
           {{else}}
-          <label for="email">Email</label>
-          <input id="email" name="email" type="email" autocomplete="email" maxlength="254" required autofocus>
-          <button type="submit">Email me a password link</button>
+          <label class="field" for="email"><span>Email</span>
+          <input id="email" name="email" type="email" autocomplete="email" maxlength="254" required autofocus></label>
+          <button type="submit" class="button button-primary button-block">Email me a password link</button>
           {{end}}
         </form>
         {{if eq .Title "Sign in"}}<p class="form-help"><a href="/auth/forgot-password">Need to set or reset your password?</a></p>{{end}}
