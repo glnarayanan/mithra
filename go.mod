@@ -4,7 +4,7 @@ go 1.27.3
 
 require (
 	github.com/ledongthuc/pdf v0.0.0-20261020125853-5e46805f718e
-	github.com/mattn/go-sqlite3 v1.14.52
+	github.com/mattn/go-sqlite3 v1.14.53
 	github.com/xuri/excelize/v2 v2.11.1
 	golang.org/x/crypto v0.58.0
 )
