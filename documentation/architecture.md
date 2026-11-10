@@ -209,6 +209,11 @@ generation; restore verifies and sanitizes that generation before atomic swap.
 
 ## Coaching boundary
 
+`internal/people` owns the people a household looks after, and
+`internal/carelog` owns the baby log for a young child: care events shared by
+both adults, deduplicated on a client id so an offline retry never logs twice.
+The log only restates what was entered.
+
 `internal/coaching` owns actor-scoped evidence contexts, deterministic Family
 Brief and Week in Review fallbacks, separately keyed shared/private caches,
 generated-output validation, and the one-nudge lifecycle. Browser page loads
