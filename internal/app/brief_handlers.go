@@ -39,6 +39,7 @@ type BriefView struct {
 	InsightGenerated, InsightModel                          string
 	Nudges                                                  []CoachingNudgeView
 	Capture                                                 CaptureView
+	Babies                                                  []BabyPanelView
 }
 type WeekReviewView struct {
 	Navigation                                           []NavigationItem
@@ -226,6 +227,7 @@ func (a *App) renderBrief(r *http.Request, w http.ResponseWriter, scope policy.A
 		view.Status = "A newer update is available. Dates and sources are still up to date."
 	}
 	view.Nudges = a.nudgeViews(r.Context(), scope, append(contextReviewFacts(overview.SharedContext), contextReviewFacts(overview.PersonalContext)...))
+	view.Babies = a.babyPanels(r.Context(), scope)
 	a.renderTemplate(r.Context(), w, "brief.html", view)
 }
 

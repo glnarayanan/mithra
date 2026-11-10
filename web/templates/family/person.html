@@ -11,7 +11,8 @@
     <main id="main-content" tabindex="-1" class="page">
       <header class="page-head"><div><p class="crumb"><a href="/family">Family</a></p><h1>{{.Person.Name}}</h1><p class="lede">{{.Person.RelationshipLabel}}{{if .Person.Age}}, {{.Person.Age}}{{end}}{{if .Person.BirthLabel}}. {{.Person.BirthLabel}}{{end}}.{{if .Person.Private}} Only you can see this person.{{end}}</p></div></header>
       {{template "status" .Status}}
-      <section aria-labelledby="person-glance"><h2 id="person-glance" class="visually-hidden">At a glance</h2>
+      {{if .Baby.Enabled}}{{template "baby-log" .}}{{end}}
+      <section aria-labelledby="person-glance"{{if .Baby.Enabled}} class="section"{{end}}><h2 id="person-glance" class="visually-hidden">At a glance</h2>
         <div class="panels">
           <a class="panel panel-paper" href="#person-health-title"><span class="panel-label">Health records</span><span class="panel-number">{{len .Health.Records}}</span><span class="panel-note">{{if .Health.Records}}Records that name {{.Person.Name}}{{else}}None name {{.Person.Name}} yet{{end}}</span></a>
           <a class="panel panel-blue" href="#person-health-title"><span class="panel-label">Next appointment</span><span class="panel-number">{{if .Health.NextAppointment}}{{.Health.NextAppointment.Relative}}{{else}}0{{end}}</span><span class="panel-note">{{if .Health.NextAppointment}}{{.Health.NextAppointment.Label}}, {{.Health.NextAppointment.DateLabel}}{{else}}No appointments dated ahead{{end}}</span></a>

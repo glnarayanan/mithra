@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/glnarayanan/mithra/internal/carelog"
 	"html/template"
 	"log"
 	"net/http"
@@ -80,6 +81,7 @@ type App struct {
 	healthRecords    *health.Service
 	planningRecords  *planning.Service
 	people           *people.Service
+	carelog          *carelog.Service
 	captureRecords   *capture.Service
 	imports          *imports.Service
 	coaching         *coaching.Service
@@ -200,7 +202,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		return nil, errors.New("reconcile visual PDF staging")
 	}
 	cleanupContext, cleanupCancel := context.WithCancel(context.Background())
-	application := &App{db: db, templates: templates, logger: log.Default(), auth: service, mailer: mailer, providerSettings: providerSettings, openAIClient: cfg.OpenAIClient, sources: sources, jobs: jobs.New(db), finance: financeRecords, healthRecords: healthRecords, planningRecords: planningRecords, people: people.New(db), captureRecords: captureRecords, imports: importRecords, coaching: coachingRecords, importExtractor: imports.New(cfg.ImportPDF), captureVoiceSlot: make(chan struct{}, 2), captureStop: cleanupCancel, captureDone: make(chan struct{}), origin: origin, secure: cfg.SecureCookies, trustedProxy: cfg.TrustedProxy, trustedProxies: cfg.TrustedProxies, maintenance: maintenance, masterKey: append([]byte(nil), cfg.MasterKey...)}
+	application := &App{db: db, templates: templates, logger: log.Default(), auth: service, mailer: mailer, providerSettings: providerSettings, openAIClient: cfg.OpenAIClient, sources: sources, jobs: jobs.New(db), finance: financeRecords, healthRecords: healthRecords, planningRecords: planningRecords, people: people.New(db), carelog: carelog.New(db), captureRecords: captureRecords, imports: importRecords, coaching: coachingRecords, importExtractor: imports.New(cfg.ImportPDF), captureVoiceSlot: make(chan struct{}, 2), captureStop: cleanupCancel, captureDone: make(chan struct{}), origin: origin, secure: cfg.SecureCookies, trustedProxy: cfg.TrustedProxy, trustedProxies: cfg.TrustedProxies, maintenance: maintenance, masterKey: append([]byte(nil), cfg.MasterKey...)}
 	if databasePath, err := filepath.Abs(cfg.DatabasePath); err == nil {
 		application.backupPaths = installer.Paths{Data: filepath.Dir(databasePath), Database: databasePath, Sources: sourceRoot, Journal: journalPath}
 	}
@@ -381,6 +383,7 @@ var assetContentTypes = map[string]string{
 	"capture.js":                 "application/javascript; charset=utf-8",
 	"brief.js":                   "application/javascript; charset=utf-8",
 	"imports.js":                 "application/javascript; charset=utf-8",
+	"babylog.js":                 "application/javascript; charset=utf-8",
 	"favicon.svg":                "image/svg+xml",
 	"fonts/inter-variable.woff2": "font/woff2",
 	"fonts/bricolage.woff2":      "font/woff2",

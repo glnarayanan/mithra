@@ -48,6 +48,7 @@ type PersonView struct {
 	Health        HealthView
 	Care          CareView
 	Catalog       []HealthCatalogOption
+	Baby          BabyLogView
 }
 
 var relationshipLabels = map[string]string{"child": "Child", "parent": "Parent", "adult": "Adult", "other": "Other"}
@@ -161,14 +162,18 @@ func (a *App) familyPerson(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
-	id := strings.TrimPrefix(r.URL.Path, "/family/")
-	if id == "" || strings.Contains(id, "/") || len(id) > 64 {
+	id, sub, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/family/"), "/")
+	if id == "" || len(id) > 64 || (sub != "" && sub != "log") {
 		http.NotFound(w, r)
 		return
 	}
 	person, err := a.people.Get(r.Context(), scope, id)
 	if err != nil {
 		http.NotFound(w, r)
+		return
+	}
+	if sub == "log" {
+		a.familyLog(w, r, scope, csrf, person)
 		return
 	}
 	switch r.Method {
@@ -201,19 +206,31 @@ func (a *App) familyPerson(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowedFor(w, "GET, HEAD, POST")
 		return
 	}
-	now := a.householdNow(r.Context(), scope)
-	view := PersonView{Navigation: navigationForPath("/family/"), CSRF: csrf, Relationships: relationshipOptions(person.Relationship)}
+	status := ""
 	if r.URL.Query().Get("saved") == "1" {
-		view.Status = "Details saved."
+		status = "Details saved."
 	}
-	if status := healthEntryStatus(r.URL.Query().Get("entry")); status != "" {
-		view.Status = status
+	if entry := healthEntryStatus(r.URL.Query().Get("entry")); entry != "" {
+		status = entry
+	}
+	a.renderPerson(r.Context(), w, r, scope, csrf, person, status, "", http.StatusOK)
+}
+
+// renderPerson draws one person's page, with the baby log for a young child.
+func (a *App) renderPerson(ctx context.Context, w http.ResponseWriter, r *http.Request, scope policy.ActorScope, csrf string, person people.Person, status, problem string, code int) {
+	now := a.householdNow(ctx, scope)
+	view := PersonView{Navigation: navigationForPath("/family/"), CSRF: csrf, Status: status, Relationships: relationshipOptions(person.Relationship)}
+	view.Baby = a.loadBabyLog(ctx, scope, person, now)
+	if problem != "" {
+		view.Baby.Error = problem
+	} else if view.Baby.Enabled {
+		view.Baby.Undo, view.Status = a.babyUndo(ctx, scope, person, r.URL.Query(), view.Status)
 	}
 	view.Catalog = healthCatalogOptions()
-	if log, err := a.healthRecords.CareLogFor(r.Context(), scope, person.Name, now.AddDate(0, 0, -6).Format("2006-01-02")); err == nil {
+	if log, err := a.healthRecords.CareLogFor(ctx, scope, person.Name, now.AddDate(0, 0, -6).Format("2006-01-02")); err == nil {
 		view.Care = careView(log, now, false)
 	}
-	summary, err := a.healthRecords.Summarize(r.Context(), scope, health.AllRecords)
+	summary, err := a.healthRecords.Summarize(ctx, scope, health.AllRecords)
 	if err == nil {
 		view.Health = healthViewFor(summary, health.AllRecords, csrf, now, "all", person.Name)
 		if view.Health.Person != person.Name {
@@ -221,5 +238,15 @@ func (a *App) familyPerson(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	view.Person = familyPersonView(person, now, len(view.Health.Records))
-	a.renderTemplate(r.Context(), w, "person.html", view)
+	rendered := newBufferedResponse(maxResponseBodyBytes)
+	if err := a.templates.ExecuteTemplate(rendered, "person.html", view); err != nil || rendered.overflow {
+		logRequestError(a.logger, ctx, "person_render_failed")
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if code != http.StatusOK {
+		w.WriteHeader(code)
+	}
+	rendered.commit(w)
 }

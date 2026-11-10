@@ -21,6 +21,7 @@
         {{template "home-switch" "today"}}
       </header>
       {{template "status" .Status}}
+      {{if .Babies}}<section class="section baby-panels" aria-labelledby="baby-panels-title"><h2 id="baby-panels-title" class="visually-hidden">Baby log</h2>{{range .Babies}}<div class="baby-panel"{{if .SinceISO}} data-since="{{.SinceISO}}"{{end}}><p class="baby-panel-head"><span class="baby-panel-name">{{.Name}}</span><span>{{.TodayLine}}</span></p>{{if .HasFeed}}<p class="baby-hero-label">{{if .Running}}Feed running for{{else}}Since the last feed started{{end}}</p><p class="since"><span data-since-hours>{{.SinceHours}}</span><small>h</small><span data-since-minutes>{{.SinceMinutes}}</span><small>m</small></p><p class="baby-hero-note">{{.LastLabel}}</p>{{else}}<p class="baby-hero-note">No feeds logged in the last seven days.</p>{{end}}<p class="baby-panel-actions"><a class="button button-feed" href="{{.URL}}">{{if .Running}}Finish feed{{else}}Log a feed{{end}}</a><a class="baby-panel-link" href="{{.URL}}">Open log</a></p></div>{{end}}</section><script defer src="/assets/babylog.js"></script>{{end}}
       {{if .HasRecords}}
       <section aria-labelledby="glance-title"><h2 id="glance-title" class="visually-hidden">At a glance</h2>
         <div class="panels">
