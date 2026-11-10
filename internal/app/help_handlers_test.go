@@ -42,7 +42,7 @@ func TestAuthenticatedShellsExposeHelpAndHelpNavigationEscapes(t *testing.T) {
 		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `href="/help"`) || !strings.Contains(response.Body.String(), `src="/assets/app.js"`) || !strings.Contains(response.Body.String(), `data-app-shell`) {
 			t.Fatalf("shell %s = %d, Help link=%t, quick navigation script=%t", path, response.Code, strings.Contains(response.Body.String(), `href="/help"`), strings.Contains(response.Body.String(), `src="/assets/app.js"`))
 		}
-		for _, label := range []string{"Family Brief", "Week in Review", "Import", "Finance", "Health", "Planning", "Settings", "Help"} {
+		for _, label := range []string{"Home", "Money", "Health", "Calendar", "Import", "Settings", "Help"} {
 			if !strings.Contains(response.Body.String(), ">"+label+"</a>") {
 				t.Fatalf("shell %s missing navigation label %q", path, label)
 			}

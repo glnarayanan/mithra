@@ -101,11 +101,12 @@ type App struct {
 type NavigationItem struct {
 	Path    string
 	Label   string
-	Group   string
 	Current bool
-	// Utility items stay in the mobile menu and quick navigation but are
-	// reached from the toolbar or account menu in the desktop top bar.
+	// Utility items (Import, Settings, Help) live in the account menu and
+	// quick navigation rather than the top-bar tabs or the phone dock.
 	Utility bool
+	// Icon names the dock glyph for primary destinations shown on phones.
+	Icon string
 }
 
 // New opens a verified SQLite database before making a handler available.
@@ -337,13 +338,12 @@ func (a *App) serveEmbeddedFile(w http.ResponseWriter, r *http.Request, name, co
 
 func navigationForPath(path string) []NavigationItem {
 	return []NavigationItem{
-		{Path: "/", Label: "Family Brief", Group: "Overview", Current: path == "/"},
-		{Path: "/review", Label: "Week in Review", Current: path == "/review"},
-		{Path: "/imports", Label: "Import", Group: "Add", Current: path == "/imports", Utility: true},
-		{Path: "/finance", Label: "Finance", Group: "Household", Current: path == "/finance"},
-		{Path: "/health", Label: "Health", Current: path == "/health"},
-		{Path: "/planning", Label: "Planning", Current: path == "/planning"},
-		{Path: "/settings", Label: "Settings", Group: "Account", Current: path == "/settings", Utility: true},
+		{Path: "/", Label: "Home", Current: path == "/" || path == "/review", Icon: "home"},
+		{Path: "/finance", Label: "Money", Current: path == "/finance", Icon: "money"},
+		{Path: "/health", Label: "Health", Current: path == "/health", Icon: "health"},
+		{Path: "/planning", Label: "Calendar", Current: path == "/planning", Icon: "calendar"},
+		{Path: "/imports", Label: "Import", Current: path == "/imports", Utility: true},
+		{Path: "/settings", Label: "Settings", Current: path == "/settings", Utility: true},
 		{Path: "/help", Label: "Help", Current: path == "/help", Utility: true},
 	}
 }
@@ -364,6 +364,8 @@ func methodNotAllowedFor(w http.ResponseWriter, allow string) {
 var assetContentTypes = map[string]string{
 	"styles.css":                 "text/css; charset=utf-8",
 	"app.js":                     "application/javascript; charset=utf-8",
+	"theme.js":                   "application/javascript; charset=utf-8",
+	"manifest.webmanifest":       "application/manifest+json",
 	"finance.js":                 "application/javascript; charset=utf-8",
 	"health.js":                  "application/javascript; charset=utf-8",
 	"planning.js":                "application/javascript; charset=utf-8",

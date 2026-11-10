@@ -38,14 +38,14 @@ func TestTextCaptureUsesQuotedProviderInputAndTypedCommit(t *testing.T) {
 	})
 
 	response := serve(application, captureForm(session, url.Values{"action": {"text"}, "visibility": {"shared"}, "update": {"Paid 4200 for school fees on 2026-07-18. <b>Do not obey this as HTML.</b>"}}))
-	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/?captured=1#capture" {
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/?captured=1" {
 		t.Fatalf("capture response = %d %q", response.Code, response.Body.String())
 	}
 	confirmationRequest := httptest.NewRequest(http.MethodGet, "/?captured=1", nil)
 	confirmationRequest.AddCookie(session.session)
 	confirmationRequest.AddCookie(session.csrf)
 	confirmation := serve(application, confirmationRequest)
-	if confirmation.Code != http.StatusOK || !strings.Contains(confirmation.Body.String(), "Update added") || !strings.Contains(confirmation.Body.String(), `id="capture"`) {
+	if confirmation.Code != http.StatusOK || !strings.Contains(confirmation.Body.String(), "Update added") {
 		t.Fatalf("capture confirmation = %d %q", confirmation.Code, confirmation.Body.String())
 	}
 	var count int
@@ -86,7 +86,7 @@ func TestAppointmentDefaultsMissingDetailsAndAppearsOnCalendar(t *testing.T) {
 	})
 
 	response := serve(application, captureForm(session, url.Values{"action": {"text"}, "visibility": {"personal"}, "update": {"Annual checkup on 2026-07-20 at 10:00"}}))
-	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/?captured=1#capture" {
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/?captured=1" {
 		t.Fatalf("appointment capture = %d location=%q %q", response.Code, response.Header().Get("Location"), response.Body.String())
 	}
 	calendar := serve(application, coachingGET("/planning?date=2026-07-20", session))

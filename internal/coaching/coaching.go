@@ -1632,10 +1632,8 @@ func hasEvidence(items []Item, evidence []string) bool {
 }
 
 func factItem(f Fact) Item {
+	// The date travels in When, so the copy names only where the record lives.
 	copy := "Recorded in " + f.Family + "."
-	if f.Date != "" {
-		copy = "Recorded for " + f.Date + " in " + f.Family + "."
-	}
 	return Item{Title: f.Content, Copy: copy, When: f.Date, EvidenceIDs: []string{f.EvidenceID}}
 }
 

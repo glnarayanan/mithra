@@ -3,8 +3,8 @@
   "short_name": "Mithra",
   "display": "standalone",
   "start_url": "/",
-  "background_color": "#f7f8f8",
-  "theme_color": "#062d52",
+  "background_color": "#fbfaf7",
+  "theme_color": "#fbfaf7",
   "icons": [
     {
       "src": "/assets/favicon.svg",

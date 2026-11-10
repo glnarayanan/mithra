@@ -1,46 +1,49 @@
+{{define "coaching-row"}}<li>{{if .EvidenceURL}}<a class="row" href="{{.EvidenceURL}}">{{else}}<div class="row">{{end}}<span class="mark mark-{{if .Area}}{{.Area}}{{else}}note{{end}}" aria-hidden="true">{{if eq .Area "plan"}}{{template "icon" "calendar"}}{{else if or (eq .Area "note") (eq .Area "")}}{{template "icon" "note"}}{{end}}</span><span><span class="row-title">{{.Title}}</span><span class="row-meta">{{if .MetaParts}}{{range .MetaParts}}<span>{{.}}</span>{{end}}{{else if .Copy}}<span>{{.Copy}}</span>{{end}}{{if .Private}}<span class="chip chip-private">Only you</span>{{end}}</span></span><span class="row-value">{{if .Relative}}{{.Relative}}{{if .When}}<small>{{.When}}</small>{{end}}{{else if .When}}<small>{{.When}}</small>{{end}}</span>{{if .EvidenceURL}}</a>{{else}}</div>{{end}}</li>{{end}}
+
+{{define "home-switch"}}<nav class="segmented" aria-label="Home view"><a href="/"{{if eq . "today"}} aria-current="page"{{end}}>Today</a><a href="/review"{{if eq . "week"}} aria-current="page"{{end}}>This week</a></nav>{{end}}
+
+{{define "nudges"}}{{if .Nudges}}<section class="section" aria-labelledby="nudges-title"><div class="section-head"><h2 id="nudges-title">Waiting for an update</h2></div><ul class="rows" role="list">{{range .Nudges}}<li><details class="row-details"><summary class="row"><span class="mark mark-note" aria-hidden="true">{{template "icon" "note"}}</span><span><span class="row-title">{{.Title}}</span><span class="row-meta"><span>{{.LensLabel}}</span></span></span><span class="row-value"><small>Options</small></span></summary><div class="row-body"><p class="quiet">{{.Copy}}</p><form method="post" action="/notifications/nudge" class="row-actions"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="nudge_id" value="{{.ID}}"><a class="button" href="{{.LensURL}}">Open {{.LensLabel}}</a><button type="submit" name="nudge_action" value="acknowledge">I’ve reviewed this</button><button type="submit" name="nudge_action" value="{{if .FollowUpEnabled}}disable-follow-up{{else}}enable-follow-up{{end}}" class="button-quiet">{{if .FollowUpEnabled}}Turn follow-up off{{else}}Email one follow-up{{end}}</button></form></div></details></li>{{end}}</ul></section>{{end}}{{end}}
+
 {{define "brief.html"}}
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#202022">
-    <meta name="referrer" content="same-origin">
-    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/assets/styles.css">
-    <script defer src="/assets/app.js"></script>
+    {{template "head"}}
     <script defer src="/assets/brief.js"></script>
-    <title>Family Brief · Mithra</title>
+    <title>Home · Mithra</title>
   </head>
   <body class="authenticated-shell">
     <a class="skip-link" href="#main-content">Skip to main content</a>
     {{template "app-shell" .}}
-    <main id="main-content" tabindex="-1" class="coaching-main">
-      <section class="brief-introduction"><div class="page-shell coaching-heading">
-        <div><h1>Family Brief</h1><p class="introduction-copy">Here’s what changed and what’s coming up.</p></div>
-      </div></section>
-      <div class="page-shell coaching-layout">
-        {{if .Status}}<p class="status-message" role="status" aria-live="polite" data-coaching-status>{{.Status}}</p>{{else}}<p class="visually-hidden" role="status" aria-live="polite" data-coaching-status></p>{{end}}
-        {{if .HasRecords}}<section class="brief-glance" aria-labelledby="brief-glance-title"><h2 id="brief-glance-title" class="visually-hidden">At a glance</h2><dl class="glance-panels"><div class="glance-panel glance-coming"><dt>Coming up</dt><dd><span class="glance-number">{{len .Dates}}</span><span class="glance-note">Dated items ahead</span><a class="glance-link" href="#brief-dates-title"><span class="visually-hidden">Go to Coming up</span></a></dd></div><div class="glance-panel glance-checking"><dt>Worth checking</dt><dd><span class="glance-number">{{len .Priorities}}</span><span class="glance-note">Records to look at again</span><a class="glance-link" href="#brief-priorities-title"><span class="visually-hidden">Go to Worth checking</span></a></dd></div><div class="glance-panel glance-private"><dt>Only you</dt><dd><span class="glance-number">{{len .OnlyYou}}</span><span class="glance-note">Visible to you alone</span>{{if .OnlyYou}}<a class="glance-link" href="#brief-private-title"><span class="visually-hidden">Go to Only you</span></a>{{end}}</dd></div></dl><p class="brief-updated"><span>Summary</span>{{if .Stale}}<strong>Update available</strong>{{else}}<strong>{{.Freshness}}</strong>{{end}}</p></section>{{end}}
-        {{template "capture-composer" .Capture}}
-        {{if .HasRecords}}
-        <div class="brief-dashboard">
-          {{if .HasShared}}
-          <section class="coaching-lead brief-main-update" aria-labelledby="brief-lead-title"><h2 id="brief-lead-title">{{.Lead.Title}}</h2><p>{{.Lead.Copy}}</p>{{if .Lead.EvidenceURL}}<a href="{{.Lead.EvidenceURL}}">{{.Lead.EvidenceLabel}}</a>{{end}}</section>
-          {{else}}<section class="empty-state brief-main-update" aria-labelledby="brief-shared-empty"><h2 id="brief-shared-empty">Nothing new in your shared view</h2><p>Your private updates remain in Only you below.</p></section>{{end}}
+    <main id="main-content" tabindex="-1" class="page">
+      <header class="page-head">
+        <div><h1>{{.Today}}</h1>{{if .HasRecords}}<p class="lede">{{len .Dates}} dated {{if eq (len .Dates) 1}}item{{else}}items{{end}} coming up.{{if .Stale}} A newer summary is available.{{end}}</p>{{end}}</div>
+        {{template "home-switch" "today"}}
+      </header>
+      {{template "status" .Status}}
+      {{if .HasRecords}}
+      <section aria-labelledby="glance-title"><h2 id="glance-title" class="visually-hidden">At a glance</h2>
+        <div class="panels">
+          <a class="panel panel-blue" href="#coming-up-title"><span class="panel-label">Coming up</span><span class="panel-number">{{len .Dates}}</span><span class="panel-note">{{if .Dates}}Next: {{(index .Dates 0).Title}}{{else}}Nothing dated ahead{{end}}</span></a>
+          <a class="panel panel-paper" href="#worth-checking-title"><span class="panel-label">Worth checking</span><span class="panel-number">{{len .Priorities}}</span><span class="panel-note">{{if .Priorities}}Records to look at again{{else}}Nothing needs a second look{{end}}</span></a>
+          <a class="panel panel-navy" href="#only-you-title"><span class="panel-label">Only you</span><span class="panel-number">{{len .OnlyYou}}</span><span class="panel-note">Items your partner cannot see</span></a>
         </div>
-        <section aria-labelledby="brief-insights-title"><div class="section-heading"><div><h2 id="brief-insights-title">Patterns in your records</h2></div>{{if .InsightGenerated}}<span>{{.InsightGenerated}}{{if .InsightModel}} · {{.InsightModel}}{{end}}{{if .Stale}} · Update available{{end}}</span>{{end}}</div>{{if .Insights}}<ol class="priority-list priority-row">{{range .Insights}}<li><strong>{{.Title}}</strong><p>{{.Copy}}</p>{{if .EvidenceURL}}<a href="{{.EvidenceURL}}">{{.EvidenceLabel}}</a>{{end}}</li>{{end}}</ol>{{else}}<p class="quiet-copy">Mithra will show record-based insights here after you regenerate them.</p>{{end}}{{if .InsightHistory}}<details><summary>Recent generations</summary><ol class="coaching-list">{{range .InsightHistory}}<li><div><strong>{{.Summary}}</strong><p>{{.Generated}}{{if .Model}} · {{.Model}}{{end}}</p></div></li>{{end}}</ol></details>{{end}}</section>
-        <div class="coaching-columns">
-          <section aria-labelledby="brief-dates-title"><div class="section-heading"><div><h2 id="brief-dates-title">Coming up</h2></div></div>{{if .Dates}}<ol class="coaching-list">{{range .Dates}}<li><div><strong>{{.Title}}</strong><p>{{.Copy}}</p></div><span>{{.When}}</span>{{if .EvidenceURL}}<a href="{{.EvidenceURL}}">{{.EvidenceLabel}}</a>{{end}}</li>{{end}}</ol>{{else}}<p class="quiet-copy">Nothing dated needs your attention right now.</p>{{end}}</section>
-          <section aria-labelledby="brief-priorities-title"><div class="section-heading"><div><h2 id="brief-priorities-title">Worth checking</h2></div></div>{{if .Priorities}}<ol class="priority-list">{{range .Priorities}}<li><strong>{{.Title}}</strong><p>{{.Copy}}</p>{{if .EvidenceURL}}<a href="{{.EvidenceURL}}">{{.EvidenceLabel}}</a>{{end}}</li>{{end}}</ol>{{else}}<p class="quiet-copy">Nothing needs a closer look right now.</p>{{end}}</section>
+      </section>
+      <div class="cols">
+        <div>
+          {{if .Lead.Title}}<section class="section" aria-labelledby="lead-title"><div class="section-head"><h2 id="lead-title">{{.Lead.Title}}</h2>{{if .Lead.EvidenceURL}}<a href="{{.Lead.EvidenceURL}}">Source</a>{{end}}</div><p>{{.Lead.Copy}}</p></section>{{else if not .HasShared}}<section class="empty" aria-labelledby="shared-empty-title"><h2 id="shared-empty-title">Nothing new in your shared view</h2><p>Your private updates are listed under Only you.</p></section>{{end}}
+          <section class="section" aria-labelledby="coming-up-title"><div class="section-head"><h2 id="coming-up-title">Coming up</h2><a href="/planning">Open calendar</a></div>{{if .Dates}}<ul class="rows" role="list">{{range .Dates}}{{template "coaching-row" .}}{{end}}</ul>{{else}}<p class="quiet">Nothing dated needs your attention right now.</p>{{end}}</section>
+          {{if .OnlyYou}}<section class="section" aria-labelledby="only-you-title"><div class="section-head"><h2 id="only-you-title">Only you</h2>{{if .PersonalStale}}<span>Update available</span>{{end}}</div><p class="quiet">Your partner cannot see these. <a href="/help#shared-only-you">How privacy works</a></p><ul class="rows" role="list">{{range .OnlyYou}}{{template "coaching-row" .}}{{end}}</ul></section>{{else}}<span id="only-you-title" hidden></span>{{end}}
         </div>
-        {{if .OnlyYou}}<aside class="only-you" aria-labelledby="brief-private-title"><div class="section-heading"><div><h2 id="brief-private-title">Only you</h2></div>{{if .PersonalStale}}<strong>Update available</strong>{{end}}</div><p class="quiet-copy">Your partner cannot see these items. <a href="/help#shared-only-you">Learn about privacy</a></p><ol class="coaching-list">{{range .OnlyYou}}<li><div><strong>{{.Title}}</strong><p>{{.Copy}}</p></div>{{if .EvidenceURL}}<a href="{{.EvidenceURL}}">{{.EvidenceLabel}}</a>{{end}}</li>{{end}}</ol></aside>{{end}}
-        {{else}}
-        {{if .AIConfigured}}<section class="empty-state coaching-empty" aria-labelledby="brief-empty-title"><h2 id="brief-empty-title">Add your first update</h2><p>Use the box above or bring in an existing file. Mithra will use it to build your first Family Brief.</p><div class="empty-actions"><a href="#capture">Add an update</a><a href="/imports">Import a file</a></div><p class="empty-state-note">Text updates can be undone for ten minutes. Voice captures and imports wait for your review.</p></section>{{else if .Owner}}<section class="empty-state coaching-empty" aria-labelledby="brief-empty-title"><h2 id="brief-empty-title">Connect a model provider to begin</h2><p>Choose a provider and model so Mithra can organise updates and prepare summaries. Your key is encrypted and never shown again.</p><div class="empty-actions"><a href="/settings#provider-title">Connect a provider</a><a href="/help#model-provider">How Mithra uses AI</a></div></section>{{else}}<section class="empty-state coaching-empty" aria-labelledby="brief-empty-title"><h2 id="brief-empty-title">A model provider needs to be connected</h2><p>Ask your household owner to connect one. Until then, saved household information remains available.</p><div class="empty-actions"><a href="/help#model-provider">How Mithra uses AI</a></div></section>{{end}}
-        {{end}}
-        {{if .Nudges}}<section class="nudge-strip" aria-labelledby="brief-nudges-title"><div><h2 id="brief-nudges-title">Waiting for an update</h2></div>{{range .Nudges}}<article><div><strong>{{.Title}}</strong><p>{{.Copy}}</p><a href="{{.LensURL}}">Update in {{.LensLabel}}</a></div><form method="post" action="/notifications/nudge"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="nudge_id" value="{{.ID}}"><button type="submit" name="nudge_action" value="acknowledge">I've reviewed this</button><button type="submit" name="nudge_action" value="{{if .FollowUpEnabled}}disable-follow-up{{else}}enable-follow-up{{end}}" class="button-quiet">{{if .FollowUpEnabled}}Turn follow-up off{{else}}Email one follow-up{{end}}</button></form></article>{{end}}</section>{{end}}
-        <footer class="coaching-actions"><a href="/review">Open Week in Review</a>{{if .CanRefresh}}<form method="post" action="/brief/refresh" data-coaching-refresh><input type="hidden" name="csrf" value="{{.CSRF}}"><button type="submit">Regenerate AI insights</button></form>{{end}}</footer>
+        <div>
+          <section class="section" aria-labelledby="worth-checking-title"><div class="section-head"><h2 id="worth-checking-title">Worth checking</h2></div>{{if .Priorities}}<ul class="rows" role="list">{{range .Priorities}}{{template "coaching-row" .}}{{end}}</ul>{{else}}<p class="quiet">Nothing needs a closer look right now.</p>{{end}}</section>
+          <section class="section" aria-labelledby="insights-title"><div class="section-head"><h2 id="insights-title">Patterns in your records</h2>{{if .InsightGenerated}}<span>{{.InsightGenerated}}</span>{{end}}</div>{{if .Insights}}<ul class="rows" role="list">{{range .Insights}}{{template "coaching-row" .}}{{end}}</ul>{{else}}<p class="quiet">Patterns appear here after Mithra summarises your records.</p>{{end}}{{if .InsightHistory}}<details><summary class="button button-quiet">Recent generations</summary><ul class="rows" role="list">{{range .InsightHistory}}<li><div class="row row-plain"><span><span class="row-title">{{.Summary}}</span><span class="row-meta"><span>{{.Generated}}</span>{{if .Model}}<span>{{.Model}}</span>{{end}}</span></span></div></li>{{end}}</ul></details>{{end}}{{if .CanRefresh}}<form method="post" action="/brief/refresh" data-coaching-refresh><input type="hidden" name="csrf" value="{{.CSRF}}"><button type="submit" class="button">Regenerate AI insights</button></form>{{end}}</section>
+        </div>
       </div>
+      {{else}}
+      {{if .AIConfigured}}<section class="empty" aria-labelledby="empty-title"><h2 id="empty-title">Add your first update</h2><p>Type or say something like “Dentist on Friday at 10 am”, or bring in a file you already have. Mithra builds Home from your records.</p><div class="empty-actions"><a class="button button-primary" href="/capture" data-quick-capture-trigger>Add an update</a><a class="button" href="/imports">Import a file</a></div><p class="hint">Text updates can be undone for ten minutes. Voice captures and imports wait for your review.</p></section>{{else if .Owner}}<section class="empty" aria-labelledby="empty-title"><h2 id="empty-title">Connect a model provider to begin</h2><p>Choose a provider and model so Mithra can organise updates and prepare summaries. Your key is encrypted and never shown again.</p><div class="empty-actions"><a class="button button-primary" href="/settings#provider-title">Connect a provider</a><a class="button" href="/help#model-provider">How Mithra uses AI</a></div></section>{{else}}<section class="empty" aria-labelledby="empty-title"><h2 id="empty-title">A model provider needs to be connected</h2><p>Ask your household owner to connect one. Until then, saved household information remains available.</p><div class="empty-actions"><a class="button" href="/help#model-provider">How Mithra uses AI</a></div></section>{{end}}
+      {{end}}
+      {{template "nudges" .}}
     </main>
   </body>
 </html>

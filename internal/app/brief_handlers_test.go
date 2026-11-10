@@ -80,7 +80,7 @@ func TestFamilyBriefLoadsWithoutAIThenRefreshesEvidenceAndKeepsPartnerPrivateOut
 	})}
 
 	initial := serve(application, coachingGET("/", ownerSession))
-	for _, required := range []string{"Family Brief", "Here’s what changed and what’s coming up.", "At a glance", "Patterns in your records", "Worth checking", "Regenerate AI insights"} {
+	for _, required := range []string{"At a glance", "Patterns in your records", "Worth checking", "Regenerate AI insights"} {
 		if !strings.Contains(initial.Body.String(), required) {
 			t.Fatalf("initial brief missing %q: %s", required, initial.Body.String())
 		}
@@ -148,7 +148,7 @@ func TestBriefOnboardingUsesProviderStateAndHouseholdRole(t *testing.T) {
 		t.Fatal(err)
 	}
 	configured := serve(application, coachingGET("/", partnerSession))
-	for _, required := range []string{"Add your first update", `href="#capture"`, `href="/imports"`} {
+	for _, required := range []string{"Add your first update", `href="/capture"`, `href="/imports"`} {
 		if configured.Code != http.StatusOK || !strings.Contains(configured.Body.String(), required) {
 			t.Fatalf("configured onboarding missing %q: %d %q", required, configured.Code, configured.Body.String())
 		}
@@ -402,15 +402,15 @@ func TestWeekSharedMarkupDoesNotChangeForPrivateHealthIssue(t *testing.T) {
 	}
 	after := serve(application, coachingGET("/review", session)).Body.String()
 	shared := func(body string) string {
-		start := strings.Index(body, `<section class="review-status"`)
-		end := strings.Index(body, `<footer class="coaching-actions"`)
+		start := strings.Index(body, `<section class="week"`)
+		end := strings.Index(body, `</main>`)
 		if start < 0 || end < start {
 			t.Fatalf("missing shared review boundary: %q", body)
 		}
 		body = body[start:end]
-		if privateStart := strings.Index(body, `<aside class="only-you`); privateStart >= 0 {
-			if privateEnd := strings.Index(body[privateStart:], `</aside>`); privateEnd >= 0 {
-				body = body[:privateStart] + body[privateStart+privateEnd+len(`</aside>`):]
+		if privateStart := strings.Index(body, `<section class="section" aria-labelledby="private-title"`); privateStart >= 0 {
+			if privateEnd := strings.Index(body[privateStart:], `</section>`); privateEnd >= 0 {
+				body = body[:privateStart] + body[privateStart+privateEnd+len(`</section>`):]
 			}
 		}
 		return body

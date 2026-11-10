@@ -124,7 +124,7 @@
       textarea.focus();
     }
     Array.prototype.forEach.call(triggers, function (trigger) {
-      trigger.addEventListener("click", function () { openDialog(trigger); });
+      trigger.addEventListener("click", function (event) { if (event && typeof event.preventDefault === "function") event.preventDefault(); openDialog(trigger); });
     });
     close.addEventListener("click", closeDialog);
     dialog.addEventListener("cancel", function (event) { event.preventDefault(); closeDialog(); });
@@ -135,6 +135,30 @@
         openDialog(root.activeElement);
       }
     });
+  }
+
+  function installThemeSwitch(root, storage) {
+    if (!root || typeof root.querySelector !== "function") return;
+    var group = root.querySelector("[data-theme-switch]");
+    var html = root.documentElement;
+    if (!group || !html) return;
+    var buttons = group.querySelectorAll("[data-theme-choice]");
+    function current() {
+      try { return storage && storage.getItem("mithra-theme") || "system"; } catch (error) { return "system"; }
+    }
+    function apply(choice) {
+      if (choice === "day" || choice === "night") html.setAttribute("data-theme", choice); else html.removeAttribute("data-theme");
+      Array.prototype.forEach.call(buttons, function (button) { button.setAttribute("aria-pressed", String(button.getAttribute("data-theme-choice") === choice)); });
+    }
+    Array.prototype.forEach.call(buttons, function (button) {
+      button.addEventListener("click", function () {
+        var choice = button.getAttribute("data-theme-choice") || "system";
+        try { if (storage) { if (choice === "system") storage.removeItem("mithra-theme"); else storage.setItem("mithra-theme", choice); } } catch (error) { /* storage unavailable: theme lasts for this page */ }
+        apply(choice);
+      });
+    });
+    group.hidden = false;
+    apply(current());
   }
 
   function installQuickNavigation(root) {
@@ -552,6 +576,7 @@
     }
     installQuickNavigation(root);
     installQuickCapture(root);
+    installThemeSwitch(root, global && global.localStorage ? global.localStorage : null);
     installShortcutHelp(root);
     installSourcePreview(root);
     installProviderSettings(root);
@@ -572,6 +597,7 @@
     isEditableControl: isEditableControl,
     navigationDestinations: navigationDestinations,
     installProviderSettings: installProviderSettings,
+    installThemeSwitch: installThemeSwitch,
     restoreFocus: restoreFocus,
     reportPageErrors: reportPageErrors,
     setStatus: setStatus,
