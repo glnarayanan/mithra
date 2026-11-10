@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -29,6 +30,43 @@ type FinanceView struct {
 	Records         []FinanceRecordView
 	Status          string
 	Error           string
+	// Glance panels and the stacked monthly chart.
+	DueTotal, DueNext       string
+	DueCount                int
+	MonthLabel, MonthSpent  string
+	PreviousLabel           string
+	PreviousSpent           string
+	IncomeTotal             string
+	AssetsTotal, LoansTotal string
+	Chart                   FinanceStackView
+}
+
+// FinanceStackView is one stacked bar per month, one colour per top category.
+type FinanceStackView struct {
+	Width   float64
+	Bars    []FinanceStackBar
+	Legend  []FinanceLegendItem
+	Grid    []FinanceGridLine
+	Summary string
+}
+
+type FinanceStackBar struct {
+	X, LabelX, TotalY float64
+	Label, Total      string
+	Segments          []FinanceStackSegment
+}
+
+type FinanceStackSegment struct {
+	Y, Height float64
+	Class     string
+	Title     string
+}
+
+type FinanceLegendItem struct{ Label, Class string }
+
+type FinanceGridLine struct {
+	Y     float64
+	Label string
 }
 
 type FinanceTotalView struct {
@@ -80,6 +118,8 @@ type FinanceRecordView struct {
 	Scope       string
 	EvidenceURL string
 	Version     int64
+	Private     bool
+	Area        string
 }
 
 func (a *App) financeLens(w http.ResponseWriter, r *http.Request) {
@@ -209,7 +249,46 @@ func financeView(summary finance.Summary, filter finance.ScopeFilter, csrf strin
 		kind  finance.Kind
 		label string
 	}{{finance.Income, "Income"}, {finance.Spending, "Spending"}, {finance.Asset, "Assets"}, {finance.Liability, "Liabilities"}, {finance.Budget, "Budgets"}, {finance.Obligation, "Obligations"}} {
-		view.Totals = append(view.Totals, FinanceTotalView{Label: item.label, Value: summary.Totals[item.kind].PlainString(), Count: summary.Counts[item.kind]})
+		view.Totals = append(view.Totals, FinanceTotalView{Label: item.label, Value: groupDigits(summary.Totals[item.kind].PlainString()), Count: summary.Counts[item.kind]})
+	}
+	view.IncomeTotal = groupDigits(summary.Totals[finance.Income].PlainString())
+	view.AssetsTotal = groupDigits(summary.Totals[finance.Asset].PlainString())
+	view.LoansTotal = groupDigits(summary.Totals[finance.Liability].PlainString())
+	view.Chart = financeStack(summary.Trends)
+	if len(summary.Trends) > 0 {
+		months := summary.Trends[0].Months
+		current, previous := []finance.Decimal{}, []finance.Decimal{}
+		for _, trend := range summary.Trends {
+			if n := len(trend.Months); n > 0 {
+				current = append(current, trend.Months[n-1].Value)
+				if n > 1 {
+					previous = append(previous, trend.Months[n-2].Value)
+				}
+			}
+		}
+		if total, err := finance.Sum(current); err == nil {
+			view.MonthSpent = groupDigits(total.PlainString())
+			view.MonthLabel = months[len(months)-1].Month.Format("January")
+		}
+		if total, err := finance.Sum(previous); err == nil && len(months) > 1 {
+			view.PreviousSpent = groupDigits(total.PlainString())
+			view.PreviousLabel = months[len(months)-2].Month.Format("January")
+		}
+	}
+	due := make([]finance.Decimal, 0, len(summary.Upcoming))
+	for _, record := range summary.Upcoming {
+		if record.Amount != nil {
+			due = append(due, *record.Amount)
+		}
+	}
+	view.DueCount = len(summary.Upcoming)
+	if total, err := finance.Sum(due); err == nil {
+		view.DueTotal = groupDigits(total.PlainString())
+	}
+	if len(summary.Upcoming) > 0 {
+		if date, ok := parseISODate(summary.Upcoming[0].Date); ok {
+			view.DueNext = humanDate(date)
+		}
 	}
 	for index, trend := range summary.Trends {
 		change := trend.Change.PlainString()
@@ -236,7 +315,11 @@ func financeView(summary finance.Summary, filter finance.ScopeFilter, csrf strin
 	}
 	for _, record := range summary.Upcoming {
 		date, _ := time.Parse("2006-01-02", record.Date)
-		view.Obligations = append(view.Obligations, FinanceObligationView{Name: record.Label, Amount: record.Amount.PlainString(), DateISO: record.Date, DateLabel: date.Format("2 Jan 2006"), EvidenceURL: sourceURL(record.SourceID)})
+		amount := ""
+		if record.Amount != nil {
+			amount = groupDigits(record.Amount.PlainString())
+		}
+		view.Obligations = append(view.Obligations, FinanceObligationView{Name: record.Label, Amount: amount, DateISO: record.Date, DateLabel: humanDate(date) + ", " + relativeDays(date, time.Now()), EvidenceURL: sourceURL(record.SourceID)})
 	}
 	recordsByID := make(map[string]finance.Record, len(summary.Records))
 	for _, record := range summary.Records {
@@ -254,20 +337,29 @@ func financeView(summary finance.Summary, filter finance.ScopeFilter, csrf strin
 		}
 		view.Issues = append(view.Issues, FinanceIssueView{ID: record.ID, Label: issue.Label, Kind: string(issue.Kind), Reason: issue.Reason, Date: date, EndDate: endDate, Amount: record.OriginalAmount, Version: record.Version, EvidenceURL: sourceURL(issue.SourceID)})
 	}
-	for _, record := range summary.Records {
+	records := append([]finance.Record(nil), summary.Records...)
+	sort.SliceStable(records, func(i, j int) bool { return records[i].Date > records[j].Date })
+	for _, record := range records {
 		amount := "Excluded"
 		if record.Amount != nil {
-			amount = record.Amount.PlainString()
+			amount = groupDigits(record.Amount.PlainString())
+			if record.Kind == finance.Income {
+				amount = "+" + amount
+			}
 		}
 		date := record.Date
-		if parsed, err := time.Parse("2006-01-02", record.Date); err == nil {
-			date = parsed.Format("2 Jan 2006")
+		if parsed, ok := parseISODate(record.Date); ok {
+			date = humanDate(parsed)
 		}
 		scope := "Shared"
 		if record.Visibility == "personal" {
 			scope = "Only you"
 		}
-		view.Records = append(view.Records, FinanceRecordView{ID: record.ID, Label: record.Label, Kind: string(record.Kind), Category: record.Category, Date: date, Amount: amount, Scope: scope, EvidenceURL: sourceURL(record.SourceID), Version: record.Version})
+		area := "money"
+		if record.Kind == finance.Income || record.Kind == finance.Asset {
+			area = "income"
+		}
+		view.Records = append(view.Records, FinanceRecordView{ID: record.ID, Label: record.Label, Kind: string(record.Kind), Category: record.Category, Date: date, Amount: amount, Scope: scope, EvidenceURL: sourceURL(record.SourceID), Version: record.Version, Private: record.Visibility == "personal", Area: area})
 	}
 	return view
 }
@@ -378,4 +470,99 @@ func (a *App) sourceFile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Disposition", `inline; filename="mithra-source.`+source.Family+`"`)
 	http.ServeContent(w, r, "mithra-source."+source.Family, source.CreatedAt, bytes.NewReader(plaintext))
+}
+
+// financeStack lays out one stacked bar per month. The four largest
+// categories keep their own colour; the rest share one "Other" segment.
+func financeStack(trends []finance.CategoryTrend) FinanceStackView {
+	if len(trends) == 0 || len(trends[0].Months) == 0 {
+		return FinanceStackView{}
+	}
+	type series struct {
+		name   string
+		values []float64
+		total  float64
+	}
+	months := trends[0].Months
+	all := make([]series, 0, len(trends))
+	for _, trend := range trends {
+		s := series{name: trend.Category, values: make([]float64, len(months))}
+		for i := range months {
+			if i < len(trend.Months) {
+				value, _ := strconv.ParseFloat(trend.Months[i].Value.PlainString(), 64)
+				s.values[i] = math.Max(value, 0)
+				s.total += s.values[i]
+			}
+		}
+		all = append(all, s)
+	}
+	for i := 1; i < len(all); i++ {
+		for j := i; j > 0 && all[j].total > all[j-1].total; j-- {
+			all[j], all[j-1] = all[j-1], all[j]
+		}
+	}
+	shown := all
+	if len(all) > 4 {
+		other := series{name: "Other", values: make([]float64, len(months))}
+		for _, s := range all[4:] {
+			for i, value := range s.values {
+				other.values[i] += value
+			}
+		}
+		shown = append(append([]series{}, all[:4]...), other)
+	}
+	totals := make([]float64, len(months))
+	maximum := 0.0
+	for i := range months {
+		for _, s := range shown {
+			totals[i] += s.values[i]
+		}
+		maximum = math.Max(maximum, totals[i])
+	}
+	if maximum <= 0 {
+		maximum = 1
+	}
+	maximum = niceCeiling(maximum/3) * 3
+	const top, bottom, left, right = 18.0, 160.0, 56.0, 412.0
+	scale := func(value float64) float64 { return (bottom - top) * value / maximum }
+	view := FinanceStackView{}
+	for step := 0; step <= 3; step++ {
+		value := maximum * float64(step) / 3
+		view.Grid = append(view.Grid, FinanceGridLine{Y: math.Round((bottom-scale(value))*10) / 10, Label: groupDigits(strconv.FormatFloat(value, 'f', 0, 64))})
+	}
+	slot := (right - left) / float64(len(months))
+	width := math.Round(math.Min(64, slot*0.6)*10) / 10
+	view.Width = width
+	summary := make([]string, 0, len(months))
+	for i, month := range months {
+		x := left + slot*float64(i) + (slot-width)/2
+		bar := FinanceStackBar{X: math.Round(x*10) / 10, LabelX: math.Round((x+width/2)*10) / 10, Label: month.Month.Format("Jan"), Total: groupDigits(strconv.FormatFloat(totals[i], 'f', -1, 64))}
+		y := bottom
+		for index, s := range shown {
+			if s.values[i] <= 0 {
+				continue
+			}
+			height := scale(s.values[i])
+			y -= height
+			bar.Segments = append(bar.Segments, FinanceStackSegment{Y: math.Round(y*10) / 10, Height: math.Round(height*10) / 10, Class: "c" + strconv.Itoa(index+1), Title: s.name + ": " + groupDigits(strconv.FormatFloat(s.values[i], 'f', -1, 64))})
+		}
+		bar.TotalY = math.Round((y-6)*10) / 10
+		view.Bars = append(view.Bars, bar)
+		summary = append(summary, month.Month.Format("January 2006")+" "+bar.Total)
+	}
+	for index, s := range shown {
+		view.Legend = append(view.Legend, FinanceLegendItem{Label: s.name, Class: "c" + strconv.Itoa(index+1)})
+	}
+	view.Summary = "Spending by month, stacked by category: " + strings.Join(summary, "; ") + "."
+	return view
+}
+
+func niceCeiling(value float64) float64 {
+	magnitude := math.Pow(10, math.Floor(math.Log10(value)))
+	for _, step := range []float64{1, 1.5, 2, 3, 5, 10} {
+		if value <= step*magnitude {
+			return step * magnitude
+		}
+	}
+	return 10 * magnitude
 }

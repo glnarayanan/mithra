@@ -349,10 +349,15 @@ func itemView(item coaching.Item, evidence map[string]coaching.Fact) CoachingIte
 	view := CoachingItemView{Title: item.Title, Copy: item.Copy, When: item.When}
 	if family, ok := strings.CutPrefix(item.Copy, "Recorded in "); ok && strings.HasSuffix(family, ".") && !strings.Contains(family, " ") {
 		view.MetaParts = []string{areaLabel(strings.TrimSuffix(family, "."))}
+		view.Copy = ""
 	}
-	if date, ok := parseISODate(item.When); ok {
+	if date, ok := parseISODate(item.When); ok && len(strings.TrimSpace(item.When)) == 10 {
 		view.When = humanDate(date)
 		view.Relative = relativeDays(date, time.Now())
+	} else if item.When != "" {
+		// A period such as "1 Aug 2026 to 1 Nov 2026" reads better beside the copy.
+		view.MetaParts = append([]string{item.When}, view.MetaParts...)
+		view.When = ""
 	}
 	seen := map[string]struct{}{}
 	for _, evidenceID := range item.EvidenceIDs {

@@ -1,106 +1,70 @@
+{{define "finance-record"}}<li><details class="row-details"><summary class="row"><span class="mark mark-{{.Record.Area}}" aria-hidden="true"></span><span><span class="row-title">{{.Record.Label}}</span><span class="row-meta"><span>{{if .Record.Category}}{{.Record.Category}}{{else}}{{.Record.Kind}}{{end}}</span>{{if .Record.Date}}<span>{{.Record.Date}}</span>{{end}}{{if .Record.Private}}<span class="chip chip-private">Only you</span>{{end}}</span></span><span class="row-value">{{.Record.Amount}}</span></summary><div class="row-body"><form method="post" action="/finance/correct" class="inline-form finance-category-form"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="record_id" value="{{.Record.ID}}"><input type="hidden" name="version" value="{{.Record.Version}}"><input type="hidden" name="kind" value="{{.Record.Kind}}"><label class="visually-hidden" for="category-{{.Record.ID}}">Category for {{.Record.Label}}</label><input id="category-{{.Record.ID}}" name="category" value="{{.Record.Category}}" list="finance-categories" maxlength="128" required><button type="submit">Save category</button></form><p class="row-actions"><a class="button button-small" href="{{.Record.EvidenceURL}}">View source</a><span class="chip chip-quiet">{{.Record.Kind}}</span><span class="chip chip-quiet">{{.Record.Scope}}</span></p></div></details></li>{{end}}
+
 {{define "finance.html"}}
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#202022">
-    <meta name="referrer" content="same-origin">
-    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/assets/styles.css">
-    <script defer src="/assets/app.js"></script>
-    <script defer src="/assets/finance.js"></script>
-    <title>Finance · Mithra</title>
+    {{template "head"}}
+    <title>Money · Mithra</title>
   </head>
   <body class="authenticated-shell">
     <a class="skip-link" href="#main-content">Skip to main content</a>
     {{template "app-shell" .}}
-    <main id="main-content" tabindex="-1" class="finance-main">
-      <section class="finance-heading">
-        <div class="page-shell finance-heading-row">
-          <div>
-            <h1>Finance</h1>
-            <p class="introduction-copy">See your totals, recent changes, upcoming payments, and the records behind every number.</p>
-          </div>
-          <form class="scope-filter" method="get" action="/finance" data-auto-submit>
-            <label for="finance-scope">Records shown</label>
-            <input type="hidden" name="range" value="{{.Range}}">
-            <select id="finance-scope" name="scope">
-              <option value="all"{{if eq .Scope "all"}} selected{{end}}>Shared and only you</option>
-              <option value="shared"{{if eq .Scope "shared"}} selected{{end}}>Shared</option>
-              <option value="personal"{{if eq .Scope "personal"}} selected{{end}}>Only you</option>
-            </select>
-            <button type="submit">Apply</button>
-          </form>
+    <main id="main-content" tabindex="-1" class="page">
+      <header class="page-head">
+        <div><h1>Money</h1><p class="lede">{{if .HasRecords}}{{.CompleteCount}} records included{{if .IncompleteCount}}, {{.IncompleteCount}} need a value{{end}}.{{else}}Totals, upcoming payments and the records behind every number.{{end}}</p></div>
+        <nav class="segmented" aria-label="Records shown"><a href="/finance?scope=all&amp;range={{.Range}}"{{if eq .Scope "all"}} aria-current="page"{{end}}>Everything</a><a href="/finance?scope=shared&amp;range={{.Range}}"{{if eq .Scope "shared"}} aria-current="page"{{end}}>Shared</a><a href="/finance?scope=personal&amp;range={{.Range}}"{{if eq .Scope "personal"}} aria-current="page"{{end}}>Only you</a></nav>
+      </header>
+      {{template "status" .Status}}
+      {{if .Error}}<section class="notice notice-error" role="alert" aria-labelledby="finance-error-title"><h2 id="finance-error-title">Money needs attention</h2><p>{{.Error}}</p></section>{{end}}
+      {{if and (not .HasRecords) (not .Error)}}
+      <section class="empty" aria-labelledby="finance-empty-title"><h2 id="finance-empty-title">No finance records yet</h2><p>Add an update such as “Paid 2,400 for electricity today”, or import a bank or card export. Totals, upcoming payments and changes appear here.</p><div class="empty-actions"><a class="button button-primary" href="/capture" data-quick-capture-trigger>Add an update</a><a class="button" href="/imports">Import a file</a></div></section>
+      {{else if .HasRecords}}
+      <section aria-labelledby="money-glance"><h2 id="money-glance" class="visually-hidden">At a glance</h2>
+        <div class="panels">
+          <a class="panel panel-blue" href="#finance-obligations-title"><span class="panel-label">Due in 31 days</span><span class="panel-number">{{if .DueTotal}}{{.DueTotal}}{{else}}0{{end}}</span><span class="panel-note">{{if .DueCount}}{{.DueCount}} {{if eq .DueCount 1}}payment{{else}}payments{{end}}{{if .DueNext}}, the next on {{.DueNext}}{{end}}{{else}}No payments dated ahead{{end}}</span></a>
+          <a class="panel panel-paper" href="#finance-trends-title"><span class="panel-label">Spent{{if .MonthLabel}} in {{.MonthLabel}}{{end}}</span><span class="panel-number">{{if .MonthSpent}}{{.MonthSpent}}{{else}}0{{end}}</span><span class="panel-note">{{if .PreviousSpent}}{{.PreviousSpent}} in {{.PreviousLabel}}{{else}}From dated spending records{{end}}</span></a>
+          <a class="panel panel-paper" href="#finance-records-title"><span class="panel-label">Income recorded</span><span class="panel-number">{{.IncomeTotal}}</span><span class="panel-note">Across the records shown</span></a>
         </div>
       </section>
-
-      <div class="page-shell finance-content">
-        {{if .Status}}<p class="status-message" role="status" aria-live="polite">{{.Status}}</p>{{end}}
-        {{if .Error}}
-        <section class="finance-error" role="alert" aria-labelledby="finance-error-title"><h2 id="finance-error-title">Finance needs attention</h2><p>{{.Error}}</p></section>
-        {{end}}
-        {{if and (not .HasRecords) (not .Error)}}
-        <section class="empty-state" aria-labelledby="finance-empty-title"><h2 id="finance-empty-title">No finance records yet</h2><p>Add an update or import a file to see totals, changes, and upcoming payments here.</p><div class="empty-actions"><a href="/#capture">Add an update</a><a href="/imports">Import a file</a></div></section>
-        {{else if .HasRecords}}
-        <section aria-labelledby="finance-summary-title">
-          <div class="section-heading"><div><h2 id="finance-summary-title">Your totals</h2></div><p>{{.CompleteCount}} records included{{if .IncompleteCount}} · {{.IncompleteCount}} need a value{{end}}</p></div>
-          <div class="finance-totals">
-            {{range .Totals}}<article><p>{{.Label}}</p><strong>{{.Value}}</strong><span>{{.Count}} records</span></article>{{end}}
-          </div>
-        </section>
-
-        <section class="finance-section" aria-labelledby="finance-trends-title">
-          <div class="section-heading"><div><h2 id="finance-trends-title">Spending over time</h2></div><p>Based on dated records with a number.</p></div>
-          <nav class="analytics-range" aria-label="Spending period"><a href="/finance?scope={{.Scope}}&amp;range=3"{{if eq .Range 3}} aria-current="page"{{end}}>3 months</a><a href="/finance?scope={{.Scope}}&amp;range=6"{{if eq .Range 6}} aria-current="page"{{end}}>6 months</a><a href="/finance?scope={{.Scope}}&amp;range=12"{{if eq .Range 12}} aria-current="page"{{end}}>12 months</a></nav>
-          {{if .Trends}}
-          <p class="analytics-note">The solid line shows monthly totals. The dashed line shows the calculated direction. A zero point does not prove that a record was entered that month.</p>
-          <ul class="analytics-legend" role="list"><li><span class="analytics-legend-line analytics-legend-observed" aria-hidden="true"></span>Monthly total</li><li><span class="analytics-legend-line analytics-legend-trend" aria-hidden="true"></span>Calculated direction</li></ul>
-          <div class="trend-list">
-            {{range .Trends}}
-            <article class="analytics-card">
-              <div class="analytics-card-heading"><div><h3>{{.Category}}</h3><p>{{.PeriodLabel}}</p></div><p class="analytics-change">{{.ChangeText}}</p></div>
-              <dl class="analytics-values"><div><dt>{{.StartLabel}}</dt><dd>{{.StartValue}}</dd></div><div><dt>{{.EndLabel}}</dt><dd>{{.EndValue}}</dd></div></dl>
-              <figure class="analytics-figure">
-                <svg class="analytics-chart" viewBox="0 0 240 84" role="img" aria-labelledby="trend-title-{{.ID}} trend-desc-{{.ID}}">
-                  <title id="trend-title-{{.ID}}">{{.Category}} monthly totals</title><desc id="trend-desc-{{.ID}}">{{.AccessibleSummary}}</desc>
-                  <g class="analytics-grid" aria-hidden="true"><line x1="16" y1="16" x2="224" y2="16"></line><line x1="16" y1="42" x2="224" y2="42"></line><line x1="16" y1="68" x2="224" y2="68"></line></g>
-                  <polyline class="analytics-trendline" points="{{.TrendlinePoints}}" fill="none" vector-effect="non-scaling-stroke"></polyline>
-                  <polyline class="analytics-observed-line" points="{{.Points}}" fill="none" vector-effect="non-scaling-stroke"></polyline>
-                  {{range .Markers}}<circle class="analytics-marker{{if .Zero}} analytics-marker-zero{{end}}" cx="{{.X}}" cy="{{.Y}}" r="3.25"><title>{{.Label}}: {{.Value}}</title></circle>{{end}}
-                </svg>
-                <figcaption><span>{{.StartLabel}}</span><span>{{.EndLabel}}</span></figcaption>
-              </figure>
-              <p class="analytics-source-note">Each total comes from the dated finance records below. <a href="#finance-records-title">View records and sources</a>.</p>
-            </article>
-            {{end}}
-          </div>
-          {{else}}
-          <p class="quiet-copy">No dated spending records fall in this range. Choose a longer period to look back.</p>
+      <div class="cols">
+        <div>
+          <section class="section" aria-labelledby="finance-trends-title">
+            <div class="section-head"><h2 id="finance-trends-title">Spending by month</h2><nav class="segmented" aria-label="Spending period"><a href="/finance?scope={{.Scope}}&amp;range=3"{{if eq .Range 3}} aria-current="page"{{end}}>3 months</a><a href="/finance?scope={{.Scope}}&amp;range=6"{{if eq .Range 6}} aria-current="page"{{end}}>6 months</a><a href="/finance?scope={{.Scope}}&amp;range=12"{{if eq .Range 12}} aria-current="page"{{end}}>12 months</a></nav></div>
+            {{if .Chart.Bars}}
+            <svg class="chart" viewBox="0 0 420 190" role="img" aria-labelledby="stack-title stack-desc"><title id="stack-title">Spending by month</title><desc id="stack-desc">{{.Chart.Summary}}</desc>
+              {{range .Chart.Grid}}<line class="grid" x1="56" x2="412" y1="{{.Y}}" y2="{{.Y}}"></line><text x="50" y="{{.Y}}" dy="4" text-anchor="end">{{.Label}}</text>{{end}}
+              {{range .Chart.Bars}}{{$bar := .}}{{range .Segments}}<rect class="bar {{.Class}}" x="{{$bar.X}}" y="{{.Y}}" width="{{$.Chart.Width}}" height="{{.Height}}"><title>{{$bar.Label}}, {{.Title}}</title></rect>{{end}}<text x="{{.LabelX}}" y="178" text-anchor="middle">{{.Label}}</text>{{if le (len $.Chart.Bars) 6}}<text class="total" x="{{.LabelX}}" y="{{.TotalY}}" text-anchor="middle">{{.Total}}</text>{{end}}{{end}}
+            </svg>
+            <ul class="legend" role="list">{{range .Chart.Legend}}<li><svg viewBox="0 0 10 10" aria-hidden="true" class="chart"><rect class="{{.Class}}" width="10" height="10" rx="2"></rect></svg>{{.Label}}</li>{{end}}</ul>
+            <p class="chart-note">Totals of dated spending records with a number. A month without a bar has no records, which does not prove nothing was spent.</p>
+            {{else}}<p class="quiet">No dated spending records fall in this range. Choose a longer period to look back.</p>{{end}}
+          </section>
+          {{if .Issues}}
+          <section class="section" aria-labelledby="finance-issues-title">
+            <div class="section-head"><h2 id="finance-issues-title">Records that need a value</h2><p>Left out of totals until corrected.</p></div>
+            <ul class="rows" role="list">{{range .Issues}}<li><details class="row-details"><summary class="row"><span class="mark mark-money" aria-hidden="true"></span><span><span class="row-title">{{.Label}}</span><span class="row-meta"><span>{{.Reason}}</span></span></span><span class="row-value attention">Fix</span></summary><div class="row-body"><form method="post" action="/finance/correct" class="field-grid finance-correction-form"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="record_id" value="{{.ID}}"><input type="hidden" name="version" value="{{.Version}}"><input type="hidden" name="kind" value="{{.Kind}}"><label class="field"><span>{{if eq .Kind "budget"}}Start date{{else}}Date{{end}}</span><input type="date" name="date" value="{{.Date}}" required></label>{{if eq .Kind "budget"}}<label class="field"><span>End date</span><input type="date" name="end_date" value="{{.EndDate}}" required></label>{{end}}<label class="field"><span>Number</span><input name="amount" value="{{.Amount}}" inputmode="decimal" maxlength="128" required></label><div class="row-actions"><button type="submit">Save correction</button><a class="button" href="{{.EvidenceURL}}">View original</a></div></form></div></details></li>{{end}}</ul>
+          </section>
           {{end}}
-        </section>
-
-        {{if .Obligations}}
-        <section class="finance-section" aria-labelledby="finance-obligations-title">
-          <div class="section-heading"><div><h2 id="finance-obligations-title">Upcoming payments</h2></div><p>From dated records.</p></div>
-          <ol class="obligation-list">{{range .Obligations}}<li><time datetime="{{.DateISO}}">{{.DateLabel}}</time><div><strong>{{.Name}}</strong><span>{{.Amount}}</span></div><a href="{{.EvidenceURL}}">View original</a></li>{{end}}</ol>
-        </section>
-        {{end}}
-
-        {{if .Issues}}
-        <section class="finance-section incomplete-panel" aria-labelledby="finance-issues-title">
-          <div class="section-heading"><div><h2 id="finance-issues-title">Records that need a value</h2></div><p>These stay visible but are not included in totals or trends.</p></div>
-          <ul class="issue-list">{{range .Issues}}<li><div><strong>{{.Label}}</strong><p>{{.Reason}}</p></div><form method="post" action="/finance/correct" class="finance-correction-form"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="record_id" value="{{.ID}}"><input type="hidden" name="version" value="{{.Version}}"><input type="hidden" name="kind" value="{{.Kind}}"><label>{{if eq .Kind "budget"}}Start date{{else}}Date{{end}}<input type="date" name="date" value="{{.Date}}" required></label>{{if eq .Kind "budget"}}<label>End date<input type="date" name="end_date" value="{{.EndDate}}" required></label>{{end}}<label>Number<input name="amount" value="{{.Amount}}" inputmode="decimal" maxlength="128" required></label><button type="submit">Save correction</button></form><a href="{{.EvidenceURL}}">View original</a></li>{{end}}</ul>
-        </section>
-        {{end}}
-
-        <section class="finance-section" aria-labelledby="finance-records-title">
-          <div class="section-heading"><div><h2 id="finance-records-title">Finance records</h2></div><p>Open a source to check where a number came from.</p></div>
-          <datalist id="finance-categories"><option value="Income"></option><option value="Salary"></option><option value="Investment income"></option><option value="Housing"></option><option value="Groceries"></option><option value="Healthcare"></option><option value="Education"></option><option value="Transport"></option><option value="Utilities"></option><option value="Insurance"></option><option value="Tax payment"></option><option value="Loan repayment"></option><option value="Savings"></option><option value="Other"></option></datalist>
-          <div class="record-table-wrap"><table class="record-table"><thead><tr><th scope="col">Record</th><th scope="col">Type</th><th scope="col">Category</th><th scope="col">Date</th><th scope="col">Number</th><th scope="col">Visibility</th><th scope="col">Source</th></tr></thead><tbody>{{range .Records}}<tr><th scope="row">{{.Label}}</th><td>{{.Kind}}</td><td><form method="post" action="/finance/correct" class="finance-category-form"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="record_id" value="{{.ID}}"><input type="hidden" name="version" value="{{.Version}}"><input type="hidden" name="kind" value="{{.Kind}}"><label class="visually-hidden" for="category-{{.ID}}">Category for {{.Label}}</label><input id="category-{{.ID}}" name="category" value="{{.Category}}" list="finance-categories" maxlength="128" required><button type="submit">Save</button></form></td><td>{{.Date}}</td><td class="number-cell">{{.Amount}}</td><td>{{.Scope}}</td><td><a href="{{.EvidenceURL}}">View</a></td></tr>{{end}}</tbody></table></div>
-        </section>
-        {{end}}
+          <section class="section" aria-labelledby="finance-records-title">
+            <div class="section-head"><h2 id="finance-records-title">Records</h2><p>Open one to change its category or see its source.</p></div>
+            <datalist id="finance-categories"><option value="Income"></option><option value="Salary"></option><option value="Investment income"></option><option value="Housing"></option><option value="Groceries"></option><option value="Dining"></option><option value="Healthcare"></option><option value="Education"></option><option value="Transport"></option><option value="Utilities"></option><option value="Insurance"></option><option value="Tax payment"></option><option value="Loan repayment"></option><option value="Savings"></option><option value="Other"></option></datalist>
+            <ul class="rows" role="list">{{range $i, $r := .Records}}{{if lt $i 12}}{{template "finance-record" (recordRow $r $.CSRF)}}{{end}}{{end}}</ul>{{if gt (len .Records) 12}}<details class="more-records"><summary class="button">Show all {{len .Records}} records</summary><ul class="rows" role="list">{{range $i, $r := .Records}}{{if ge $i 12}}{{template "finance-record" (recordRow $r $.CSRF)}}{{end}}{{end}}</ul></details>{{end}}
+          </section>
+        </div>
+        <div>
+          <section class="section" aria-labelledby="finance-obligations-title">
+            <div class="section-head"><h2 id="finance-obligations-title">Upcoming payments</h2><a href="/planning">Calendar</a></div>
+            {{if .Obligations}}<ul class="rows" role="list">{{range .Obligations}}<li><a class="row" href="{{.EvidenceURL}}"><span class="mark mark-money" aria-hidden="true"></span><span><span class="row-title">{{.Name}}</span><span class="row-meta"><time datetime="{{.DateISO}}">{{.DateLabel}}</time></span></span><span class="row-value">{{.Amount}}</span></a></li>{{end}}</ul>{{else}}<p class="quiet">No payments are dated in the next 31 days.</p>{{end}}
+          </section>
+          <section class="section" aria-labelledby="finance-balances-title">
+            <div class="section-head"><h2 id="finance-balances-title">Totals recorded</h2></div>
+            <div>{{range .Totals}}<div class="kv"><span>{{.Label}} <small>({{.Count}})</small></span><span>{{.Value}}</span></div>{{end}}</div>
+            <p class="chart-note">Sums of every record shown, in the amounts as recorded. Mithra does not convert currencies.</p>
+          </section>
+        </div>
       </div>
+      {{end}}
     </main>
   </body>
 </html>

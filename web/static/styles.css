@@ -58,7 +58,7 @@
   --chart-2: oklch(51.9% 0.1261 259.6);
   --chart-3: oklch(74.7% 0.1231 86.4);
   --chart-4: oklch(62% 0.04 259.6);
-  --chart-5: oklch(50% 0.15 41.2);
+  --chart-5: oklch(48% 0.02 85);
   --skeleton: oklch(93.5% 0.012 85);
   --selection: color-mix(in oklab, var(--mustard) 45%, var(--paper));
   --focus: var(--link);
@@ -112,7 +112,7 @@
   --chart-2: oklch(60% 0.12 259.6);
   --chart-3: oklch(78% 0.12 86.4);
   --chart-4: oklch(54% 0.03 265);
-  --chart-5: oklch(76% 0.13 41.2);
+  --chart-5: oklch(72% 0.02 85);
   --skeleton: oklch(28% 0.032 265);
   --selection: oklch(40% 0.08 86.4);
   --focus: oklch(82% 0.09 259.6);
@@ -154,7 +154,7 @@
     --chart-2: oklch(60% 0.12 259.6);
     --chart-3: oklch(78% 0.12 86.4);
     --chart-4: oklch(54% 0.03 265);
-    --chart-5: oklch(76% 0.13 41.2);
+    --chart-5: oklch(72% 0.02 85);
     --skeleton: oklch(28% 0.032 265);
     --selection: oklch(40% 0.08 86.4);
     --focus: oklch(82% 0.09 259.6);
@@ -358,6 +358,7 @@ a.row:hover, summary.row:hover { background: var(--hover); text-decoration: none
 a.row:active { transform: translateY(1px); }
 .row-title { display: block; font-weight: 600; font-size: 0.9375rem; overflow-wrap: anywhere; }
 .row-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.1rem 0.75rem; color: var(--muted); font-size: 0.8125rem; margin-top: 0.1rem; }
+.row-copy { display: block; color: var(--muted); font-size: 0.875rem; margin-top: 0.1rem; max-width: 62ch; }
 .row-value { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; font-size: 0.9375rem; white-space: nowrap; }
 .row-value small { display: block; font-weight: 500; font-size: 0.8125rem; color: var(--muted); }
 .row-value.attention { color: var(--terracotta); }

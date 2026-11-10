@@ -1,6 +1,7 @@
 package app
 
 import (
+	"html/template"
 	"strconv"
 	"strings"
 	"time"
@@ -79,4 +80,16 @@ func groupDigits(value string) string {
 		return sign + grouped.String() + "." + fraction
 	}
 	return sign + grouped.String()
+}
+
+// FinanceRecordRow pairs a record with the CSRF token its forms need.
+type FinanceRecordRow struct {
+	Record FinanceRecordView
+	CSRF   string
+}
+
+var templateFuncs = template.FuncMap{
+	"recordRow": func(record FinanceRecordView, csrf string) FinanceRecordRow {
+		return FinanceRecordRow{Record: record, CSRF: csrf}
+	},
 }

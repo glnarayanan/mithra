@@ -123,7 +123,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		return nil, err
 	}
 
-	templates, err := template.ParseFS(web.Files, "templates/shared/*.html", "templates/auth/*.html", "templates/brief/*.html", "templates/capture/*.html", "templates/finance/*.html", "templates/health/*.html", "templates/help/*.html", "templates/imports/*.html", "templates/planning/*.html", "templates/review/*.html", "templates/settings/*.html")
+	templates, err := template.New("mithra").Funcs(templateFuncs).ParseFS(web.Files, "templates/shared/*.html", "templates/auth/*.html", "templates/brief/*.html", "templates/capture/*.html", "templates/finance/*.html", "templates/health/*.html", "templates/help/*.html", "templates/imports/*.html", "templates/planning/*.html", "templates/review/*.html", "templates/settings/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse embedded templates: %w", err)
 	}

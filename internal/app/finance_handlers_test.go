@@ -19,7 +19,7 @@ func TestFinanceLensRendersEmptyPartialAndExactScopedStates(t *testing.T) {
 	owner := ownerScope(t, application, ownerSession)
 
 	empty := serve(application, authenticatedFinanceRequest(ownerSession, "/finance"))
-	if empty.Code != http.StatusOK || !strings.Contains(empty.Body.String(), "<h1>Finance</h1>") || !strings.Contains(empty.Body.String(), "No finance records yet") {
+	if empty.Code != http.StatusOK || !strings.Contains(empty.Body.String(), "<h1>Money</h1>") || !strings.Contains(empty.Body.String(), "No finance records yet") {
 		t.Fatalf("empty finance = %d %q", empty.Code, empty.Body.String())
 	}
 
@@ -105,7 +105,7 @@ func TestFinanceTrendRangeDefaultsAndRendersServerLinks(t *testing.T) {
 		}
 	}
 	page := serve(application, authenticatedFinanceRequest(session, "/finance?scope=personal&range=6"))
-	for _, text := range []string{`href="/finance?scope=personal&amp;range=3"`, `href="/finance?scope=personal&amp;range=6" aria-current="page"`, `class="analytics-chart"`, `May 2026`, `A zero point does not prove that a record was entered that month.`} {
+	for _, text := range []string{`href="/finance?scope=personal&amp;range=3"`, `href="/finance?scope=personal&amp;range=6" aria-current="page"`, `class="chart"`, `June 2026`, `does not prove nothing was spent`} {
 		if !strings.Contains(page.Body.String(), text) {
 			t.Fatalf("finance range missing %q: %s", text, page.Body.String())
 		}
@@ -127,7 +127,7 @@ func TestFinanceRangeControlsRemainVisibleWithoutPoints(t *testing.T) {
 func TestFinanceAnalyticsEscapesTrendContent(t *testing.T) {
 	application := newTestApp(t)
 	response := httptest.NewRecorder()
-	application.renderFinance(context.Background(), response, FinanceView{Scope: "all", HasRecords: true, Trends: []FinanceTrendView{{ID: "1", Category: `<script>alert("private")</script>`, PeriodLabel: "May 2026 to July 2026", StartLabel: "May 2026", EndLabel: "July 2026", StartValue: "0", EndValue: "10", ChangeText: "+10", AccessibleSummary: "May 2026 0; July 2026 10.", Points: "16,68 224,16", TrendlinePoints: "16,68 224,16", Markers: []FinanceChartMarkerView{{X: "16", Y: "68", Label: "May 2026", Value: "0", Zero: true}}}}})
+	application.renderFinance(context.Background(), response, FinanceView{Scope: "all", HasRecords: true, Chart: FinanceStackView{Width: 40, Summary: `<script>alert("private")</script>`, Bars: []FinanceStackBar{{X: 60, LabelX: 80, Label: "May", Total: "10", Segments: []FinanceStackSegment{{Y: 20, Height: 40, Class: "c1", Title: `<script>alert("private")</script>: 10`}}}}, Legend: []FinanceLegendItem{{Label: `<script>alert("private")</script>`, Class: "c1"}}}})
 	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), `<script>alert`) || !strings.Contains(response.Body.String(), "&lt;script&gt;") {
 		t.Fatalf("trend content was not escaped: %d %q", response.Code, response.Body.String())
 	}
@@ -173,7 +173,7 @@ func TestFinanceCategoryCanBeCorrectedWithoutReenteringTheRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	page := serve(application, authenticatedFinanceRequest(session, "/finance"))
-	if !strings.Contains(page.Body.String(), `class="finance-category-form"`) || !strings.Contains(page.Body.String(), `value="Expenses"`) || !strings.Contains(page.Body.String(), `value="Loan repayment"`) {
+	if !strings.Contains(page.Body.String(), `finance-category-form"`) || !strings.Contains(page.Body.String(), `value="Expenses"`) || !strings.Contains(page.Body.String(), `value="Loan repayment"`) {
 		t.Fatalf("category editor missing: %q", page.Body.String())
 	}
 	values := url.Values{"csrf": {session.csrf.Value}, "record_id": {record.ID}, "version": {"1"}, "kind": {"spending"}, "category": {"Loan repayment"}}
