@@ -22,6 +22,8 @@ type CoachingItemView struct {
 	Relative string
 	Private  bool
 	Evidence []EvidenceView
+	// HealthComparison marks a row whose disclaimer moved to the section.
+	HealthComparison bool
 }
 type CoachingHistoryView struct{ Generated, Model, Summary string }
 type CoachingNudgeView struct {
@@ -40,6 +42,7 @@ type BriefView struct {
 	Nudges                                                  []CoachingNudgeView
 	Capture                                                 CaptureView
 	Babies                                                  []BabyPanelView
+	HealthNote                                              bool
 }
 type WeekReviewView struct {
 	Navigation                                           []NavigationItem
@@ -228,6 +231,11 @@ func (a *App) renderBrief(r *http.Request, w http.ResponseWriter, scope policy.A
 	}
 	view.Nudges = a.nudgeViews(r.Context(), scope, append(contextReviewFacts(overview.SharedContext), contextReviewFacts(overview.PersonalContext)...))
 	view.Babies = a.babyPanels(r.Context(), scope)
+	for _, list := range [][]CoachingItemView{view.Insights, view.OnlyYou, view.Priorities} {
+		for _, item := range list {
+			view.HealthNote = view.HealthNote || item.HealthComparison
+		}
+	}
 	a.renderTemplate(r.Context(), w, "brief.html", view)
 }
 
@@ -349,6 +357,10 @@ func contextReviewFacts(context coaching.Context) []coaching.Fact {
 }
 func itemView(item coaching.Item, evidence map[string]coaching.Fact) CoachingItemView {
 	view := CoachingItemView{Title: item.Title, Copy: item.Copy, When: item.When}
+	// The section states this once instead of on every row.
+	if copy, ok := strings.CutSuffix(view.Copy, " This is a record comparison, not health advice."); ok {
+		view.Copy, view.HealthComparison = copy, true
+	}
 	if family, ok := strings.CutPrefix(item.Copy, "Recorded in "); ok && strings.HasSuffix(family, ".") && !strings.Contains(family, " ") {
 		view.MetaParts = []string{areaLabel(strings.TrimSuffix(family, "."))}
 		view.Copy = ""

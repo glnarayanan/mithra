@@ -7,11 +7,13 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/glnarayanan/mithra/internal/carelog"
+	"github.com/glnarayanan/mithra/internal/health"
 	"github.com/glnarayanan/mithra/internal/people"
 	"github.com/glnarayanan/mithra/internal/policy"
 )
@@ -28,11 +30,12 @@ type BabyLogView struct {
 	Strip                      BabyStripView
 	Feeds, Wet, Dirty, SpitUps int
 	FeedNote                   string
-	Entries                    []BabyEntryView
+	Entries, EarlierEntries    []BabyEntryView
 	Patterns                   []BabyPatternView
 	PatternDays                int
 	Weights                    []BabyEntryView
 	WeightPoints               string
+	WeightDots                 []HealthChartMarkerView
 	LatestWeight               string
 	Milestones                 []BabyEntryView
 	Undo                       *BabyUndoView
@@ -117,11 +120,9 @@ func babyEntry(e carelog.Event, location *time.Location) BabyEntryView {
 			view.Meta = append(view.Meta, strings.ToUpper(size[:1])+size[1:])
 		}
 	case carelog.Weight:
-		view.Kind = "note"
 		view.Title = "Weight"
 		view.Value = d["kg"] + " kg"
 	case carelog.Milestone:
-		view.Kind = "note"
 		view.Title = d["title"]
 	}
 	view.Who = whoLogged(e)
@@ -130,8 +131,11 @@ func babyEntry(e carelog.Event, location *time.Location) BabyEntryView {
 }
 
 func whoLogged(e carelog.Event) string {
-	if e.Source == "import" {
+	switch e.Source {
+	case "import":
 		return "Imported"
+	case "health":
+		return "From Health"
 	}
 	local, _, _ := strings.Cut(e.ActorEmail, "@")
 	return local
@@ -208,7 +212,7 @@ func babyLogView(person people.Person, events, weights []carelog.Event, now time
 			}
 		}
 		if !e.OccurredAt.Before(dayStart) {
-			x := strconv.FormatFloat(6+e.OccurredAt.Sub(dayStart).Hours()/24*308, 'f', 1, 64)
+			x := strconv.FormatFloat(12+e.OccurredAt.Sub(dayStart).Hours()/24*296, 'f', 1, 64)
 			switch e.Type {
 			case carelog.Feed:
 				view.Strip.Feeds = append(view.Strip.Feeds, x)
@@ -219,6 +223,9 @@ func babyLogView(person people.Person, events, weights []carelog.Event, now time
 		if !e.OccurredAt.Before(midnight) && e.Type != carelog.Weight && e.Type != carelog.Milestone {
 			view.Entries = append(view.Entries, babyEntry(e, location))
 		}
+	}
+	if len(view.Entries) > 6 {
+		view.Entries, view.EarlierEntries = view.Entries[:6], view.Entries[6:]
 	}
 	view.Strip.FeedsN, view.Strip.DiapersN = len(view.Strip.Feeds), len(view.Strip.Diapers)
 	view.Strip.Label = "Last 24 hours: " + plural(view.Strip.FeedsN, "feed", "feeds") + " and " + plural(view.Strip.DiapersN, "diaper", "diapers")
@@ -254,7 +261,7 @@ func babyLogView(person people.Person, events, weights []carelog.Event, now time
 		view.LatestWeight = weights[len(weights)-1].Details["kg"]
 	}
 	if len(weights) > 1 {
-		view.WeightPoints = weightPoints(weights)
+		view.WeightPoints, view.WeightDots = weightPoints(weights)
 	}
 	return view
 }
@@ -269,7 +276,7 @@ func firstNonEmpty(values ...string) string {
 }
 
 // weightPoints plots weights against time in a 240 by 84 box.
-func weightPoints(weights []carelog.Event) string {
+func weightPoints(weights []carelog.Event) (string, []HealthChartMarkerView) {
 	low, high := 1e9, -1e9
 	for _, w := range weights {
 		kg, _ := strconv.ParseFloat(w.Details["kg"], 64)
@@ -284,17 +291,20 @@ func weightPoints(weights []carelog.Event) string {
 		span = 1
 	}
 	points := make([]string, 0, len(weights))
+	var dots []HealthChartMarkerView
 	for _, w := range weights {
 		kg, _ := strconv.ParseFloat(w.Details["kg"], 64)
 		x := 8 + w.OccurredAt.Sub(start).Hours()/span*224
 		y := 76 - (kg-low)/(high-low)*64
-		points = append(points, strconv.FormatFloat(x, 'f', 1, 64)+","+strconv.FormatFloat(y, 'f', 1, 64))
+		px, py := strconv.FormatFloat(x, 'f', 1, 64), strconv.FormatFloat(y, 'f', 1, 64)
+		points = append(points, px+","+py)
+		dots = append(dots, HealthChartMarkerView{X: px, Y: py})
 	}
-	return strings.Join(points, " ")
+	return strings.Join(points, " "), dots
 }
 
 // loadBabyLog reads the log for a child's page.
-func (a *App) loadBabyLog(ctx context.Context, scope policy.ActorScope, person people.Person, now time.Time) BabyLogView {
+func (a *App) loadBabyLog(ctx context.Context, scope policy.ActorScope, person people.Person, now time.Time, extraWeights []carelog.Event) BabyLogView {
 	if a.carelog == nil || !showsBabyLog(person, now) {
 		return BabyLogView{}
 	}
@@ -304,6 +314,7 @@ func (a *App) loadBabyLog(ctx context.Context, scope policy.ActorScope, person p
 		return BabyLogView{Enabled: true, Error: "The baby log could not be read. Reload to try again."}
 	}
 	weights, _ := a.carelog.Weights(ctx, scope, person.ID)
+	weights = mergeWeights(weights, extraWeights)
 	view := babyLogView(person, events, weights, now)
 	milestones, _ := a.carelog.Milestones(ctx, scope, person.ID)
 	for _, m := range milestones {
@@ -560,6 +571,7 @@ type BabyPanelView struct {
 	Name, URL, SinceISO, LastLabel, TodayLine string
 	HasFeed, Running                          bool
 	SinceHours, SinceMinutes                  int
+	Strip                                     BabyStripView
 }
 
 func (a *App) babyPanels(ctx context.Context, scope policy.ActorScope) []BabyPanelView {
@@ -587,7 +599,56 @@ func (a *App) babyPanels(ctx context.Context, scope policy.ActorScope) []BabyPan
 				diapers++
 			}
 		}
-		panels = append(panels, BabyPanelView{Name: person.Name, URL: "/family/" + url.PathEscape(person.ID) + "#baby-log", SinceISO: log.SinceISO, LastLabel: log.LastLabel, HasFeed: log.HasFeed, Running: log.Running != nil, SinceHours: log.SinceHours, SinceMinutes: log.SinceMinutes, TodayLine: plural(log.Feeds, "feed", "feeds") + " and " + plural(diapers, "diaper", "diapers") + " today"})
+		panels = append(panels, BabyPanelView{Name: person.Name, URL: "/family/" + url.PathEscape(person.ID) + "#baby-log", SinceISO: log.SinceISO, LastLabel: log.LastLabel, HasFeed: log.HasFeed, Running: log.Running != nil, SinceHours: log.SinceHours, SinceMinutes: log.SinceMinutes, Strip: log.Strip, TodayLine: plural(log.Feeds, "feed", "feeds") + " and " + plural(diapers, "diaper", "diapers") + " today"})
 	}
 	return panels
+}
+
+// healthWeights turns Health weight readings in kg for one person into log
+// entries, so the child's page shows one weight list.
+func healthWeights(observations []health.Observation, name string) []carelog.Event {
+	var out []carelog.Event
+	for _, o := range observations {
+		if !strings.EqualFold(strings.TrimSpace(o.Subject), name) || health.CanonicalAnalyte(o.Analyte) != "Weight" || !strings.EqualFold(strings.TrimSpace(o.Unit), "kg") {
+			continue
+		}
+		day, ok := parseISODate(o.ObservedOn)
+		if !ok {
+			continue
+		}
+		out = append(out, carelog.Event{ID: "health-" + o.ID, Type: carelog.Weight, Source: "health", OccurredAt: day.Add(12 * time.Hour), Details: map[string]string{"kg": o.Value.PlainString()}})
+	}
+	return out
+}
+
+// mergeWeights adds Health readings that are not already logged on the same
+// day with the same value, keeping the list oldest first.
+func mergeWeights(logged, extra []carelog.Event) []carelog.Event {
+	seen := map[string]bool{}
+	key := func(e carelog.Event) string {
+		kg, _ := strconv.ParseFloat(e.Details["kg"], 64)
+		return e.OccurredAt.UTC().Format("2006-01-02") + "|" + strconv.FormatFloat(kg, 'f', 3, 64)
+	}
+	for _, e := range logged {
+		seen[key(e)] = true
+	}
+	out := append([]carelog.Event(nil), logged...)
+	for _, e := range extra {
+		if !seen[key(e)] {
+			seen[key(e)] = true
+			out = append(out, e)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].OccurredAt.Before(out[j].OccurredAt) })
+	return out
+}
+
+func withoutWeight(series []HealthSeriesView) []HealthSeriesView {
+	out := series[:0:0]
+	for _, s := range series {
+		if health.CanonicalAnalyte(s.Analyte) != "Weight" {
+			out = append(out, s)
+		}
+	}
+	return out
 }

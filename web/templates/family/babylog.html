@@ -2,7 +2,9 @@
 
 {{define "baby-hidden"}}<input type="hidden" name="csrf" value="{{.}}"><input type="hidden" name="client_id" value=""><input type="hidden" name="logged_at" value="">{{end}}
 
-{{define "baby-entry-row"}}<li><div class="row"><span class="mark mark-{{.Kind}}" aria-hidden="true">{{if eq .Kind "note"}}{{template "icon" "note"}}{{end}}</span><span><span class="row-title">{{.Title}}</span><span class="row-meta">{{range .Meta}}<span>{{.}}</span>{{end}}{{if .Who}}<span>{{.Who}}</span>{{end}}{{if .Note}}<span>{{.Note}}</span>{{end}}</span></span><span class="row-value">{{if .Value}}{{.Value}}<small><time datetime="{{.TimeISO}}">{{.DateLabel}}</time></small>{{else}}<time datetime="{{.TimeISO}}">{{.TimeLabel}}</time>{{end}}</span></div></li>{{end}}
+{{define "baby-entry-row"}}<li><div class="row"><span class="mark mark-{{.Kind}}" aria-hidden="true"></span><span><span class="row-title">{{.Title}}</span><span class="row-meta">{{range .Meta}}<span>{{.}}</span>{{end}}{{if .Who}}<span>{{.Who}}</span>{{end}}{{if .Note}}<span>{{.Note}}</span>{{end}}</span></span><span class="row-value">{{if .Value}}{{.Value}}<small><time datetime="{{.TimeISO}}">{{.DateLabel}}</time></small>{{else}}<time datetime="{{.TimeISO}}">{{.TimeLabel}}</time>{{end}}</span></div></li>{{end}}
+
+{{define "baby-today-row"}}<li><div class="row"><span class="mark mark-{{.Entry.Kind}}" aria-hidden="true"></span><span><span class="row-title">{{.Entry.Title}}</span><span class="row-meta">{{range .Entry.Meta}}<span>{{.}}</span>{{end}}{{if .Entry.Who}}<span>{{.Entry.Who}}</span>{{end}}{{if .Entry.Note}}<span>{{.Entry.Note}}</span>{{end}}</span></span><span class="row-value"><time datetime="{{.Entry.TimeISO}}">{{.Entry.TimeLabel}}</time><form method="post" action="{{.LogURL}}"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="delete"><input type="hidden" name="event" value="{{.Entry.ID}}"><button type="submit" class="link-button" aria-label="Remove {{.Entry.Title}} at {{.Entry.TimeLabel}}">Remove</button></form></span></div></li>{{end}}
 
 {{define "baby-log"}}{{$b := .Baby}}{{$csrf := .CSRF}}
 <section class="section baby-log" id="baby-log" aria-labelledby="baby-log-title" data-baby-log>
@@ -26,7 +28,7 @@
         <p class="since since-empty">No feeds logged</p>
         <p class="baby-hero-note">Feeds from the last seven days show here.</p>
         {{end}}
-        <svg class="baby-strip" viewBox="0 0 320 40" role="img" aria-label="{{$b.Strip.Label}}"><rect class="strip-bg" x="0" y="0" width="320" height="40" rx="10"></rect>{{range $b.Strip.Feeds}}<circle class="strip-feed" cx="{{.}}" cy="13" r="4"></circle>{{end}}{{range $b.Strip.Diapers}}<rect class="strip-diaper" x="{{.}}" y="24" width="7" height="7" rx="1.5"></rect>{{end}}</svg>
+        <svg class="baby-strip" viewBox="0 0 320 40" role="img" aria-label="{{$b.Strip.Label}}"><rect class="strip-bg" x="0" y="0" width="320" height="40" rx="10"></rect>{{range $b.Strip.Feeds}}<circle class="strip-feed" cx="{{.}}" cy="13" r="4.5"></circle>{{end}}{{range $b.Strip.Diapers}}<circle class="strip-diaper" cx="{{.}}" cy="28" r="3.5"></circle>{{end}}</svg>
         <p class="strip-axis" aria-hidden="true"><span>24 h ago</span><span>12 h</span><span>Now</span></p>
         <p class="strip-legend"><span class="legend-feed">Feeds</span><span class="legend-diaper">Diapers</span></p>
       </div>
@@ -34,8 +36,8 @@
       <div class="log-pad">
         <form method="post" action="{{$b.LogURL}}" class="log-card" data-care-form>{{template "baby-hidden" $csrf}}<input type="hidden" name="action" value="feed"><input type="hidden" name="mode" value="breast">
           <fieldset class="choice-chips"><legend>Breast feed</legend><label><input type="radio" name="side" value="left" checked><span>Left</span></label><label><input type="radio" name="side" value="right"><span>Right</span></label><label><input type="radio" name="side" value="both"><span>Both</span></label></fieldset>
-          <details class="log-more"><summary>Earlier time or minutes</summary><div class="field-grid"><label class="field"><span>Started at</span><input type="time" name="time"></label><label class="field"><span>Minutes, if finished</span><input type="number" name="duration_min" min="1" max="300" inputmode="numeric"></label></div></details>
-          <button type="submit" class="button button-feed button-block">{{if $b.Running}}Start another breast feed{{else}}Start breast feed{{end}}</button>
+          {{if $b.Running}}<p class="hint">A feed is running. Finish it above before starting another, or log a past feed with its minutes.</p><details class="log-more"><summary>Log a past feed</summary><div class="field-grid"><label class="field"><span>Started at</span><input type="time" name="time"></label><label class="field"><span>Minutes</span><input type="number" name="duration_min" min="1" max="300" inputmode="numeric" required></label></div><button type="submit" class="button button-block">Log past feed</button></details>{{else}}<details class="log-more"><summary>Earlier time or minutes</summary><div class="field-grid"><label class="field"><span>Started at</span><input type="time" name="time"></label><label class="field"><span>Minutes, if finished</span><input type="number" name="duration_min" min="1" max="300" inputmode="numeric"></label></div></details>
+          <button type="submit" class="button button-feed button-block">Start breast feed</button>{{end}}
         </form>
         <form method="post" action="{{$b.LogURL}}" class="log-card" data-care-form>{{template "baby-hidden" $csrf}}<input type="hidden" name="action" value="feed"><input type="hidden" name="mode" value="bottle">
           <fieldset class="choice-chips"><legend>Bottle</legend><label><input type="radio" name="milk_type" value="formula" checked><span>Formula</span></label><label><input type="radio" name="milk_type" value="expressed"><span>Expressed</span></label></fieldset>
@@ -62,7 +64,8 @@
         <div class="tile tile-dirty"><span>Dirty</span><b>{{$b.Dirty}}</b></div>
         <div class="tile tile-spit"><span>Spit-ups</span><b>{{$b.SpitUps}}</b></div>
       </div>
-      {{if $b.Entries}}<ul class="rows baby-entries" role="list">{{range $b.Entries}}<li><div class="row"><span class="mark mark-{{.Kind}}" aria-hidden="true"></span><span><span class="row-title">{{.Title}}</span><span class="row-meta">{{range .Meta}}<span>{{.}}</span>{{end}}{{if .Who}}<span>{{.Who}}</span>{{end}}{{if .Note}}<span>{{.Note}}</span>{{end}}</span></span><span class="row-value"><time datetime="{{.TimeISO}}">{{.TimeLabel}}</time><form method="post" action="{{$b.LogURL}}"><input type="hidden" name="csrf" value="{{$csrf}}"><input type="hidden" name="action" value="delete"><input type="hidden" name="event" value="{{.ID}}"><button type="submit" class="link-button" aria-label="Remove {{.Title}} at {{.TimeLabel}}">Remove</button></form></span></div></li>{{end}}</ul>
+      {{if $b.Entries}}<ul class="rows baby-entries" role="list">{{range $b.Entries}}{{template "baby-today-row" (babyRow . $b.LogURL $csrf)}}{{end}}</ul>
+      {{if $b.EarlierEntries}}<details class="entry-details"><summary class="button button-small">Earlier today, {{len $b.EarlierEntries}} more</summary><ul class="rows baby-entries" role="list">{{range $b.EarlierEntries}}{{template "baby-today-row" (babyRow . $b.LogURL $csrf)}}{{end}}</ul></details>{{end}}
       {{else}}<p class="quiet">Nothing logged since midnight.</p>{{end}}
     </div>
 
@@ -76,13 +79,13 @@
 
       <section class="baby-block" id="baby-weights" aria-labelledby="baby-weights-title">
         <div class="section-head"><h3 id="baby-weights-title">Weight</h3></div>
-        {{if $b.LatestWeight}}<div class="card"><span class="card-head">Latest</span><span class="card-value">{{$b.LatestWeight}}<small>kg</small></span>{{if $b.WeightPoints}}<svg class="spark" viewBox="0 0 240 84" role="img" aria-label="Weight over time, {{len $b.Weights}} entries"><polyline class="spark-line" points="{{$b.WeightPoints}}"></polyline></svg>{{end}}<span class="card-foot">{{with index $b.Weights 0}}Logged {{.DateLabel}}{{end}}{{if gt (len $b.Weights) 1}}, {{len $b.Weights}} weights in all{{end}}</span></div>
+        {{if $b.LatestWeight}}<div class="card"><span class="card-head">Latest</span><span class="card-value">{{$b.LatestWeight}}<small>kg</small></span>{{if $b.WeightPoints}}<svg class="spark" viewBox="0 0 240 84" role="img" aria-label="Weight over time, {{len $b.Weights}} entries"><polyline class="spark-line" points="{{$b.WeightPoints}}"></polyline>{{range $b.WeightDots}}<circle class="spark-dot" cx="{{.X}}" cy="{{.Y}}" r="3"></circle>{{end}}</svg>{{end}}<span class="card-foot">{{with index $b.Weights 0}}Logged {{.DateLabel}}{{end}}{{if gt (len $b.Weights) 1}}, {{len $b.Weights}} weights in all{{end}}</span></div>
         <ul class="rows" role="list">{{range $i, $w := $b.Weights}}{{if lt $i 6}}{{template "baby-entry-row" $w}}{{end}}{{end}}</ul>
         {{else}}<p class="quiet">No weights logged yet.</p>{{end}}
         <details class="entry-details"><summary class="button button-small">Log a weight</summary>
           <form method="post" action="{{$b.LogURL}}" class="field-grid entry-form" data-care-form>{{template "baby-hidden" $csrf}}<input type="hidden" name="action" value="weight"><label class="field"><span>Weight, kg</span><input type="number" name="kg" min="0.01" max="100" step="0.001" inputmode="decimal" required></label><label class="field"><span>Date</span><input type="date" name="date"></label><div class="row-actions"><button type="submit">Save weight</button></div></form>
         </details>
-        <details class="entry-details"><summary class="button button-small button-quiet">Import weights from TinyTots</summary>
+        <details class="entry-details"><summary class="button button-small">Import weights from TinyTots</summary>
           <form method="post" action="{{$b.LogURL}}" enctype="multipart/form-data" class="stack entry-form"><input type="hidden" name="csrf" value="{{$csrf}}"><input type="hidden" name="action" value="import_weights"><label class="field"><span>TinyTots CSV export</span><input type="file" name="file" accept=".csv,text/csv" required></label><p class="hint">Only weight rows are added. Feeds, diapers and other rows in the file are skipped. Importing the same file again adds nothing new.</p><div class="row-actions"><button type="submit">Import weights</button></div></form>
         </details>
       </section>

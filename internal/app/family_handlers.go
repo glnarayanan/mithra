@@ -220,12 +220,6 @@ func (a *App) familyPerson(w http.ResponseWriter, r *http.Request) {
 func (a *App) renderPerson(ctx context.Context, w http.ResponseWriter, r *http.Request, scope policy.ActorScope, csrf string, person people.Person, status, problem string, code int) {
 	now := a.householdNow(ctx, scope)
 	view := PersonView{Navigation: navigationForPath("/family/"), CSRF: csrf, Status: status, Relationships: relationshipOptions(person.Relationship)}
-	view.Baby = a.loadBabyLog(ctx, scope, person, now)
-	if problem != "" {
-		view.Baby.Error = problem
-	} else if view.Baby.Enabled {
-		view.Baby.Undo, view.Status = a.babyUndo(ctx, scope, person, r.URL.Query(), view.Status)
-	}
 	view.Catalog = healthCatalogOptions()
 	if log, err := a.healthRecords.CareLogFor(ctx, scope, person.Name, now.AddDate(0, 0, -6).Format("2006-01-02")); err == nil {
 		view.Care = careView(log, now, false)
@@ -236,6 +230,16 @@ func (a *App) renderPerson(ctx context.Context, w http.ResponseWriter, r *http.R
 		if view.Health.Person != person.Name {
 			view.Health = HealthView{}
 		}
+	}
+	view.Baby = a.loadBabyLog(ctx, scope, person, now, healthWeights(summary.Observations, person.Name))
+	if view.Baby.Enabled {
+		// The baby log's Weight list already holds these readings.
+		view.Health.Series = withoutWeight(view.Health.Series)
+	}
+	if problem != "" {
+		view.Baby.Error = problem
+	} else if view.Baby.Enabled {
+		view.Baby.Undo, view.Status = a.babyUndo(ctx, scope, person, r.URL.Query(), view.Status)
 	}
 	view.Person = familyPersonView(person, now, len(view.Health.Records))
 	rendered := newBufferedResponse(maxResponseBodyBytes)

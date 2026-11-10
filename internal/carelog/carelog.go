@@ -215,6 +215,13 @@ func (s *Service) Create(ctx context.Context, actor policy.ActorScope, personID 
 	if err := s.visiblePerson(ctx, actor, personID); err != nil {
 		return Event{}, err
 	}
+	if details["running"] == "yes" {
+		var running int
+		_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM care_events WHERE household_id=? AND person_id=? AND type='feed' AND ended_at='' AND deleted_at='' AND json_extract(details_json,'$.running')='yes' AND client_id<>?`, actor.HouseholdID, personID, in.ClientID).Scan(&running)
+		if running > 0 {
+			return Event{}, &InputError{"A feed is already running. Finish it before starting another."}
+		}
+	}
 	id, err := newID()
 	if err != nil {
 		return Event{}, err

@@ -57,6 +57,9 @@ func TestBabyLogOnChildPage(t *testing.T) {
 	if len(events) != 1 || !events[0].Running() {
 		t.Fatalf("events=%#v", events)
 	}
+	if second := post(url.Values{"action": {"feed"}, "mode": {"breast"}, "side": {"right"}, "client_id": {"phone-b"}}); second.Code != http.StatusBadRequest || !strings.Contains(second.Body.String(), "A feed is already running") {
+		t.Fatalf("overlapping feed status=%d", second.Code)
+	}
 	if response := post(url.Values{"action": {"finish"}, "event": {events[0].ID}}); response.Code != http.StatusSeeOther {
 		t.Fatalf("finish status=%d", response.Code)
 	}

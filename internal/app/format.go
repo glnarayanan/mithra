@@ -90,6 +90,12 @@ func groupDigits(value string) string {
 	return sign + grouped.String()
 }
 
+// BabyRow pairs a baby log entry with the form details its Remove needs.
+type BabyRow struct {
+	Entry        BabyEntryView
+	LogURL, CSRF string
+}
+
 // FinanceRecordRow pairs a record with the CSRF token its forms need.
 type FinanceRecordRow struct {
 	Record FinanceRecordView
@@ -124,6 +130,9 @@ type HealthEntryForm struct {
 }
 
 var templateFuncs = template.FuncMap{
+	"babyRow": func(entry BabyEntryView, logURL, csrf string) BabyRow {
+		return BabyRow{Entry: entry, LogURL: logURL, CSRF: csrf}
+	},
 	"careBlock": func(care CareView, form HealthEntryForm) CareBlock { return CareBlock{Care: care, Form: form} },
 	"entryForm": func(csrf, back, subject string, subjects []string, catalog []HealthCatalogOption) HealthEntryForm {
 		return HealthEntryForm{CSRF: csrf, Return: back, Subject: subject, Subjects: subjects, Catalog: catalog}
