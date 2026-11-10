@@ -559,7 +559,7 @@ func (a *App) notFound(w http.ResponseWriter, r *http.Request, title, copy, back
 	}
 	view := NotFoundView{Title: title, Copy: copy, BackURL: backURL, BackLabel: backLabel}
 	if _, csrf, ok := a.authenticated(r); ok {
-		view.Navigation, view.CSRF = navigationForPath(backURL), csrf
+		view.Navigation, view.CSRF = navigationForPath(""), csrf
 	}
 	rendered := newBufferedResponse(maxResponseBodyBytes)
 	if err := a.templates.ExecuteTemplate(rendered, "notfound.html", view); err != nil || rendered.overflow {

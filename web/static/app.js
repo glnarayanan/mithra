@@ -121,7 +121,11 @@
       if (dialog.open) return;
       previousFocus = invoker || root.activeElement || triggers[0];
       dialog.showModal();
-      textarea.focus();
+      // On a touch screen, keep the keyboard closed so the quick baby buttons
+      // stay in view; focus the sheet's title instead of the text box.
+      var title = dialog.querySelector("#quick-capture-title");
+      var touch = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+      if (touch && title) title.focus(); else textarea.focus();
     }
     Array.prototype.forEach.call(triggers, function (trigger) {
       trigger.addEventListener("click", function (event) { if (event && typeof event.preventDefault === "function") event.preventDefault(); openDialog(trigger); });
@@ -266,10 +270,35 @@
       }
     }
 
+    // Young children get their own destinations: their page, and straight
+    // to logging a feed or a weight. Fetched once, the first time it opens.
+    var peopleLoaded = false;
+    function loadPeople() {
+      if (peopleLoaded || typeof global.fetch !== "function") return;
+      peopleLoaded = true;
+      global.fetch("/family/quick", { credentials: "same-origin", headers: { Accept: "application/json" } })
+        .then(function (response) { return response.ok ? response.json() : []; })
+        .then(function (babies) {
+          (babies || []).forEach(function (baby) {
+            if (!baby || !baby.name || !baby.pageUrl || baby.pageUrl.charAt(0) !== "/") return;
+            var page = baby.pageUrl.split("#")[0];
+            destinations.push({ label: baby.name, path: page });
+            destinations.push({ label: "Log a feed for " + baby.name, path: page + "#baby-log" });
+            destinations.push({ label: "Log a weight for " + baby.name, path: page + "#baby-weights" });
+          });
+          if (dialog.open) {
+            filtered = filterQuickNavigation(destinations, search.value);
+            renderResults();
+          }
+        })
+        .catch(function () { /* offline: the page list is enough */ });
+    }
+
     function openPalette() {
       if (dialog.open || typeof dialog.showModal !== "function") {
         return;
       }
+      loadPeople();
       filtered = destinations.slice();
       activeIndex = 0;
       previousFocus = root.activeElement;

@@ -11,7 +11,7 @@
 {{if $e.Details.milk_type}}<label class="field"><span>Bottle</span><select name="milk_type"><option value="formula"{{if eq $e.Details.milk_type "formula"}} selected{{end}}>Formula</option><option value="expressed"{{if eq $e.Details.milk_type "expressed"}} selected{{end}}>Expressed</option></select></label><label class="field"><span>Offered, ml</span><input type="number" name="offered_ml" min="1" max="500" inputmode="numeric" value="{{$e.Details.offered_ml}}"></label><label class="field"><span>Taken, ml</span><input type="number" name="consumed_ml" min="0" max="500" inputmode="numeric" value="{{$e.Details.consumed_ml}}"></label>{{end}}{{end}}
 {{if eq $e.Type "diaper"}}<label class="field"><span>Diaper</span><select name="kind"><option value="wet"{{if eq $e.Details.kind "wet"}} selected{{end}}>Wet</option><option value="dirty"{{if eq $e.Details.kind "dirty"}} selected{{end}}>Dirty</option><option value="both"{{if eq $e.Details.kind "both"}} selected{{end}}>Wet and dirty</option></select></label>{{end}}
 {{if eq $e.Type "spitup"}}<label class="field"><span>Size</span><select name="size"><option value="small"{{if eq $e.Details.size "small"}} selected{{end}}>Small</option><option value="medium"{{if eq $e.Details.size "medium"}} selected{{end}}>Medium</option><option value="large"{{if eq $e.Details.size "large"}} selected{{end}}>Large</option></select></label>{{end}}
-</div><div class="entry-edit-actions"><button type="submit" class="button button-small">Save changes</button><button type="submit" form="remove-{{$e.ID}}" class="link-button" aria-label="Remove {{$e.Title}} at {{$e.TimeLabel}}">Remove</button></div></form>
+</div><div class="entry-edit-actions"><button type="submit" class="button button-feed button-small">Save changes</button><button type="submit" form="remove-{{$e.ID}}" class="link-button" aria-label="Remove {{$e.Title}} at {{$e.TimeLabel}}">Remove</button></div></form>
 <form method="post" action="{{.LogURL}}" id="remove-{{$e.ID}}" class="entry-remove"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="delete"><input type="hidden" name="event" value="{{$e.ID}}"></form></div></details></li>{{end}}
 
 {{define "baby-sides"}}<fieldset class="choice-chips"><legend>Breast feed</legend><label><input type="radio" name="side" value="left"{{if eq .NextSide "left"}} checked{{end}}><span>Left</span></label><label><input type="radio" name="side" value="right"{{if eq .NextSide "right"}} checked{{end}}><span>Right</span></label><label><input type="radio" name="side" value="both"{{if eq .NextSide "both"}} checked{{end}}><span>Both</span></label></fieldset>{{if .LastSide}}<p class="hint">Last feed: {{if eq .LastSide "both"}}both sides{{else}}{{.LastSide}}{{end}}</p>{{end}}{{end}}
@@ -37,8 +37,8 @@
         <p class="baby-hero-note">{{$b.LastLabel}}</p>
         {{else}}
         <p class="baby-hero-label">Since the last feed started</p>
-        <p class="since since-empty">No feeds logged</p>
-        <p class="baby-hero-note">Feeds from the last seven days show here.</p>
+        <p class="since since-empty">No feeds logged yet</p>
+        <p class="baby-hero-note">Log the first one below, or from Add on any page. TinyTots weights can be imported under Weights.</p>
         {{end}}
         <svg class="baby-strip" viewBox="0 0 320 40" role="img" aria-label="{{$b.Strip.Label}}"><rect class="strip-bg" x="0" y="0" width="320" height="40" rx="10"></rect>{{if $b.RunningX}}<line class="strip-running" x1="{{$b.RunningX}}" y1="13" x2="308" y2="13"></line>{{end}}{{range $b.Strip.Feeds}}<circle class="strip-feed" cx="{{.}}" cy="13" r="4.5"></circle>{{end}}{{range $b.Strip.Diapers}}<circle class="strip-diaper" cx="{{.}}" cy="28" r="3.5"></circle>{{end}}</svg>
         <p class="strip-axis" aria-hidden="true"><span>24 h ago</span><span>12 h</span><span>Now</span></p>

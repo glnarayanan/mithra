@@ -624,6 +624,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .event-time { color: var(--muted); font-variant-numeric: tabular-nums; }
 .calendar-day-number { min-width: 1.75rem; min-height: 1.75rem; display: inline-grid; place-items: center; justify-self: start; border-radius: 50%; color: inherit; text-decoration: none; }
 .agenda-event .event-actions { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; align-items: center; font-size: 0.875rem; padding: 0 0.4rem 0.85rem 3.15rem; }
+.agenda-event .event-actions > a, .agenda-event .event-actions > button, .agenda-event .event-actions form > button { min-height: var(--tap); display: inline-flex; align-items: center; }
 .empty-quiet h3 { font-size: 1.05rem; }
 .plan-list { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); margin-top: 1rem; }
 .plan { background: var(--paper); border-radius: var(--radius-card); box-shadow: var(--ring-shadow); padding: 1rem 1.1rem; display: grid; gap: 0.6rem; align-content: start; }
@@ -793,4 +794,4 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .quick-baby-name a { color: var(--ink); text-decoration: none; }
 .quick-baby-name a:hover { text-decoration: underline; }
 .quick-baby-actions { display: grid; grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr)); gap: 0.4rem; }
-.quick-baby-actions .button { min-height: 3rem; }
+.quick-baby-actions .button { min-height: 3rem; white-space: nowrap; }

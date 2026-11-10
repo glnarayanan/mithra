@@ -430,7 +430,7 @@ func (a *App) familyLog(w http.ResponseWriter, r *http.Request, scope policy.Act
 			fail(err)
 			return
 		}
-		http.Redirect(w, r, back+"?logged="+url.QueryEscape(eventID)+"#baby-log", http.StatusSeeOther)
+		http.Redirect(w, r, back+"?logged="+url.QueryEscape(eventID), http.StatusSeeOther)
 	case "edit":
 		at, err := entryTime(r, now)
 		if err != nil {
@@ -447,19 +447,19 @@ func (a *App) familyLog(w http.ResponseWriter, r *http.Request, scope policy.Act
 			fail(err)
 			return
 		}
-		http.Redirect(w, r, back+"?changed="+url.QueryEscape(eventID)+"#baby-log", http.StatusSeeOther)
+		http.Redirect(w, r, back+"?changed="+url.QueryEscape(eventID), http.StatusSeeOther)
 	case "delete":
 		if err := a.carelog.Delete(r.Context(), scope, person.ID, eventID); err != nil {
 			fail(err)
 			return
 		}
-		http.Redirect(w, r, back+"?removed="+url.QueryEscape(eventID)+"#baby-log", http.StatusSeeOther)
+		http.Redirect(w, r, back+"?removed="+url.QueryEscape(eventID), http.StatusSeeOther)
 	case "restore":
 		if err := a.carelog.Restore(r.Context(), scope, person.ID, eventID); err != nil {
 			fail(err)
 			return
 		}
-		http.Redirect(w, r, back+"?logged="+url.QueryEscape(eventID)+"#baby-log", http.StatusSeeOther)
+		http.Redirect(w, r, back+"?logged="+url.QueryEscape(eventID), http.StatusSeeOther)
 	case "import_weights":
 		result, err := a.importWeights(r, scope, person.ID, now.Location())
 		if err != nil {
@@ -482,11 +482,9 @@ func (a *App) familyLog(w http.ResponseWriter, r *http.Request, scope policy.Act
 			fail(err)
 			return
 		}
-		anchor := "#baby-log"
-		if action == carelog.Weight || action == carelog.Milestone {
-			anchor = "#baby-weights"
-		}
-		http.Redirect(w, r, back+"?logged="+url.QueryEscape(event.ID)+anchor, http.StatusSeeOther)
+		// No fragment: the page script moves focus to the status message, and a
+		// fragment would pull focus back to the page.
+		http.Redirect(w, r, back+"?logged="+url.QueryEscape(event.ID), http.StatusSeeOther)
 	default:
 		fail(&carelog.InputError{Message: "Choose what to log."})
 	}

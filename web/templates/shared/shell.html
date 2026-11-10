@@ -21,7 +21,7 @@
 <div data-app-shell>
   <header class="topbar">
     <a class="brand" href="/" aria-label="Mithra home"><span class="brand-mark" aria-hidden="true"></span><span>Mithra</span></a>
-    <nav class="tabs" aria-label="Primary navigation"><ul role="list">{{range .Navigation}}{{if not .Utility}}<li><a href="{{.Path}}" data-quick-destination{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a></li>{{end}}{{end}}</ul><ul class="quick-only" role="list" hidden>{{range .Navigation}}{{if .Utility}}<li><a href="{{.Path}}" data-quick-destination>{{.Label}}</a></li>{{end}}{{end}}</ul></nav>
+    <nav class="tabs" aria-label="Primary navigation"><ul role="list">{{range .Navigation}}{{if not .Utility}}<li><a href="{{.Path}}" data-quick-destination{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a></li>{{end}}{{end}}</ul><ul class="quick-only" role="list" hidden>{{range .Navigation}}{{if .Utility}}<li><a href="{{.Path}}" data-quick-destination>{{.Label}}</a></li>{{end}}{{end}}<li><a href="/family#add-person-title" data-quick-destination>Add someone to Family</a></li></ul></nav>
     <div class="topbar-tools">
       <div class="search-mount" data-quick-navigation-mount></div>
       <a class="button button-primary add-trigger" href="/capture" data-quick-capture-trigger aria-haspopup="dialog" aria-controls="quick-capture" aria-keyshortcuts="Q">{{template "icon" "plus"}}<span>Add</span></a>
@@ -44,7 +44,7 @@
   </nav>
   <dialog id="quick-capture" class="sheet" aria-labelledby="quick-capture-title">
     <div class="sheet-body">
-      <div class="sheet-head"><h2 id="quick-capture-title">Add</h2><button type="button" class="icon-button" data-quick-capture-close aria-label="Close">×</button></div>
+      <div class="sheet-head"><h2 id="quick-capture-title" tabindex="-1">Add</h2><button type="button" class="icon-button" data-quick-capture-close aria-label="Close">×</button></div>
       <div class="quick-baby" data-quick-baby hidden></div>
       <form method="post" action="/capture" class="stack" data-capture-composer>
         <input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="text">

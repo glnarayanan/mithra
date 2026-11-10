@@ -30,23 +30,48 @@
   }
 
   // Check a bottle before it is sent: an amount is needed, and taken
-  // cannot be more than offered.
+  // cannot be more than offered. The message uses the same inline style the
+  // server uses, so the error looks the same either way.
   log.querySelectorAll("form[data-bottle-form]").forEach((form) => {
     const offered = form.querySelector("[data-offered]");
     const taken = form.querySelector("[data-taken]");
     if (!offered || !taken) return;
-    const check = () => {
-      let problem = "";
-      if (offered.value === "" && taken.value === "") problem = "Enter how much was offered or taken, in ml.";
-      else if (offered.value !== "" && taken.value !== "" && Number(taken.value) > Number(offered.value)) problem = "Taken can’t be more than offered.";
-      taken.setCustomValidity(problem);
-      if (problem) taken.setAttribute("aria-invalid", "true"); else taken.removeAttribute("aria-invalid");
+    const problem = () => {
+      if (offered.value === "" && taken.value === "") return "Enter how much was offered or taken, in ml.";
+      if (offered.value !== "" && taken.value !== "" && Number(taken.value) > Number(offered.value)) return "Taken can’t be more than offered. Lower one of them.";
+      return "";
     };
-    offered.addEventListener("input", check);
-    taken.addEventListener("input", check);
+    const show = (message) => {
+      let note = form.querySelector("#baby-error-bottle");
+      if (!message) {
+        if (note) note.remove();
+        taken.removeAttribute("aria-invalid");
+        taken.removeAttribute("aria-describedby");
+        return;
+      }
+      if (!note) {
+        note = document.createElement("p");
+        note.className = "field-error";
+        note.id = "baby-error-bottle";
+        note.setAttribute("role", "alert");
+        note.tabIndex = -1;
+        const submit = form.querySelector('button[type="submit"]');
+        form.insertBefore(note, submit);
+      }
+      note.textContent = message;
+      taken.setAttribute("aria-invalid", "true");
+      taken.setAttribute("aria-describedby", "baby-error-bottle");
+      return note;
+    };
+    const recheck = () => { if (form.querySelector("#baby-error-bottle")) show(problem()); };
+    offered.addEventListener("input", recheck);
+    taken.addEventListener("input", recheck);
     form.addEventListener("submit", (event) => {
-      check();
-      if (!form.checkValidity()) { event.preventDefault(); event.stopImmediatePropagation(); taken.reportValidity(); }
+      const message = problem();
+      if (!message) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      show(message).focus();
     }, true);
   });
 

@@ -50,8 +50,10 @@
       if (baby.running) {
         actions.appendChild(button("Finish feed", "button button-feed", () => post(baby.logUrl, { action: "finish", event: baby.running })));
       } else {
-        const side = baby.nextSide === "right" ? "Right" : baby.nextSide === "both" ? "Both sides" : "Left";
-        actions.appendChild(button("Start feed, " + side.toLowerCase(), "button button-feed", () => post(baby.logUrl, { action: "feed", mode: "breast", side: baby.nextSide || "left" })));
+        const side = baby.nextSide === "right" ? "right" : baby.nextSide === "both" ? "both" : "left";
+        const start = button("Feed, " + side, "button button-feed", () => post(baby.logUrl, { action: "feed", mode: "breast", side }));
+        start.setAttribute("aria-label", "Start breast feed, " + (side === "both" ? "both sides" : side + " side"));
+        actions.appendChild(start);
       }
       actions.appendChild(button("Wet", "button", () => post(baby.logUrl, { action: "diaper", kind: "wet" })));
       actions.appendChild(button("Dirty", "button", () => post(baby.logUrl, { action: "diaper", kind: "dirty" })));
