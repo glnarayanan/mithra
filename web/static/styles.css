@@ -497,6 +497,8 @@ dialog::backdrop { background: var(--scrim); backdrop-filter: blur(3px); }
 /* Baby log: a navy hero, a log pad with the mustard feed button, today's tiles and the timeline */
 .baby-panel, .baby-hero { background: var(--navy); color: var(--on-dark); border-radius: var(--radius-panel); padding: 1.15rem 1.3rem; display: grid; gap: 0.5rem; }
 :root[data-theme="night"] :is(.baby-panel, .baby-hero) { background: var(--navy-raised); box-shadow: inset 0 0 0 1px var(--line); }
+:root[data-theme="night"] .tile-feed { background: var(--surface); box-shadow: inset 0 2px 0 var(--mustard); }
+:root[data-theme="night"] :is(.mark-baby, .mark-diaper) { background: var(--surface); }
 .baby-log { display: grid; gap: 1rem; }
 .baby-panels { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); margin-top: 0; }
 .baby-panel p { margin: 0; }
@@ -505,6 +507,8 @@ dialog::backdrop { background: var(--scrim); backdrop-filter: blur(3px); }
   .baby-panels { grid-template-columns: minmax(0, 1fr); }
   .baby-panel { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); column-gap: 2rem; }
   .baby-panel-strip { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+  .baby-panel-head { justify-content: flex-start; }
+  .baby-panel-count { display: none; }
 }
 .baby-panel-head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem 1rem; flex-wrap: wrap; font-size: 0.875rem; color: var(--on-dark-muted); }
 .baby-panel-name { display: inline-flex; align-items: center; gap: 0.5rem; color: var(--on-dark); font: 600 1rem var(--display); }
@@ -524,7 +528,11 @@ dialog::backdrop { background: var(--scrim); backdrop-filter: blur(3px); }
 .strip-feed { fill: var(--mustard); }
 .strip-diaper { fill: none; stroke: var(--mustard); stroke-width: 2; }
 .strip-axis, .strip-legend { display: flex; justify-content: space-between; gap: 0.75rem; font-size: 0.75rem; color: var(--on-dark-muted); }
-.strip-legend { justify-content: flex-start; }
+.strip-legend { justify-content: flex-start; flex-wrap: wrap; }
+.strip-legend-count { margin-left: auto; }
+.strip-legend-count::before { display: none; }
+.baby-panel .strip-legend-count { display: none; }
+@media (min-width: 64rem) { .baby-panel .strip-legend-count { display: inline-flex; } }
 .strip-legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
 .strip-legend span::before { content: ""; width: 0.55rem; height: 0.55rem; }
 .legend-feed::before { border-radius: 50%; background: var(--mustard); }
@@ -557,7 +565,7 @@ dialog::backdrop { background: var(--scrim); backdrop-filter: blur(3px); }
 .tile b { font: 500 1.65rem/1.1 var(--display); font-variant-numeric: tabular-nums; }
 .tile small { color: var(--muted); font-size: 0.75rem; }
 .tile-feed { background: var(--mustard-wash); }
-.baby-entries .row-value { display: grid; justify-items: end; gap: 0.1rem; }
+.baby-entries .row-value { display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; }
 .baby-entries .link-button { font-size: 0.8125rem; font-weight: 500; min-height: var(--tap); color: var(--muted); }
 .baby-entries .link-button:hover, .baby-entries .link-button:focus-visible { color: var(--link); }
 .baby-entries .row { padding-block: 0.3rem; }
@@ -739,6 +747,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   :root:not([data-theme="day"]) .panel-week { box-shadow: inset 0 2px 0 var(--mustard), inset 0 0 0 1px var(--line); }
   :root:not([data-theme="day"]) .week { box-shadow: inset 0 2px 0 var(--mustard), inset 0 0 0 1px var(--line); }
   :root:not([data-theme="day"]) :is(.baby-panel, .baby-hero) { background: var(--navy-raised); box-shadow: inset 0 0 0 1px var(--line); }
+  :root:not([data-theme="day"]) .tile-feed { background: var(--surface); box-shadow: inset 0 2px 0 var(--mustard); }
+  :root:not([data-theme="day"]) :is(.mark-baby, .mark-diaper) { background: var(--surface); }
 }
 @media (max-width: 47.99rem) { .calendar-view-switch { display: none; } }
 
