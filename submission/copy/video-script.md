@@ -1,8 +1,7 @@
 # Mithra Build Week video script
 
 **Target runtime:** 2:40. No music. Narration uses the macOS Samantha voice at
-138 words per minute. Captions are burned into the composition from
-`tools/demo-video/public/captions.json`.
+138 words per minute. Captions are burned into the render.
 
 ## 0:00–0:15 — Problem and proposition
 

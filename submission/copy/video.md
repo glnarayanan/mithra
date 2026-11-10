@@ -6,16 +6,11 @@ It is a 160-second, 1920 × 1080 H.264/AAC MP4 with spoken macOS narration and
 burned-in captions. It uses no music, stock media, credentials, or personal
 data.
 
-The Remotion source lives in `tools/demo-video`. From that directory:
-
-```bash
-npm run lint
-npx remotion render src/index.ts MithraBuildWeekDemo ../../submission/video/mithra-build-week-demo.mp4
-```
-
-The screenshots in `tools/demo-video/public/screens/` are the final clean Owner
-and Partner captures. The privacy scene uses the two distinct Week in Review
-views.
+The video was rendered with Remotion from `tools/demo-video`. That source was
+removed after the submission, because the rendered file is final and its npm
+dependencies kept drawing security advisories. It remains in the Git history
+before the removal commit if the video ever needs to be rendered again. The
+privacy scene uses the two distinct Week in Review views.
 
 The narration and captions cover the problem, product overview, Week in
 Review, private health safety, Codex and GPT-5.6 collaboration, and the hosted
