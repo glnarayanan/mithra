@@ -147,7 +147,7 @@ func (c *ModelClient) StructuredWithPDF(ctx context.Context, input StructuredReq
 	if json.Unmarshal(input.Schema, &schema) != nil {
 		return nil, ErrInvalidResponse
 	}
-	payload, err := json.Marshal(map[string]any{"model": c.config.Model, "instructions": input.Instructions, "store": false, "max_output_tokens": input.MaxOutputTokens,
+	payload, err := json.Marshal(map[string]any{"model": c.config.Model, "instructions": input.Instructions, "store": false, "max_output_tokens": outputBudget(input.MaxOutputTokens),
 		"input": []any{map[string]any{"role": "user", "content": []any{map[string]any{"type": "input_text", "text": input.Input}, map[string]any{"type": "input_file", "filename": "document.pdf", "file_data": "data:application/pdf;base64," + base64.StdEncoding.EncodeToString(pdf)}}}},
 		"text":  map[string]any{"format": map[string]any{"type": "json_schema", "name": input.SchemaName, "strict": true, "schema": schema}}})
 	if err != nil {
@@ -197,7 +197,7 @@ func (c *ModelClient) Transcribe(ctx context.Context, format string, audio []byt
 }
 
 func (c *ModelClient) responses(ctx context.Context, input StructuredRequest, schema any) (json.RawMessage, error) {
-	payload, err := json.Marshal(map[string]any{"model": c.config.Model, "instructions": input.Instructions, "input": input.Input, "store": false, "max_output_tokens": input.MaxOutputTokens, "text": map[string]any{"format": map[string]any{"type": "json_schema", "name": input.SchemaName, "strict": true, "schema": schema}}})
+	payload, err := json.Marshal(map[string]any{"model": c.config.Model, "instructions": input.Instructions, "input": input.Input, "store": false, "max_output_tokens": outputBudget(input.MaxOutputTokens), "text": map[string]any{"format": map[string]any{"type": "json_schema", "name": input.SchemaName, "strict": true, "schema": schema}}})
 	if err != nil {
 		return nil, ErrInvalidResponse
 	}
@@ -254,7 +254,7 @@ func (c *ModelClient) responsesPost(ctx context.Context, payload []byte) (json.R
 }
 
 func (c *ModelClient) openAICompatible(ctx context.Context, input StructuredRequest, schema any) (json.RawMessage, error) {
-	payload, err := json.Marshal(map[string]any{"model": c.config.Model, "messages": []map[string]string{{"role": "system", "content": schemaInstructions(input.Instructions, schema)}, {"role": "user", "content": input.Input}}, "max_tokens": input.MaxOutputTokens})
+	payload, err := json.Marshal(map[string]any{"model": c.config.Model, "messages": []map[string]string{{"role": "system", "content": schemaInstructions(input.Instructions, schema)}, {"role": "user", "content": input.Input}}, "max_tokens": outputBudget(input.MaxOutputTokens)})
 	if err != nil {
 		return nil, ErrInvalidResponse
 	}
@@ -273,7 +273,8 @@ func (c *ModelClient) openAICompatible(ctx context.Context, input StructuredRequ
 	var decoded struct {
 		Choices []struct {
 			Message struct {
-				Content string `json:"content"`
+				Content json.RawMessage `json:"content"`
+				Refusal string          `json:"refusal"`
 			} `json:"message"`
 			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
@@ -281,17 +282,48 @@ func (c *ModelClient) openAICompatible(ctx context.Context, input StructuredRequ
 	if json.Unmarshal(body, &decoded) != nil || len(decoded.Choices) != 1 {
 		return nil, ErrInvalidResponse
 	}
-	if decoded.Choices[0].FinishReason == "content_filter" {
+	choice := decoded.Choices[0]
+	if choice.FinishReason == "content_filter" || strings.TrimSpace(choice.Message.Refusal) != "" {
 		return nil, ErrRefusal
 	}
-	if decoded.Choices[0].FinishReason == "length" {
+	if choice.FinishReason == "length" {
 		return nil, ErrIncomplete
 	}
-	return boundedJSON(decoded.Choices[0].Message.Content)
+	text, ok := chatContentText(choice.Message.Content)
+	if !ok {
+		return nil, ErrInvalidResponse
+	}
+	return boundedJSON(answerJSON(text))
+}
+
+// chatContentText reads a chat completion's content, which is a string on
+// most providers and a list of typed parts on some (Mistral reasoning models
+// return thinking parts before the text part).
+func chatContentText(raw json.RawMessage) (string, bool) {
+	var text string
+	if json.Unmarshal(raw, &text) == nil {
+		return text, true
+	}
+	var parts []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(raw, &parts) != nil {
+		return "", false
+	}
+	for _, part := range parts {
+		if part.Type == "text" {
+			text += part.Text
+		}
+	}
+	return text, true
 }
 
 func (c *ModelClient) gemini(ctx context.Context, input StructuredRequest, schema any) (json.RawMessage, error) {
-	payload, err := json.Marshal(map[string]any{"systemInstruction": map[string]any{"parts": []map[string]string{{"text": input.Instructions}}}, "contents": []map[string]any{{"role": "user", "parts": []map[string]string{{"text": input.Input}}}}, "generationConfig": map[string]any{"responseMimeType": "application/json", "responseSchema": schema, "maxOutputTokens": input.MaxOutputTokens}})
+	// responseJsonSchema takes standard JSON Schema. The older responseSchema
+	// field takes an OpenAPI subset and rejects keywords such as
+	// additionalProperties, which every Mithra schema uses.
+	payload, err := json.Marshal(map[string]any{"systemInstruction": map[string]any{"parts": []map[string]string{{"text": input.Instructions}}}, "contents": []map[string]any{{"role": "user", "parts": []map[string]string{{"text": input.Input}}}}, "generationConfig": map[string]any{"responseMimeType": "application/json", "responseJsonSchema": schema, "maxOutputTokens": outputBudget(input.MaxOutputTokens)}})
 	if err != nil {
 		return nil, ErrInvalidResponse
 	}
@@ -309,29 +341,58 @@ func (c *ModelClient) gemini(ctx context.Context, input StructuredRequest, schem
 		return nil, err
 	}
 	var decoded struct {
+		PromptFeedback struct {
+			BlockReason string `json:"blockReason"`
+		} `json:"promptFeedback"`
 		Candidates []struct {
 			Content struct {
 				Parts []struct {
-					Text string `json:"text"`
+					Text    string `json:"text"`
+					Thought bool   `json:"thought"`
 				} `json:"parts"`
 			} `json:"content"`
 			FinishReason string `json:"finishReason"`
 		} `json:"candidates"`
 	}
-	if json.Unmarshal(body, &decoded) != nil || len(decoded.Candidates) != 1 || len(decoded.Candidates[0].Content.Parts) != 1 {
+	if json.Unmarshal(body, &decoded) != nil {
 		return nil, ErrInvalidResponse
 	}
-	if decoded.Candidates[0].FinishReason == "SAFETY" {
+	if decoded.PromptFeedback.BlockReason != "" {
 		return nil, ErrRefusal
 	}
-	if decoded.Candidates[0].FinishReason == "MAX_TOKENS" {
+	if len(decoded.Candidates) != 1 {
+		return nil, ErrInvalidResponse
+	}
+	switch decoded.Candidates[0].FinishReason {
+	case "SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "IMAGE_SAFETY":
+		return nil, ErrRefusal
+	case "MAX_TOKENS":
 		return nil, ErrIncomplete
 	}
-	return boundedJSON(decoded.Candidates[0].Content.Parts[0].Text)
+	// The answer can arrive in several parts; thought summaries are skipped.
+	var output string
+	for _, part := range decoded.Candidates[0].Content.Parts {
+		if !part.Thought {
+			output += part.Text
+		}
+	}
+	return boundedJSON(answerJSON(output))
+}
+
+// reasoningHeadroom is added to every output-token limit. Most current models
+// reason before they answer (Claude, GPT-5, Gemini 2.5+, Grok, DeepSeek and
+// others), and that reasoning counts toward the same limit. Without headroom
+// a small request such as the connection check is cut off before it answers.
+const reasoningHeadroom = 4096
+
+// outputBudget gives a request room to reason, never going below what the
+// caller asked for or above the largest budget callers already use.
+func outputBudget(requested int) int {
+	return min(requested+reasoningHeadroom, max(requested, 16_384))
 }
 
 func (c *ModelClient) anthropic(ctx context.Context, input StructuredRequest, schema any) (json.RawMessage, error) {
-	payload, err := json.Marshal(map[string]any{"model": c.config.Model, "max_tokens": input.MaxOutputTokens, "system": schemaInstructions(input.Instructions, schema), "messages": []map[string]string{{"role": "user", "content": input.Input}}})
+	payload, err := json.Marshal(map[string]any{"model": c.config.Model, "max_tokens": outputBudget(input.MaxOutputTokens), "system": schemaInstructions(input.Instructions, schema), "messages": []map[string]string{{"role": "user", "content": input.Input}}})
 	if err != nil {
 		return nil, ErrInvalidResponse
 	}
@@ -354,7 +415,7 @@ func (c *ModelClient) anthropic(ctx context.Context, input StructuredRequest, sc
 			Text string `json:"text"`
 		} `json:"content"`
 	}
-	if json.Unmarshal(body, &decoded) != nil || len(decoded.Content) != 1 || decoded.Content[0].Type != "text" {
+	if json.Unmarshal(body, &decoded) != nil {
 		return nil, ErrInvalidResponse
 	}
 	if decoded.StopReason == "refusal" {
@@ -363,7 +424,41 @@ func (c *ModelClient) anthropic(ctx context.Context, input StructuredRequest, sc
 	if decoded.StopReason == "max_tokens" {
 		return nil, ErrIncomplete
 	}
-	return boundedJSON(decoded.Content[0].Text)
+	// Thinking blocks come before the answer; only text blocks carry it.
+	var output string
+	for _, block := range decoded.Content {
+		switch block.Type {
+		case "text":
+			output += block.Text
+		case "thinking", "redacted_thinking":
+		default:
+			return nil, ErrInvalidResponse
+		}
+	}
+	return boundedJSON(answerJSON(output))
+}
+
+// answerJSON trims what models without schema enforcement put around a JSON
+// reply: a leading <think> section (DeepSeek R1, Qwen, MiniMax and others)
+// and one Markdown code fence.
+func answerJSON(text string) string {
+	trimmed := strings.TrimSpace(text)
+	if strings.HasPrefix(trimmed, "<think>") {
+		end := strings.Index(trimmed, "</think>")
+		if end < 0 {
+			return text
+		}
+		trimmed = strings.TrimSpace(trimmed[end+len("</think>"):])
+		text = trimmed
+	}
+	if !strings.HasPrefix(trimmed, "```") || !strings.HasSuffix(trimmed, "```") || len(trimmed) < 6 {
+		return text
+	}
+	inner := strings.TrimSuffix(strings.TrimPrefix(trimmed, "```"), "```")
+	if newline := strings.IndexByte(inner, '\n'); newline >= 0 && strings.TrimSpace(inner[:newline]) != "" && !strings.ContainsAny(inner[:newline], "{[") {
+		inner = inner[newline+1:]
+	}
+	return strings.TrimSpace(inner)
 }
 
 func (c *ModelClient) endpoint(path string) string {

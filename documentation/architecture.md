@@ -82,8 +82,15 @@ the same transaction as active membership, live source, and shared/personal
 revision checks. `internal/providers` has one fixed provider registry and
 validates provider addresses, request size, redirects, responses, and JSON
 objects. It supports OpenAI Responses, OpenAI-compatible chat, Gemini, and
-Anthropic text requests. Only OpenAI receives audio or an explicitly confirmed
-visual PDF. The browser never receives a saved key.
+Anthropic text requests. Most current models reason before they answer and
+that reasoning counts toward the output limit, so every request adds 4,096
+tokens of headroom (capped at 16,384). Response readers skip reasoning and
+thinking blocks, a leading `<think>` section and one JSON code fence. Gemini
+uses `responseJsonSchema`, which accepts standard JSON Schema. A failed
+connection check tells the owner whether the key, the model reply or a rate
+limit was the problem, and logs only that reason. A saved key is reused only
+for the same provider and base URL. Only OpenAI receives audio or an explicitly
+confirmed visual PDF. The browser never receives a saved key.
 
 ## Finance domain
 

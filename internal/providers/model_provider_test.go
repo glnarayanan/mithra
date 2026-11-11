@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -77,6 +78,130 @@ func TestModelClientStructuredRequestShapes(t *testing.T) {
 				t.Fatalf("result %s %v", result, err)
 			}
 		})
+	}
+}
+
+func TestAnthropicAcceptsThinkingAndFencedReplies(t *testing.T) {
+	cases := map[string]string{
+		"thinking first": `{"content":[{"type":"thinking","thinking":"","signature":"sig"},{"type":"text","text":"{\"ok\":true}"}],"stop_reason":"end_turn"}`,
+		"redacted":       `{"content":[{"type":"redacted_thinking","data":"x"},{"type":"text","text":"{\"ok\":true}"}],"stop_reason":"end_turn"}`,
+		"json fence":     `{"content":[{"type":"text","text":"` + "```json\\n{\\\"ok\\\":true}\\n```" + `"}],"stop_reason":"end_turn"}`,
+		"bare fence":     `{"content":[{"type":"text","text":"` + "```\\n{\\\"ok\\\":true}\\n```" + `"}],"stop_reason":"end_turn"}`,
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			var maxTokens float64
+			client := &http.Client{Transport: providerRoundTrip(func(request *http.Request) (*http.Response, error) {
+				var payload map[string]any
+				if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+					t.Fatal(err)
+				}
+				maxTokens, _ = payload["max_tokens"].(float64)
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header), Request: request}, nil
+			})}
+			model, err := NewModelClient(ModelClientConfig{ModelConfig: ModelConfig{ProviderID: ProviderAnthropic, Model: "claude-opus-5-5", APIKey: "test-key"}, Client: client})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := model.Validate(context.Background()); err != nil {
+				t.Fatalf("validate = %v", err)
+			}
+			if maxTokens < 32+reasoningHeadroom {
+				t.Fatalf("max_tokens %v leaves no room for thinking", maxTokens)
+			}
+		})
+	}
+}
+
+// Every provider style must give a reasoning model room to answer the small
+// connection check, and must read the answer past its reasoning.
+func TestConnectionCheckSurvivesReasoningModels(t *testing.T) {
+	cases := []struct {
+		name, id, budgetKey, body string
+		check                     func(*testing.T, map[string]any)
+	}{
+		{"openai reasoning item", ProviderOpenAI, "max_output_tokens", `{"status":"completed","output":[{"type":"reasoning","summary":[]},{"type":"message","content":[{"type":"output_text","text":"{\"ok\":true}"}]}]}`, nil},
+		{"chat think tags", ProviderDeepSeek, "max_tokens", `{"choices":[{"message":{"content":"<think>\nfine\n</think>\n{\"ok\":true}"},"finish_reason":"stop"}]}`, nil},
+		{"chat fenced", ProviderXAI, "max_tokens", `{"choices":[{"message":{"content":"` + "```json\\n{\\\"ok\\\":true}\\n```" + `"},"finish_reason":"stop"}]}`, nil},
+		{"chat content parts", ProviderMistral, "max_tokens", `{"choices":[{"message":{"content":[{"type":"thinking","thinking":[]},{"type":"text","text":"{\"ok\":true}"}]},"finish_reason":"stop"}]}`, nil},
+		{"gemini split parts", ProviderGemini, "", `{"candidates":[{"content":{"parts":[{"text":"plan","thought":true},{"text":"{\"ok\":"},{"text":"true}"}]},"finishReason":"STOP"}]}`, func(t *testing.T, payload map[string]any) {
+			config, _ := payload["generationConfig"].(map[string]any)
+			if config["responseJsonSchema"] == nil || config["responseSchema"] != nil {
+				t.Fatalf("gemini schema field = %v", config)
+			}
+			if budget, _ := config["maxOutputTokens"].(float64); budget < 32+reasoningHeadroom {
+				t.Fatalf("gemini budget = %v", budget)
+			}
+		}},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			client := &http.Client{Transport: providerRoundTrip(func(request *http.Request) (*http.Response, error) {
+				var payload map[string]any
+				if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+					t.Fatal(err)
+				}
+				if test.budgetKey != "" {
+					if budget, _ := payload[test.budgetKey].(float64); budget < 32+reasoningHeadroom {
+						t.Fatalf("%s = %v", test.budgetKey, budget)
+					}
+				}
+				if test.check != nil {
+					test.check(t, payload)
+				}
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(test.body)), Header: make(http.Header), Request: request}, nil
+			})}
+			model, err := NewModelClient(ModelClientConfig{ModelConfig: ModelConfig{ProviderID: test.id, APIKey: "test-key"}, Client: client})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := model.Validate(context.Background()); err != nil {
+				t.Fatalf("validate = %v", err)
+			}
+		})
+	}
+}
+
+func TestProvidersReportRefusals(t *testing.T) {
+	cases := []struct{ id, body string }{
+		{ProviderOpenRouter, `{"choices":[{"message":{"content":null,"refusal":"no"},"finish_reason":"stop"}]}`},
+		{ProviderGemini, `{"promptFeedback":{"blockReason":"SAFETY"},"candidates":[]}`},
+		{ProviderGemini, `{"candidates":[{"content":{"parts":[]},"finishReason":"PROHIBITED_CONTENT"}]}`},
+		{ProviderAnthropic, `{"content":[],"stop_reason":"refusal"}`},
+	}
+	for _, test := range cases {
+		client := &http.Client{Transport: providerRoundTrip(func(request *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(test.body)), Header: make(http.Header), Request: request}, nil
+		})}
+		model, err := NewModelClient(ModelClientConfig{ModelConfig: ModelConfig{ProviderID: test.id, Model: "test-model", APIKey: "test-key"}, Client: client})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := model.Validate(context.Background()); !errors.Is(err, ErrRefusal) {
+			t.Fatalf("%s refusal = %v", test.id, err)
+		}
+	}
+}
+
+func TestOutputBudgetStaysWithinCallerLimits(t *testing.T) {
+	for requested, want := range map[int]int{32: 4128, 4_000: 8096, 16_000: 16_384, 16_384: 16_384} {
+		if got := outputBudget(requested); got != want {
+			t.Fatalf("outputBudget(%d) = %d, want %d", requested, got, want)
+		}
+	}
+}
+
+func TestAnthropicRejectsUnexpectedBlocks(t *testing.T) {
+	body := `{"content":[{"type":"tool_use","id":"x","name":"y","input":{}}],"stop_reason":"tool_use"}`
+	client := &http.Client{Transport: providerRoundTrip(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header), Request: request}, nil
+	})}
+	model, err := NewModelClient(ModelClientConfig{ModelConfig: ModelConfig{ProviderID: ProviderAnthropic, Model: "claude-opus-5-5", APIKey: "test-key"}, Client: client})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := model.Validate(context.Background()); !errors.Is(err, ErrInvalidResponse) {
+		t.Fatalf("validate = %v", err)
 	}
 }
 
