@@ -386,6 +386,7 @@ var assetContentTypes = map[string]string{
 	"brief.js":                   "application/javascript; charset=utf-8",
 	"imports.js":                 "application/javascript; charset=utf-8",
 	"babylog.js":                 "application/javascript; charset=utf-8",
+	"babycharts.js":              "application/javascript; charset=utf-8",
 	"quicklog.js":                "application/javascript; charset=utf-8",
 	"favicon.svg":                "image/svg+xml",
 	"fonts/inter-variable.woff2": "font/woff2",

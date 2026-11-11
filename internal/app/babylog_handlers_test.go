@@ -94,7 +94,7 @@ func TestBabyLogOnChildPage(t *testing.T) {
 		writer := multipart.NewWriter(&buffer)
 		writer.WriteField("csrf", session.csrf.Value)
 		writer.WriteField("action", "import_weights")
-		part, _ := writer.CreateFormFile("file", "tinytots.csv")
+		part, _ := writer.CreateFormFile("file", "export.csv")
 		part.Write([]byte(csv))
 		writer.Close()
 		request := httptest.NewRequest(http.MethodPost, logPath, &buffer)
@@ -109,10 +109,13 @@ func TestBabyLogOnChildPage(t *testing.T) {
 	if first.Code != http.StatusSeeOther {
 		t.Fatalf("import status=%d %q", first.Code, first.Body.String())
 	}
-	if body := page(first.Header().Get("Location")); !strings.Contains(body, "Imported 2 weights. Skipped 1 row that is not a weight.") || !strings.Contains(body, "3.6<small>kg</small>") {
-		t.Fatal("import summary or latest weight missing")
+	if body := page(first.Header().Get("Location")); !strings.Contains(body, "Imported 2 entries. Skipped 1 row that is not a weight.") {
+		t.Fatal("import summary missing")
 	}
-	if again := page(upload().Header().Get("Location")); !strings.Contains(again, "Imported 0 weights. 2 weights were already in the log.") {
+	if body := page("/family/" + baby.ID); !strings.Contains(body, "3.6<small>kg</small>") {
+		t.Fatal("latest weight missing")
+	}
+	if again := page(upload().Header().Get("Location")); !strings.Contains(again, "Imported 0 entries. 2 were already in the log.") {
 		t.Fatal("second import was not a no-op")
 	}
 	if weights, _ := application.carelog.Weights(ctx, scope, baby.ID); len(weights) != 2 || weights[0].Details["kg"] != "3.2" || weights[0].Source != "import" {

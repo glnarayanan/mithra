@@ -143,6 +143,8 @@ func (a *App) renderFamily(ctx context.Context, w http.ResponseWriter, scope pol
 	facts := map[string]string{}
 	for _, panel := range a.babyPanels(ctx, scope) {
 		switch {
+		case panel.Label != "" && panel.Value != "":
+			facts[strings.TrimSuffix(panel.URL, "#baby-log")] = strings.TrimSpace(panel.Label + ": " + panel.Value + " " + panel.Unit)
 		case panel.Running:
 			facts[strings.TrimSuffix(panel.URL, "#baby-log")] = "Feeding now"
 		case panel.HasFeed:
@@ -175,7 +177,8 @@ func (a *App) familyPerson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, sub, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/family/"), "/")
-	if id == "" || len(id) > 64 || (sub != "" && sub != "log") {
+	childPages := map[string]bool{"patterns": true, "settings": true, "sample.csv": true, "export.csv": true}
+	if id == "" || len(id) > 64 || (sub != "" && sub != "log" && !childPages[sub]) {
 		a.notFound(w, r, "That person isn’t in Family", "They may have been removed, or the address is mistyped.", "/family", "Back to Family")
 		return
 	}
@@ -186,6 +189,10 @@ func (a *App) familyPerson(w http.ResponseWriter, r *http.Request) {
 	}
 	if sub == "log" {
 		a.familyLog(w, r, scope, csrf, person)
+		return
+	}
+	if childPages[sub] {
+		a.familyChildPage(w, r, scope, csrf, person, sub)
 		return
 	}
 	switch r.Method {
@@ -210,6 +217,10 @@ func (a *App) familyPerson(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, err := a.people.Update(r.Context(), scope, id, version, familyDraft(r)); err != nil {
 			writeError(w, http.StatusConflict, "check the details, or reload if this person changed")
+			return
+		}
+		if r.PostForm.Get("back") == "settings" {
+			http.Redirect(w, r, "/family/"+url.PathEscape(id)+"/settings?saved=details", http.StatusSeeOther)
 			return
 		}
 		http.Redirect(w, r, "/family/"+url.PathEscape(id)+"?saved=1", http.StatusSeeOther)

@@ -1,0 +1,97 @@
+{{define "child-nav"}}<nav class="subnav" aria-label="Baby log pages"><ul>{{range .Items}}<li><a href="{{.Path}}"{{if .Current}} aria-current="page"{{end}}>{{.Label}}</a></li>{{end}}</ul></nav>{{end}}
+
+{{define "patterns.html"}}
+<!doctype html>
+<html lang="en">
+  <head>
+    {{template "head"}}
+    <title>{{.Person.Name}}’s patterns · Mithra</title>
+  </head>
+  <body class="authenticated-shell">
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    {{template "app-shell" .}}
+    <main id="main-content" tabindex="-1" class="page">
+      <header class="page-head"><div><p class="crumb"><a href="/family">Family</a></p><h1>{{.Person.Name}}</h1><p class="lede">{{.Person.RelationshipLabel}}{{if .Person.Age}}, {{.Person.Age}}{{end}}{{if .Person.BirthLabel}}. {{.Person.BirthLabel}}{{end}}.</p></div></header>
+      {{template "child-nav" (childNav .Person.URL "Patterns")}}
+      <section class="section patterns" aria-labelledby="patterns-title">
+        <div class="section-head patterns-head"><div><h2 id="patterns-title">Patterns</h2><p class="patterns-caption">{{.Caption}}</p></div>
+          <nav class="segmented" aria-label="Days to show">{{range .Ranges}}<a href="{{.Value}}"{{if .Selected}} aria-current="page"{{end}}>{{.Label}}</a>{{end}}</nav></div>
+        {{if .Empty}}<div class="empty-state"><p>Nothing logged in these days yet. Log feeds, diapers or a weight on the <a href="{{.Person.URL}}">baby log</a>, or bring in past entries from <a href="{{.Person.URL}}/settings#import">Child settings</a>.</p></div>{{else}}
+        {{if .Facts}}<div class="cards pattern-facts">{{range .Facts}}<div class="card"><span class="card-head">{{.Label}}</span><span class="card-value">{{.Value}}{{if .Unit}}<small>{{.Unit}}</small>{{end}}</span><span class="card-foot">{{.Note}}</span></div>{{end}}</div>{{end}}
+        <div class="chart-blocks">
+        {{range .Charts}}<section class="chart-block" aria-labelledby="chart-{{.ID}}-title">
+          <div class="chart-block-head"><h3 id="chart-{{.ID}}-title">{{.Title}}</h3>{{if .Legend}}<p class="chart-legend" aria-hidden="true">{{range .Legend}}<span class="key key-{{.}}">{{if eq . "feed"}}Feed{{else if eq . "diaper"}}Diaper{{else if eq . "spitup"}}Spit-up{{else if eq . "wet"}}Wet{{else if eq . "dirty"}}Dirty{{end}}</span>{{end}}</p>{{end}}</div>
+          {{if .Figures}}<dl class="trend-figures">{{range .Figures}}<div><dt>{{.Label}}</dt><dd>{{.Value}}</dd></div>{{end}}</dl>{{end}}
+          {{if .Note}}<p class="quiet">{{.Note}}</p>{{end}}
+          {{if .Data}}<div class="chart-wrap" data-chart="{{.Kind}}" data-chart-data="{{.Data}}" tabindex="0" aria-describedby="chart-help"></div>{{else}}<p class="quiet">{{.Empty}}</p>{{end}}
+        </section>{{end}}
+        </div>
+        <p class="visually-hidden" id="chart-help">Point at a chart, tap it, or use the arrow keys to read each day.</p>
+        <p class="chart-note">Point at or tap a chart to read the numbers for a day. These numbers describe what was logged. They are not medical advice. <a href="/help#baby-averages">How they are worked out</a>.</p>
+        {{end}}
+      </section>
+    </main>
+    <script defer src="/assets/babycharts.js"></script>
+  </body>
+</html>
+{{end}}
+
+{{define "child-settings.html"}}
+<!doctype html>
+<html lang="en">
+  <head>
+    {{template "head"}}
+    <title>{{.Person.Name}}’s settings · Mithra</title>
+  </head>
+  <body class="authenticated-shell">
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    {{template "app-shell" .}}
+    <main id="main-content" tabindex="-1" class="page">
+      <header class="page-head"><div><p class="crumb"><a href="/family">Family</a></p><h1>{{.Person.Name}}</h1><p class="lede">{{.Person.RelationshipLabel}}{{if .Person.Age}}, {{.Person.Age}}{{end}}{{if .Person.BirthLabel}}. {{.Person.BirthLabel}}{{end}}.{{if .Person.Private}} Only you can see this person.{{end}}</p></div></header>
+      {{template "child-nav" (childNav .Person.URL "Child settings")}}
+      {{template "status" .Status}}
+      {{if .Error}}<p class="notice notice-error" role="alert" tabindex="-1" data-focus-on-load>{{.Error}}</p>{{end}}
+      <div class="cols settings-cols">
+        <div>
+          <section class="section" aria-labelledby="focus-title">
+            <div class="section-head"><h2 id="focus-title">What to keep in front</h2></div>
+            <p class="section-lede">{{.Person.Name}}’s page and the panel on Home lead with this. Everything else is still logged and shown below it.</p>
+            <form method="post" action="{{.SettingsURL}}" class="stack">
+              <input type="hidden" name="csrf" value="{{.CSRF}}">
+              <fieldset class="focus-options"><legend class="visually-hidden">Lead with</legend>
+                {{range .Focus}}<label class="focus-option"><input type="radio" name="focus" value="{{.Value}}"{{if .Selected}} checked{{end}}><span><span class="focus-option-title">{{.Label}}</span><span class="focus-option-note">{{.Note}}</span></span></label>{{end}}
+              </fieldset>
+              <div class="row-actions"><button type="submit">Save</button></div>
+            </form>
+          </section>
+
+          <section class="section" id="import" aria-labelledby="import-title">
+            <div class="section-head"><h2 id="import-title">Bring in past entries</h2></div>
+            <p class="section-lede">Have weights from clinic visits, or a log kept on paper or in a spreadsheet? Add them all at once.</p>
+            <ol class="steps">
+              <li><span class="step-title">Download the sample</span><span class="step-body">A CSV file with one example of each kind of entry.</span><a class="button button-small" href="{{.SampleURL}}" download>Download sample CSV</a></li>
+              <li><span class="step-title">Fill it in</span><span class="step-body">Open it in any spreadsheet. Replace the examples with your entries, one row each, and save it as CSV.</span>
+                <details class="column-guide"><summary>What goes in each column</summary><dl>{{range .Columns}}<div><dt><code>{{.Name}}</code></dt><dd>{{.Meaning}}</dd></div>{{end}}</dl></details></li>
+              <li><span class="step-title">Import it</span>
+                <form method="post" action="{{.LogURL}}" enctype="multipart/form-data" class="stack import-form"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="import"><label class="field"><span>CSV file</span><input type="file" name="file" accept=".csv,text/csv" required></label><p class="hint">Nothing is added unless every row reads cleanly. Importing the same file again adds nothing new.</p><div class="row-actions"><button type="submit">Import entries</button></div></form></li>
+            </ol>
+          </section>
+        </div>
+        <div>
+          <section class="section" aria-labelledby="export-title">
+            <div class="section-head"><h2 id="export-title">Download the log</h2></div>
+            <p class="section-lede">{{if .Entries}}All {{.Entries}} entries, in the same columns as the sample, so the file imports back as it is.{{else}}Nothing is logged yet. Once it is, the whole log downloads here as a CSV.{{end}}</p>
+            {{if .Entries}}<a class="button button-small" href="{{.ExportURL}}" download>Download CSV</a>{{end}}
+          </section>
+          <section class="section" aria-labelledby="person-edit-title">
+            <div class="section-head"><h2 id="person-edit-title">Details</h2></div>
+            <form method="post" action="{{.Person.URL}}" class="field-grid family-form"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="version" value="{{.Person.Version}}"><input type="hidden" name="back" value="settings">{{template "person-fields" (personFields .Person.Name .Person.Relationship .Person.BirthDate .Person.Private .Relationships)}}<div class="row-actions"><button type="submit">Save details</button></div></form>
+            <p class="hint">The baby log shows for a child under three, or with no date of birth.</p>
+            <details class="row-details danger-zone"><summary class="button button-quiet">Remove from Family</summary><div class="row-body"><p>Removing {{.Person.Name}} hides them and their baby log from Family. Health records that name them stay as they are.</p><form method="post" action="{{.Person.URL}}"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="version" value="{{.Person.Version}}"><input type="hidden" name="action" value="archive"><button type="submit" class="button">Remove {{.Person.Name}}</button></form></div></details>
+          </section>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>
+{{end}}

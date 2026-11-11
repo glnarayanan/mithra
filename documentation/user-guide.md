@@ -84,24 +84,54 @@ a one-time export: later changes in Mithra do not update another calendar.
 a child or a parent. A person's page gathers the health records that name them,
 their medicines, habits and notes.
 
-A child under three also gets the **baby log**, the part of Mithra that used
-to be TinyTots. Both adults log to the same record:
+A child under three, or a child with no date of birth, also gets the **baby
+log**. Both adults log to the same record:
 
 - **Feeds.** Start a breast feed and press **Finish feed** when it ends, or
   open **Earlier time or minutes** to log one after the fact. Bottles take
   the amount offered and taken.
 - **Diapers and spit-ups** are one tap each. **Earlier time** logs one you
   forgot; a time later than now is read as yesterday.
-- **Weights and milestones** keep their own lists. **Import weights from
-  TinyTots** reads a TinyTots CSV export and adds only its weight rows.
-  Importing the same file twice adds nothing new.
+- **Weights and milestones** keep their own lists.
 - **Remove** takes an entry out of the log, and **Undo** brings it back.
 
-The page shows the time since the last feed started, today's counts and
-averages for the last seven days. These describe what was logged and are not
-medical advice. When the phone has no connection, entries wait on the phone
-and show as unsent until the connection returns. Home shows the same clock for
-each young child.
+When the phone has no connection, entries wait on the phone and show as
+unsent until the connection returns.
+
+Each child has three tabs:
+
+- **Log** shows the lead measure, today's entries and the last seven days.
+- **Patterns** charts the last 7, 14, 30 or 90 days: a daily rhythm of feeds,
+  diapers and spit-ups, bottle intake, diapers and weight. Point at a chart,
+  tap it, or use the arrow keys to read the numbers for a day or a weight.
+- **Child settings** chooses what the child's page and the panel on Home lead
+  with: time since the last feed, weight, bottle intake or diapers. It also
+  holds the child's details.
+
+### Bringing in past entries
+
+Child settings has a three-step import:
+
+1. **Download sample CSV.** One row per entry, with these columns:
+
+   | Column | What goes in it |
+   | --- | --- |
+   | `date` | The day, as `2026-09-15`. Slashed dates such as `15/09/2026` work too; they read day first, except in a household set to US format. |
+   | `time` | When it happened, as `07:10` or `7:10 pm`. Needed for feeds, diapers and spit-ups. |
+   | `what` | `weight`, `breast`, `bottle`, `diaper`, `spit-up` or `milestone`. |
+   | `amount` | Kilograms for a weight, millilitres taken for a bottle, minutes for a breast feed. |
+   | `detail` | `left`, `right` or `both` for a breast feed; `formula` or `expressed` for a bottle; `wet`, `dirty` or `both` for a diaper; `small`, `medium` or `large` for a spit-up; the milestone itself. |
+   | `note` | Anything else. Optional. |
+
+2. **Fill it in** with any spreadsheet and save it as CSV.
+3. **Import entries.** Nothing is added unless every row reads cleanly; the
+   message names the first line to fix. Importing the same file again adds
+   nothing new.
+
+**Download CSV** gives the whole log in the same columns, so it imports back
+as it is.
+
+The figures describe what was logged and are not medical advice.
 
 ## Family Brief and Week in Review
 
