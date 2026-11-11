@@ -37,18 +37,59 @@ func (a *App) saveProviderSetting(w http.ResponseWriter, r *http.Request, scope 
 	if r.PostForm.Get("action") == "save_openai" {
 		candidate.ProviderID = providers.ProviderOpenAI
 	}
+	var checkErr error
 	err := a.providerSettings.ReplaceProvider(r.Context(), scope, candidate, func(ctx context.Context, candidate secrets.ProviderConfig) error {
 		client, err := providers.NewModelClient(providers.ModelClientConfig{ModelConfig: providers.ModelConfig{ProviderID: candidate.ProviderID, Model: candidate.Model, BaseURL: candidate.BaseURL, APIKey: candidate.APIKey}, Client: a.openAIClient})
 		if err != nil {
 			return err
 		}
-		return client.Validate(ctx)
+		if err := client.Validate(ctx); err != nil {
+			checkErr = err
+			logRequestError(a.logger, r.Context(), "provider_check_"+providerCheckReason(err))
+			return err
+		}
+		return nil
 	})
 	if err != nil {
-		a.renderSettings(r.Context(), w, scope, csrf, "", "Mithra could not verify that connection. Your existing connection is unchanged. Check the details or try again later.")
+		a.renderSettings(r.Context(), w, scope, csrf, "", providerCheckMessage(checkErr))
 		return
 	}
 	a.renderSettings(r.Context(), w, scope, csrf, "Model provider connected. Mithra never displays the saved key.", "")
+}
+
+// providerCheckReason names why a connection check failed, for the log only.
+func providerCheckReason(err error) string {
+	switch {
+	case errors.Is(err, providers.ErrInvalidCredential):
+		return "credential"
+	case errors.Is(err, providers.ErrRateLimited):
+		return "rate_limited"
+	case errors.Is(err, providers.ErrRefusal):
+		return "refusal"
+	case errors.Is(err, providers.ErrIncomplete):
+		return "incomplete"
+	case errors.Is(err, providers.ErrInvalidResponse):
+		return "invalid_response"
+	default:
+		return "unavailable"
+	}
+}
+
+// providerCheckMessage says what the provider did, so the owner knows
+// whether to change the key, the model, or simply wait.
+func providerCheckMessage(err error) string {
+	const unchanged = " Your existing connection is unchanged."
+	switch providerCheckReason(err) {
+	case "credential":
+		return "The provider did not accept that API key." + unchanged + " Check the key and that it belongs to this provider."
+	case "rate_limited":
+		return "The provider is limiting requests for this key right now." + unchanged + " Try again in a few minutes."
+	case "refusal":
+		return "The provider declined the check request." + unchanged + " Try another model from this provider."
+	case "incomplete", "invalid_response":
+		return "The provider answered, but not with the JSON Mithra needs." + unchanged + " Try another model from this provider."
+	}
+	return "Mithra could not verify that connection." + unchanged + " Check the model name and other details, or try again later."
 }
 
 func (a *App) removeProviderSetting(w http.ResponseWriter, r *http.Request, scope policy.ActorScope, csrf string) {

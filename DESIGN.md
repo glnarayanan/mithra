@@ -159,7 +159,7 @@ components:
 
 **Creative North Star: "The Household Paper Desk"**
 
-Mithra is a calm desk of warm paper for two adults running a household together. Neutrals are a faintly warm off-white; ink is a deep navy rather than black; the single voice of colour is Mithra blue, the blue square in the MithraHQ family (HealthTrends is the coral arch, TinyTots the mustard circle). The system is shared across MithraHQ and derives from the Lexington "Vanta" theme: display headings in Bricolage Grotesque, running text in InterVariable, big rounded colour panels for the few numbers that matter, and hairline lists for everything else.
+Mithra is a calm desk of warm paper for two adults running a household together. Neutrals are a faintly warm off-white; ink is a deep navy rather than black; the single voice of colour is Mithra blue, the blue square. Inside the app, Health is marked with a coral arch and the baby log with a mustard circle. The system is shared across MithraHQ and derives from the Lexington "Vanta" theme: display headings in Bricolage Grotesque, running text in InterVariable, big rounded colour panels for the few numbers that matter, and hairline lists for everything else.
 
 The authenticated app wears the "paper shell" (chosen 2026-10-23, consolidated 2026-11-10). On desktop one light top bar holds the brand, four underlined text tabs (Home, Money, Health, Calendar; Family joins in the consolidation) and the tools (Quick navigation, Add in navy, Account). Home has a Today and This week switch instead of two tabs. Utility destinations (Import, Settings, Help) and the theme switch live in the Account menu. On phones a bottom dock replaces the old Menu: Home, Money, Add, Health and a fifth slot (Calendar now, Family once it ships). Density is moderate: generous heading space, readable 60 to 70ch measures, and rows instead of tables wherever a record fits on one line.
 
@@ -188,7 +188,7 @@ A warm paper palette with navy ink and a single confident blue, tuned in OKLCH; 
 
 ### Tertiary
 - **Terracotta** (terracotta): attention and errors. Invalid field borders, import blockers (tinted 7 to 9% into white), warning strokes in charts.
-- **Coral** (coral): defined as the HealthTrends family colour for cross-product marks; Mithra surfaces do not use it.
+- **Coral** (coral): the Health area colour, used only for the Health area mark.
 
 ### Neutral
 - **Navy Ink** (navy-ink): body text, headings, primary buttons, the "Only you" panel, the Add update button.
@@ -201,7 +201,7 @@ A warm paper palette with navy ink and a single confident blue, tuned in OKLCH; 
 - **Hairline** (hairline): every 1px rule: header borders, list separators, inset panel rings.
 
 ### Named Rules
-**The One Blue Rule.** Mithra blue is the only saturated hue that identifies Mithra. Mustard and terracotta have jobs (status, attention); coral belongs to HealthTrends.
+**The One Blue Rule.** Mithra blue is the only saturated hue that identifies Mithra. Mustard and terracotta have jobs (status, attention); coral marks only the Health area.
 
 **The Navy Not Black Rule.** Ink is navy-ink. No pure black text or surfaces anywhere.
 

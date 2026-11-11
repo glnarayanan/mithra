@@ -52,6 +52,32 @@ func TestProviderSwitchNeverReusesAnotherProviderKey(t *testing.T) {
 	}
 }
 
+func TestCustomProviderKeyStaysWithItsBaseURL(t *testing.T) {
+	application, mailer := newAuthTestApp(t, "owner@example.com")
+	owner := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
+	scope := ownerScope(t, application, owner)
+	accept := func(context.Context, secrets.ProviderConfig) error { return nil }
+	if err := application.providerSettings.ReplaceProvider(context.Background(), scope, secrets.ProviderConfig{ProviderID: providers.ProviderCustom, Model: "m", BaseURL: "https://llm.example.com/v1", APIKey: "custom-secret"}, accept); err != nil {
+		t.Fatal(err)
+	}
+	sent := ""
+	err := application.providerSettings.ReplaceProvider(context.Background(), scope, secrets.ProviderConfig{ProviderID: providers.ProviderCustom, Model: "m", BaseURL: "https://other.example.net/v1"}, func(_ context.Context, config secrets.ProviderConfig) error {
+		sent = config.APIKey
+		return nil
+	})
+	if !errors.Is(err, secrets.ErrSettingsCredential) || sent != "" {
+		t.Fatalf("saved key followed a new base URL: %v, sent=%q", err, sent)
+	}
+	if err := application.providerSettings.ReplaceProvider(context.Background(), scope, secrets.ProviderConfig{ProviderID: providers.ProviderCustom, Model: "m2", BaseURL: "https://llm.example.com/v1/"}, func(_ context.Context, config secrets.ProviderConfig) error {
+		if config.APIKey != "custom-secret" {
+			t.Fatalf("same base URL did not keep the key: %q", config.APIKey)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestOwnerOpenAISettingsValidateEncryptPreserveAndRemove(t *testing.T) {
 	application, mailer := newAuthTestApp(t, "owner@example.com", "partner@example.com")
 	owner := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
@@ -94,7 +120,7 @@ func TestOwnerOpenAISettingsValidateEncryptPreserveAndRemove(t *testing.T) {
 	application.openAIClient = openAIValidationClient(http.StatusUnauthorized)
 	replacement := "sk-mithra-invalid-replacement"
 	failed := serve(application, authenticatedSettingsRequest(owner, http.MethodPost, url.Values{"action": {"save_provider"}, "provider": {"openai"}, "model": {"gpt-5.4-mini"}, "base_url": {"https://api.openai.com/v1"}, "api_key": {replacement}}))
-	if failed.Code != http.StatusOK || !strings.Contains(failed.Body.String(), "existing connection is unchanged") || strings.Contains(failed.Body.String(), replacement) {
+	if failed.Code != http.StatusOK || !strings.Contains(failed.Body.String(), "did not accept that API key") || !strings.Contains(failed.Body.String(), "existing connection is unchanged") || strings.Contains(failed.Body.String(), replacement) {
 		t.Fatalf("failed replacement = %d %q", failed.Code, failed.Body.String())
 	}
 	key, err = application.providerSettings.OpenAIKey(context.Background(), ownerScope(t, application, owner))

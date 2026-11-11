@@ -158,7 +158,19 @@ type HealthEntryForm struct {
 	Catalog               []HealthCatalogOption
 }
 
+// ChildNav is the row of tabs on a young child's pages.
+type ChildNav struct {
+	Items []NavigationItem
+}
+
 var templateFuncs = template.FuncMap{
+	"childNav": func(personURL, current string) ChildNav {
+		items := []NavigationItem{{Path: personURL, Label: "Log"}, {Path: personURL + "/patterns", Label: "Patterns"}, {Path: personURL + "/settings", Label: "Child settings"}}
+		for i := range items {
+			items[i].Current = items[i].Label == current
+		}
+		return ChildNav{Items: items}
+	},
 	"babyRow": func(entry BabyEntryView, logURL, csrf string) BabyRow {
 		return BabyRow{Entry: entry, LogURL: logURL, CSRF: csrf}
 	},

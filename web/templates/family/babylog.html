@@ -1,3 +1,9 @@
+{{define "baby-weight-row"}}<li><div class="row"><span class="mark mark-baby" aria-hidden="true"></span><span><span class="row-title">{{.Value}}</span><span class="row-meta"><time datetime="{{.TimeISO}}">{{.DateLabel}}</time>{{if .Who}}<span>{{.Who}}</span>{{end}}{{if .Note}}<span>{{.Note}}</span>{{end}}</span></span></div></li>{{end}}
+
+{{define "baby-strip"}}<div class="chart-wrap chart-on-dark strip-wrap" data-chart="strip" tabindex="0" aria-label="{{.Strip.Label}}. Point at it, tap it, or use the arrow keys to read each entry."><svg class="baby-strip chart" viewBox="0 0 320 40" aria-hidden="true"><rect class="strip-bg" x="0" y="0" width="320" height="40" rx="10"></rect>{{if .RunningX}}<line class="strip-running" x1="{{.RunningX}}" y1="13" x2="308" y2="13"></line>{{end}}{{range .Strip.Feeds}}<rect class="hit" x="{{.Left}}" y="0" width="12" height="20" data-ax="{{.X}}" data-ay="8" data-tip="{{.Title}}" data-lines="{{.Line}}"></rect><circle class="strip-feed" cx="{{.X}}" cy="13" r="4.5"></circle>{{end}}{{range .Strip.Diapers}}<rect class="hit" x="{{.Left}}" y="20" width="12" height="20" data-ax="{{.X}}" data-ay="24" data-tip="{{.Title}}" data-lines="{{.Line}}"></rect><circle class="strip-diaper" cx="{{.X}}" cy="28" r="3.5"></circle>{{end}}</svg></div>
+        <p class="strip-axis" aria-hidden="true"><span>24 h ago</span><span>12 h</span><span>Now</span></p>
+        <p class="strip-legend"><span class="legend-feed">Feeds</span><span class="legend-diaper">Diapers</span></p>{{end}}
+
 {{define "baby-time"}}<details class="log-more"><summary>Earlier time</summary><label class="field"><span>Time</span><input type="time" name="time"></label></details>{{end}}
 
 {{define "baby-hidden"}}<input type="hidden" name="csrf" value="{{.}}"><input type="hidden" name="client_id" value=""><input type="hidden" name="logged_at" value="">{{end}}
@@ -25,7 +31,29 @@
   {{if and $b.Error (not $b.ErrorCard)}}<p class="notice notice-error" role="alert" tabindex="-1" data-focus-on-load>{{$b.Error}}</p>{{end}}
   <div class="cols baby-cols">
     <div>
-      <div class="baby-hero"{{if $b.SinceISO}} data-since="{{$b.SinceISO}}"{{end}}>
+      <div class="baby-hero baby-hero-{{$b.Focus}}"{{if $b.SinceISO}} data-since="{{$b.SinceISO}}"{{end}}>
+        {{if eq $b.Focus "weight"}}
+        <p class="baby-hero-label">Latest weight</p>
+        {{if $b.LatestWeight}}<p class="since">{{$b.LatestWeight}}<small>kg</small></p>
+        <p class="baby-hero-note">{{if $b.WeightChangeNote}}{{$b.WeightChangeNote}}{{else}}{{$b.WeightLabel}}. Log another to see the change.{{end}}</p>
+        {{if gt (len $b.Weights) 1}}<div class="chart-wrap chart-on-dark" data-chart="weight" data-compact data-chart-data="{{$b.WeightData}}" tabindex="0" aria-label="Weight chart. Point at it, tap it, or use the arrow keys to read each weight."></div>{{end}}
+        {{else}}<p class="since since-empty">No weights logged yet</p>{{end}}
+        <form method="post" action="{{$b.LogURL}}" class="hero-weight" data-care-form>{{template "baby-hidden" $csrf}}<input type="hidden" name="action" value="weight"><label class="field"><span>Weight, kg</span><input type="number" name="kg" min="0.01" max="100" step="0.001" inputmode="decimal" required value="{{index $b.Values "kg"}}"></label><label class="field"><span>Date</span><input type="date" name="date" value="{{index $b.Values "date"}}"></label><button type="submit" class="button button-feed">Log weight</button></form>
+        {{template "baby-card-error" (babyCardError $b "weight")}}
+        {{if $b.Running}}<p class="baby-hero-note">Feed running since {{$b.Running.TimeLabel}}</p>{{else if $b.HasFeed}}<p class="baby-hero-note">Last feed started <span data-since-hours>{{$b.SinceHours}}</span>h <span data-since-minutes>{{$b.SinceMinutes}}</span>m ago</p>{{end}}
+        {{else if eq $b.Focus "bottle"}}
+        <p class="baby-hero-label">Bottle intake today</p>
+        <p class="since">{{$b.BottleToday}}<small>ml</small></p>
+        <p class="baby-hero-note">{{$b.BottleNote}}</p>
+        {{if $b.Running}}<p class="baby-hero-note">Feed running since {{$b.Running.TimeLabel}}</p>{{else if $b.HasFeed}}<p class="baby-hero-note">Last feed started <span data-since-hours>{{$b.SinceHours}}</span>h <span data-since-minutes>{{$b.SinceMinutes}}</span>m ago</p>{{end}}
+        {{template "baby-strip" $b}}
+        {{else if eq $b.Focus "diapers"}}
+        <p class="baby-hero-label">Diapers today</p>
+        <p class="since">{{$b.DiapersToday}}</p>
+        <p class="baby-hero-note">{{$b.DiaperNote}}</p>
+        {{if $b.Running}}<p class="baby-hero-note">Feed running since {{$b.Running.TimeLabel}}</p>{{else if $b.HasFeed}}<p class="baby-hero-note">Last feed started <span data-since-hours>{{$b.SinceHours}}</span>h <span data-since-minutes>{{$b.SinceMinutes}}</span>m ago</p>{{end}}
+        {{template "baby-strip" $b}}
+        {{else}}
         {{if $b.Running}}
         <p class="baby-hero-label">Feed running since {{$b.Running.TimeLabel}}</p>
         <p class="since"><span data-since-hours>{{$b.SinceHours}}</span><small>h</small><span data-since-minutes>{{$b.SinceMinutes}}</span><small>m</small></p>
@@ -38,11 +66,10 @@
         {{else}}
         <p class="baby-hero-label">Since the last feed started</p>
         <p class="since since-empty">No feeds logged yet</p>
-        <p class="baby-hero-note">Log the first one below, or from Add on any page. TinyTots weights can be imported under Weights.</p>
+        <p class="baby-hero-note">Log the first one below, or from Add on any page.</p>
         {{end}}
-        <svg class="baby-strip" viewBox="0 0 320 40" role="img" aria-label="{{$b.Strip.Label}}"><rect class="strip-bg" x="0" y="0" width="320" height="40" rx="10"></rect>{{if $b.RunningX}}<line class="strip-running" x1="{{$b.RunningX}}" y1="13" x2="308" y2="13"></line>{{end}}{{range $b.Strip.Feeds}}<circle class="strip-feed" cx="{{.}}" cy="13" r="4.5"></circle>{{end}}{{range $b.Strip.Diapers}}<circle class="strip-diaper" cx="{{.}}" cy="28" r="3.5"></circle>{{end}}</svg>
-        <p class="strip-axis" aria-hidden="true"><span>24 h ago</span><span>12 h</span><span>Now</span></p>
-        <p class="strip-legend"><span class="legend-feed">Feeds</span><span class="legend-diaper">Diapers</span></p>
+        {{template "baby-strip" $b}}
+        {{end}}
       </div>
 
       <div class="log-pad">
@@ -90,22 +117,20 @@
     <div>
       <section class="baby-block" aria-labelledby="baby-patterns-title">
         <div class="section-head"><h3 id="baby-patterns-title">Last {{if $b.PatternDays}}{{if eq $b.PatternDays 1}}day{{else}}{{$b.PatternDays}} days{{end}}{{else}}7 days{{end}}</h3></div>
-        {{if $b.Patterns}}<div class="cards cards-two">{{range $b.Patterns}}<div class="card"><span class="card-head">{{.Label}}</span><span class="card-value">{{.Value}}{{if .Unit}}<small>{{.Unit}}</small>{{end}}</span><span class="card-foot">{{.Note}}</span></div>{{end}}</div>
-        <p class="chart-note">These numbers describe what was logged. They are not medical advice. <a href="/help#baby-averages">How they are worked out</a>.</p>
+        {{if $b.Patterns}}<dl class="stat-row">{{range $b.Patterns}}<div><dt>{{.Label}}</dt><dd><span class="stat-value">{{.Value}}{{if .Unit}}<small>{{.Unit}}</small>{{end}}</span><span class="stat-note">{{.Note}}</span></dd></div>{{end}}</dl>
+        <p class="chart-note">These numbers describe what was logged. They are not medical advice. <a href="{{$b.PatternsURL}}">More in Patterns</a>.</p>
         {{else}}<p class="quiet">Averages appear once something is logged.</p>{{end}}
       </section>
 
       <section class="baby-block" id="baby-weights" aria-labelledby="baby-weights-title">
         <div class="section-head"><h3 id="baby-weights-title">Weight</h3></div>
-        {{if $b.LatestWeight}}<div class="card"><span class="card-head">Latest</span><span class="card-value">{{$b.LatestWeight}}<small>kg</small></span>{{if $b.WeightPoints}}<svg class="spark" viewBox="0 0 240 84" role="img" aria-label="Weight over time, {{len $b.Weights}} entries"><polyline class="spark-line" points="{{$b.WeightPoints}}"></polyline>{{range $b.WeightDots}}<circle class="spark-dot" cx="{{.X}}" cy="{{.Y}}" r="3"></circle>{{end}}</svg>{{end}}<span class="card-foot">{{with index $b.Weights 0}}Logged {{.DateLabel}}{{end}}{{if gt (len $b.Weights) 1}}, {{len $b.Weights}} weights in all{{end}}</span></div>
-        <ul class="rows" role="list">{{range $i, $w := $b.Weights}}{{if lt $i 6}}{{template "baby-entry-row" $w}}{{end}}{{end}}</ul>
+        {{if $b.LatestWeight}}{{if ne $b.Focus "weight"}}<div class="card weight-card"><span class="card-head">Latest</span><span class="card-value">{{$b.LatestWeight}}<small>kg</small></span>{{if $b.WeightChangeNote}}<span class="card-foot">{{$b.WeightChangeNote}}</span>{{end}}{{if gt (len $b.Weights) 1}}<div class="chart-wrap" data-chart="weight" data-compact data-chart-data="{{$b.WeightData}}" tabindex="0" aria-label="Weight chart. Point at it, tap it, or use the arrow keys to read each weight."></div>{{end}}<span class="card-foot">{{with index $b.Weights 0}}Logged {{.DateLabel}}{{end}}{{if gt (len $b.Weights) 1}}, {{len $b.Weights}} weights in all{{end}}</span></div>{{end}}
+        <ul class="rows weight-rows" role="list">{{range $i, $w := $b.Weights}}{{if lt $i 3}}{{template "baby-weight-row" $w}}{{end}}{{end}}</ul>{{if gt (len $b.Weights) 3}}<details class="entry-details"><summary class="button button-small">All {{len $b.Weights}} weights</summary><ul class="rows weight-rows" role="list">{{range $i, $w := $b.Weights}}{{if ge $i 3}}{{template "baby-weight-row" $w}}{{end}}{{end}}</ul></details>{{end}}
         {{else}}<p class="quiet">No weights logged yet.</p>{{end}}
-        <details class="entry-details"{{if eq $b.ErrorCard "weight"}} open{{end}}><summary class="button button-small">Log a weight</summary>
+        {{if ne $b.Focus "weight"}}<details class="entry-details"{{if eq $b.ErrorCard "weight"}} open{{end}}><summary class="button button-small">Log a weight</summary>
           <form method="post" action="{{$b.LogURL}}" class="field-grid entry-form" data-care-form>{{template "baby-hidden" $csrf}}<input type="hidden" name="action" value="weight"><label class="field"><span>Weight, kg</span><input type="number" name="kg" min="0.01" max="100" step="0.001" inputmode="decimal" required value="{{index $b.Values "kg"}}"></label><label class="field"><span>Date</span><input type="date" name="date" value="{{index $b.Values "date"}}"></label>{{template "baby-card-error" (babyCardError $b "weight")}}<div class="row-actions"><button type="submit" class="button button-feed">Save weight</button></div></form>
-        </details>
-        <details class="entry-details"{{if eq $b.ErrorCard "import_weights"}} open{{end}}><summary class="button button-small">Import weights from TinyTots</summary>
-          <form method="post" action="{{$b.LogURL}}" enctype="multipart/form-data" class="stack entry-form"><input type="hidden" name="csrf" value="{{$csrf}}"><input type="hidden" name="action" value="import_weights"><label class="field"><span>TinyTots CSV export</span><input type="file" name="file" accept=".csv,text/csv" required></label>{{template "baby-card-error" (babyCardError $b "import_weights")}}<p class="hint">Only weight rows are added. Feeds, diapers and other rows in the file are skipped. Importing the same file again adds nothing new.</p><div class="row-actions"><button type="submit">Import weights</button></div></form>
-        </details>
+        </details>{{end}}
+        <p class="hint"><a href="{{$b.SettingsURL}}#import">Import past entries</a></p>
       </section>
 
       <section class="baby-block" aria-labelledby="baby-milestones-title">
@@ -120,4 +145,5 @@
   </div>
 </section>
 <script defer src="/assets/babylog.js"></script>
+<script defer src="/assets/babycharts.js"></script>
 {{end}}

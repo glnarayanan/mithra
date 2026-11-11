@@ -111,7 +111,7 @@
       },
       "coral": {
         "role": "tertiary",
-        "displayName": "Coral (HealthTrends family colour, unused in Mithra surfaces)",
+        "displayName": "Coral (Health area mark only)",
         "canonical": "oklch(64.2% 0.1541 41.2)",
         "tonalRamp": [
           "oklch(15% 0.1541 41.2)",
@@ -452,7 +452,7 @@
   ],
   "narrative": {
     "northStar": "The Household Paper Desk",
-    "overview": "**Creative North Star: \"The Household Paper Desk\"**\n\nMithra is a calm desk of warm paper for two adults running a household together. Neutrals are a faintly warm off-white; ink is a deep navy rather than black; the single voice of colour is Mithra blue, the blue square in the MithraHQ family (HealthTrends is the coral arch, TinyTots the mustard circle). The system is shared across MithraHQ and derives from the Lexington \"Vanta\" theme: display headings in Bricolage Grotesque, running text in InterVariable, big rounded colour panels for the few numbers that matter, and hairline lists for everything else.\n\nThe authenticated app wears the \"paper shell\" (chosen 2026-10-23). From 64rem up, one light top bar holds the brand, five underlined text tabs (Family Brief, Week in Review, Finance, Health, Planning) and the tools (Import, Add update in navy, Quick navigation, Account). Utility destinations (Import, Settings, Help) sit in the toolbar or Account menu on desktop and stay in the Menu under 64rem, where a sticky mobile header keeps every item. Density is moderate: generous heading space, readable 60 to 70ch measures, and tables only where records demand them.\n\nMithra is light only. There is no dark theme yet; navy surfaces are panels inside the light world, not a mode.",
+    "overview": "**Creative North Star: \"The Household Paper Desk\"**\n\nMithra is a calm desk of warm paper for two adults running a household together. Neutrals are a faintly warm off-white; ink is a deep navy rather than black; the single voice of colour is Mithra blue, the blue square. Inside the app, Health is marked with a coral arch and the baby log with a mustard circle. The system is shared across MithraHQ and derives from the Lexington \"Vanta\" theme: display headings in Bricolage Grotesque, running text in InterVariable, big rounded colour panels for the few numbers that matter, and hairline lists for everything else.\n\nThe authenticated app wears the \"paper shell\" (chosen 2026-10-23). From 64rem up, one light top bar holds the brand, five underlined text tabs (Family Brief, Week in Review, Finance, Health, Planning) and the tools (Import, Add update in navy, Quick navigation, Account). Utility destinations (Import, Settings, Help) sit in the toolbar or Account menu on desktop and stay in the Menu under 64rem, where a sticky mobile header keeps every item. Density is moderate: generous heading space, readable 60 to 70ch measures, and tables only where records demand them.\n\nMithra is light only. There is no dark theme yet; navy surfaces are panels inside the light world, not a mode.",
     "keyCharacteristics": [
       "Warm paper canvas, navy ink, one blue accent; mustard and terracotta in supporting roles.",
       "Bricolage Grotesque for h1, h2, the brand, panel numbers and buttons; InterVariable for everything else.",
@@ -464,7 +464,7 @@
     "rules": [
       {
         "name": "The One Blue Rule",
-        "body": "Mithra blue is the only saturated hue that identifies Mithra. Mustard and terracotta have jobs (status, attention); coral belongs to HealthTrends.",
+        "body": "Mithra blue is the only saturated hue that identifies Mithra. Mustard and terracotta have jobs (status, attention); coral marks only the Health area.",
         "section": "colors"
       },
       {
@@ -507,7 +507,7 @@
       "Don't add eyebrow labels above headings.",
       "Don't use uppercase transforms, letter-spaced caps or monospace as decoration.",
       "Don't use coloured side-stripe borders on cards, alerts or list items.",
-      "Don't use pure black, or a second saturated accent beyond the assigned roles; coral is HealthTrends' colour.",
+      "Don't use pure black, or a second saturated accent beyond the assigned roles; coral marks only the Health area.",
       "Don't add a dark theme ad hoc; Mithra is light only until a dark theme is designed for the whole family.",
       "Don't lift or animate surfaces that are not links."
     ]

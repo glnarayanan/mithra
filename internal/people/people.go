@@ -30,8 +30,11 @@ type Person struct {
 	Visibility               policy.Visibility
 	Name, Relationship       string
 	BirthDate                string
-	Version                  int64
-	CreatedAt, UpdatedAt     string
+	// Focus is the measure the child's page leads with: feeds, weight,
+	// bottle or diapers. Empty means feeds.
+	Focus                string
+	Version              int64
+	CreatedAt, UpdatedAt string
 }
 
 type Draft struct {
@@ -56,7 +59,7 @@ func (s *Service) List(ctx context.Context, actor policy.ActorScope) ([]Person, 
 	if err := authorize(ctx, s.db, actor); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id,household_id,owner_user_id,visibility,display_name,relationship,birth_date,version,created_at,updated_at FROM household_people WHERE household_id=? AND archived=0 AND (visibility='shared' OR owner_user_id=?) ORDER BY display_name COLLATE NOCASE, created_at`, actor.HouseholdID, actor.ActorID)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,household_id,owner_user_id,visibility,display_name,relationship,birth_date,focus,version,created_at,updated_at FROM household_people WHERE household_id=? AND archived=0 AND (visibility='shared' OR owner_user_id=?) ORDER BY display_name COLLATE NOCASE, created_at`, actor.HouseholdID, actor.ActorID)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +67,7 @@ func (s *Service) List(ctx context.Context, actor policy.ActorScope) ([]Person, 
 	var result []Person
 	for rows.Next() {
 		var p Person
-		if err := rows.Scan(&p.ID, &p.HouseholdID, &p.OwnerID, &p.Visibility, &p.Name, &p.Relationship, &p.BirthDate, &p.Version, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.HouseholdID, &p.OwnerID, &p.Visibility, &p.Name, &p.Relationship, &p.BirthDate, &p.Focus, &p.Version, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			return nil, err
 		}
 		result = append(result, p)
@@ -136,6 +139,26 @@ func (s *Service) Update(ctx context.Context, actor policy.ActorScope, id string
 	current.Version++
 	current.UpdatedAt = stamp
 	return current, nil
+}
+
+// Focuses lists the measures a child's page can lead with, in display order.
+var Focuses = []string{"feeds", "weight", "bottle", "diapers"}
+
+// SetFocus records which measure a child's page leads with. Any adult who can
+// see the person can change it; it changes no record.
+func (s *Service) SetFocus(ctx context.Context, actor policy.ActorScope, id, focus string) error {
+	known := false
+	for _, f := range Focuses {
+		known = known || f == focus
+	}
+	if !known {
+		return ErrInvalid
+	}
+	if _, err := s.Get(ctx, actor, id); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE household_people SET focus=?,updated_at=? WHERE id=? AND household_id=? AND archived=0`, focus, s.now().UTC().Format(time.RFC3339Nano), id, actor.HouseholdID)
+	return err
 }
 
 // Archive hides a person from Family without touching any record that names them.

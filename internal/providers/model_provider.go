@@ -56,7 +56,7 @@ var modelProviders = []ModelProvider{
 	{ProviderOpenRouter, "OpenRouter", "https://openrouter.ai/api/v1", "~openai/gpt-latest", StyleOpenAI, false},
 	{ProviderXAI, "xAI", "https://api.x.ai/v1", "grok-4.5", StyleOpenAI, false},
 	{ProviderGemini, "Google Gemini", "https://generativelanguage.googleapis.com", "gemini-2.5-flash", StyleGemini, false},
-	{ProviderAnthropic, "Anthropic", "https://api.anthropic.com", "", StyleAnthropic, false},
+	{ProviderAnthropic, "Anthropic", "https://api.anthropic.com", "claude-opus-5-5", StyleAnthropic, false},
 	{ProviderDeepSeek, "DeepSeek", "https://api.deepseek.com", "deepseek-v4-pro", StyleOpenAI, false},
 	{ProviderMistral, "Mistral", "https://api.mistral.ai/v1", "mistral-large-latest", StyleOpenAI, false},
 	{ProviderGroq, "Groq", "https://api.groq.com/openai/v1", "", StyleOpenAI, false},

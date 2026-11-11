@@ -111,11 +111,18 @@ func (s *SettingsStore) ReplaceProvider(ctx context.Context, scope policy.ActorS
 		return ErrSettingsCredential
 	}
 	prior, priorErr := s.ProviderConfig(ctx, scope)
+	reusedKey := false
 	if candidate.APIKey == "" && priorErr == nil && strings.EqualFold(strings.TrimSpace(candidate.ProviderID), prior.ProviderID) {
 		candidate.APIKey = prior.APIKey
+		reusedKey = true
 	}
 	normalized, _, err := providers.NormalizeModelConfig(providers.ModelConfig{ProviderID: candidate.ProviderID, Model: candidate.Model, BaseURL: candidate.BaseURL, APIKey: candidate.APIKey})
 	if err != nil {
+		return ErrSettingsCredential
+	}
+	// A saved key is only reused for the address it was saved for, so a
+	// changed custom base URL cannot receive the old key.
+	if reusedKey && normalized.BaseURL != prior.BaseURL {
 		return ErrSettingsCredential
 	}
 	final := ProviderConfig{ProviderID: normalized.ProviderID, Model: normalized.Model, BaseURL: normalized.BaseURL, APIKey: normalized.APIKey}
