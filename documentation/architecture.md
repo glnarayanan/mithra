@@ -204,7 +204,7 @@ dedicated unit.
 
 ## Verification
 
-CI uses Go 1.27.3, the required SQLite tags, `gofmt`, `go mod verify`,
+CI uses Go 1.27.4, the required SQLite tags, `gofmt`, `go mod verify`,
 `go vet`, tests, an application build, native Node syntax/test checks, and a
 pinned `govulncheck`. It does not install a frontend package manager.
 

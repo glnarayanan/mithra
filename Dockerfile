@@ -6,7 +6,7 @@
 # sandboxed PDF parser; docker-compose.yml decides which and how each is
 # confined. See documentation/deploy-containers.md.
 
-ARG GO_VERSION=1.27.3
+ARG GO_VERSION=1.27.4
 ARG DEBIAN_RELEASE=trixie
 
 # SQLCipher source, pinned to the v4.19.0 tag and checked against its commit
