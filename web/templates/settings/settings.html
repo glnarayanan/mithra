@@ -17,7 +17,7 @@
         <section class="settings-section" id="household" aria-labelledby="household-title">
           <div class="settings-section-copy"><h2 id="household-title">Household access</h2><p>A household holds two adults: the owner and a partner. Shared records are visible to both. Records marked “Only you” can be seen by the person who added them and no one else.</p></div>
           <div class="settings-section-control">
-            {{with .Household}}{{if .Status}}<p id="household-notice" class="status-message" role="status" aria-live="polite" tabindex="-1">{{.Status}}</p>{{else if .Error}}<p id="household-notice" class="form-message form-error" role="alert" tabindex="-1">{{.Error}}</p>{{end}}{{end}}
+            {{with .Household}}{{if .Status}}<p id="household-notice" class="status-message" role="status" tabindex="-1">{{.Status}}</p>{{else if .Error}}<p id="household-notice" class="form-message form-error" role="alert" tabindex="-1">{{.Error}}</p>{{end}}{{end}}
             <ul class="access-list">
               {{range .Access}}<li class="access-row{{if .CanReinvite}} is-removed{{end}}">
                 <p class="access-who"><span class="member-email">{{.Email}}</span><span class="visually-hidden">, </span><span class="access-label">{{.Label}}</span><span class="visually-hidden">. </span><span class="member-meta">{{.Detail}}</span></p>
