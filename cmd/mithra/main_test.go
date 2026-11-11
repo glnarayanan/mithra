@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/glnarayanan/mithra/internal/database"
-	"github.com/glnarayanan/mithra/internal/household"
 	"github.com/glnarayanan/mithra/internal/imports"
 )
 
@@ -205,35 +204,30 @@ func TestOperatorCommandFailuresExplainThemselvesWithoutEchoingArguments(t *test
 	}
 }
 
-func TestRecoverOwnerCommandUsesCurrentAllowlistAndLeavesPasswordBootstrapPending(t *testing.T) {
+func TestRecoverOwnerCommandReopensClosedHouseholdWithPasswordBootstrapPending(t *testing.T) {
 	ctx := context.Background()
 	databasePath := filepath.Join(t.TempDir(), "mithra.sqlite3")
 	db, err := database.Open(ctx, databasePath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := household.New(db, household.Config{})
-	if err := service.SyncAllowlist(ctx, []string{"former@example.com"}); err != nil {
-		t.Fatal(err)
-	}
 	stamp := time.Now().UTC().Format(time.RFC3339Nano)
-	if _, err := db.Exec(`UPDATE users SET status='active',password_hash='retired-hash' WHERE email='former@example.com'`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`INSERT INTO households(id,status,owner_user_id,created_at,updated_at) SELECT 'closed-home','active',id,?,? FROM users WHERE email='former@example.com'`, stamp, stamp); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`INSERT INTO household_members(household_id,user_id,role,created_at) SELECT 'closed-home',id,'owner',? FROM users WHERE email='former@example.com'`, stamp); err != nil {
-		t.Fatal(err)
-	}
-	if err := service.SyncAllowlist(ctx, nil); err != nil {
-		t.Fatal(err)
+	// A household closed by an older release when its owner left the
+	// allowlist: the owner is disabled and the household has no owner.
+	for _, statement := range []string{
+		`INSERT INTO users(id,email,status,password_hash,created_at,updated_at,disabled_at) VALUES('former','former@example.com','disabled','retired-hash',?1,?1,?1)`,
+		`INSERT INTO households(id,status,owner_user_id,created_at,updated_at) VALUES('closed-home','closed',NULL,?1,?1)`,
+		`INSERT INTO household_members(household_id,user_id,role,created_at) VALUES('closed-home','former','owner',?1)`,
+	} {
+		if _, err := db.Exec(statement, stamp); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := run([]string{"recover-owner", "--db", databasePath, "--allowed-emails", "former@example.com", "--household", "closed-home", "--email", "former@example.com"}); err != nil {
+	if err := run([]string{"recover-owner", "--db", databasePath, "--household", "closed-home", "--email", "former@example.com"}); err != nil {
 		t.Fatalf("recover-owner command: %v", err)
 	}
 
@@ -393,4 +387,20 @@ func unixSocketTestPath(t *testing.T) string {
 		}
 	})
 	return filepath.Join(directory, "mithra.sock")
+}
+
+func TestResolveOwnerEmailPrefersOwnerAndFallsBackToLegacyList(t *testing.T) {
+	for _, tc := range []struct{ owner, legacy, want string }{
+		{" Owner@Example.com ", "other@example.com", "owner@example.com"},
+		{"", "first@example.com,second@example.com", "first@example.com"},
+		{"", "", ""},
+	} {
+		got, err := resolveOwnerEmail(tc.owner, tc.legacy)
+		if err != nil || got != tc.want {
+			t.Fatalf("resolveOwnerEmail(%q, %q) = %q, %v", tc.owner, tc.legacy, got, err)
+		}
+	}
+	if _, err := resolveOwnerEmail("not-an-email", ""); err == nil {
+		t.Fatal("malformed owner email accepted")
+	}
 }

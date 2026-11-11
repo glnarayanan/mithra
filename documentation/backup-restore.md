@@ -27,12 +27,11 @@ the complete install and operator lifecycle.
 ## Restore boundary
 
 Restore requires an archive, the matching retained key, a readable deletion
-journal, and the current allowlist:
+journal:
 
 ```bash
 sudo mithra-installer restore \
-  --archive /secure/mithra-20260718T120000.000000000Z.mbackup \
-  --allowed-emails owner@example.com,partner@example.com
+  --archive /secure/mithra-20260718T120000.000000000Z.mbackup
 ```
 
 The archive is bounded and extracted into a private sibling staging directory;
@@ -45,7 +44,7 @@ a deletion cannot resurrect that source or its cascade-derived records.
 Before activation, restore clears all password hashes, model-provider credentials,
 browser sessions, reset and invitation tokens, throttles, jobs and leases,
 pending document work, coaching caches, nudges, and pending email work. The
-current allowlist is reconciled and eligible accounts remain pending until they
+people removed from the household stay removed, and members remain pending until they
 use **Set or reset your password**. The household owner must re-enter the
 model-provider connection in Settings.
 

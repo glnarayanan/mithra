@@ -71,7 +71,7 @@ protected storage, then run `mithra-installer verify-backup --archive PATH`.
 Practice restoration in a disposable environment. Restore authenticates and
 stages data before activation, preserves deletion intent, and intentionally
 clears access tokens, password hashes, model-provider credentials, pending work, and
-cached coaching; allowlisted adults re-bootstrap passwords and the owner
+cached coaching; household members re-bootstrap passwords and the owner
 reconnects the provider afterward.
 
 `uninstall` preserves data and recovery material. `purge --confirm-purge` is

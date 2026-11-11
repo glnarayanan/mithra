@@ -109,7 +109,7 @@ func TestResetAcknowledgementsAndRequestValidationDoNotRevealAccounts(t *testing
 	if len(mailer.messages) != 1 {
 		t.Fatalf("reset delivery count = %d, want one", len(mailer.messages))
 	}
-	if err := application.auth.SynchronizeAllowlist(context.Background(), nil); err != nil {
+	if _, err := application.db.Exec(`UPDATE users SET status='disabled' WHERE email='allowed@example.com'`); err != nil {
 		t.Fatal(err)
 	}
 	disabled := request("allowed@example.com", testOrigin, "same-origin")
@@ -148,8 +148,20 @@ func TestResetAcknowledgementsAndRequestValidationDoNotRevealAccounts(t *testing
 }
 
 func TestSettingsInvitationCSRFAndHouseholdIsolation(t *testing.T) {
-	application, mailer := newAuthTestApp(t, "owner@example.com", "partner@example.com", "third@example.com", "other@example.com")
+	application, mailer := newAuthTestApp(t, "owner@example.com")
 	owner := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
+	// A second household can only come from outside Settings (for example a
+	// demo); it must still be isolated.
+	stamp := time.Now().UTC().Format(time.RFC3339Nano)
+	for _, statement := range []string{
+		`INSERT INTO users(id,email,status,created_at,updated_at) VALUES('other','other@example.com','pending',?1,?1)`,
+		`INSERT INTO households(id,status,owner_user_id,created_at,updated_at) VALUES('other-home','active','other',?1,?1)`,
+		`INSERT INTO household_members(household_id,user_id,role,created_at) VALUES('other-home','other','owner',?1)`,
+	} {
+		if _, err := application.db.Exec(statement, stamp); err != nil {
+			t.Fatal(err)
+		}
+	}
 	other := activate(t, application, mailer, "other@example.com", "another owner password", nil)
 
 	settings := httptest.NewRequest(http.MethodGet, "/settings", nil)
@@ -202,13 +214,21 @@ func TestSettingsInvitationCSRFAndHouseholdIsolation(t *testing.T) {
 		t.Fatalf("logout = %d session-cleared=%v csrf-cleared=%v", response.Code, hasClearedCookie(response, application.cookieName(sessionCookieName)), hasClearedCookie(response, application.cookieName(csrfCookieName)))
 	}
 
-	if err := application.auth.SynchronizeAllowlist(context.Background(), []string{"partner@example.com", "third@example.com", "other@example.com"}); err != nil {
-		t.Fatal(err)
+	partner = activateInvitationLogin(t, application, "partner@example.com", "a partner secure password")
+	removal := authForm(http.MethodPost, "/settings", url.Values{"action": {"remove_partner"}, "email": {"partner@example.com"}, "csrf": {owner.csrf.Value}}, []*http.Cookie{owner.session, owner.csrf})
+	if response := serve(application, removal); response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "no longer has access") || !strings.Contains(response.Body.String(), "Invite again") {
+		t.Fatalf("remove partner = %d %q", response.Code, response.Body.String())
 	}
 	removed := httptest.NewRequest(http.MethodGet, "/planning", nil)
-	removed.AddCookie(owner.session)
+	removed.AddCookie(partner.session)
 	if response := serve(application, removed); response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/auth/login" {
-		t.Fatalf("removed owner retained protected route access: %d %q", response.Code, response.Header().Get("Location"))
+		t.Fatalf("removed partner retained protected route access: %d %q", response.Code, response.Header().Get("Location"))
+	}
+	stillOwner := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	stillOwner.AddCookie(owner.session)
+	stillOwner.AddCookie(owner.csrf)
+	if response := serve(application, stillOwner); response.Code != http.StatusOK {
+		t.Fatalf("owner lost access after removing partner: %d %q", response.Code, response.Header().Get("Location"))
 	}
 }
 
@@ -269,6 +289,8 @@ func (m *fakeMailer) last(t testing.TB) providers.Message {
 	return m.messages[len(m.messages)-1]
 }
 
+// newAuthTestApp configures the first address as the owner. Later
+// addresses only document who the test invites.
 func newAuthTestApp(t testing.TB, allowed ...string) (*App, *fakeMailer) {
 	t.Helper()
 	application := newTestApp(t)
@@ -285,8 +307,10 @@ func newAuthTestApp(t testing.TB, allowed ...string) (*App, *fakeMailer) {
 	application.mailer = &fakeMailer{}
 	application.origin, _ = canonicalOrigin(testOrigin, true)
 	application.secure = true
-	if err := application.auth.SynchronizeAllowlist(context.Background(), allowed); err != nil {
-		t.Fatal(err)
+	if len(allowed) > 0 {
+		if err := application.auth.ConfigureOwner(context.Background(), allowed[0]); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return application, application.mailer.(*fakeMailer)
 }
@@ -395,4 +419,31 @@ func lastLine(text string) string {
 		}
 	}
 	return ""
+}
+
+// activateInvitationLogin signs an existing adult in with their password.
+func activateInvitationLogin(t testing.TB, application *App, email, password string) browserSession {
+	t.Helper()
+	response := serve(application, authForm(http.MethodPost, "/auth/login", url.Values{"email": {email}, "password": {password}}, nil))
+	if response.Code != http.StatusSeeOther {
+		t.Fatalf("login %s = %d %q", email, response.Code, response.Body.String())
+	}
+	return browserSession{session: responseCookie(t, response, application.cookieName(sessionCookieName)), csrf: responseCookie(t, response, application.cookieName(csrfCookieName))}
+}
+
+func TestSettingsCancelInvitationStopsTheLink(t *testing.T) {
+	application, mailer := newAuthTestApp(t, "owner@example.com")
+	owner := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
+	if response := serve(application, settingsPost(owner, "partner@example.com")); response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Cancel invitation") || strings.Contains(response.Body.String(), `id="email"`) {
+		t.Fatalf("invited settings = %d %q", response.Code, response.Body.String())
+	}
+	token := tokenFromMessage(t, mailer.last(t), "token")
+	cancel := authForm(http.MethodPost, "/settings", url.Values{"action": {"cancel_invite"}, "email": {"partner@example.com"}, "csrf": {owner.csrf.Value}}, []*http.Cookie{owner.session, owner.csrf})
+	if response := serve(application, cancel); response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "cancelled") || !strings.Contains(response.Body.String(), `id="email"`) {
+		t.Fatalf("cancel invitation = %d %q", response.Code, response.Body.String())
+	}
+	use := authForm(http.MethodPost, "/auth/password", url.Values{"password": {"a partner secure password"}}, []*http.Cookie{bootstrapInvitation(t, application, token)})
+	if response := serve(application, use); response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "invalid or expired") {
+		t.Fatalf("cancelled invitation still worked = %d", response.Code)
+	}
 }

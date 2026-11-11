@@ -99,9 +99,10 @@ written.
    A healthy stack prints `database=encrypted`, `database_check=ok` and
    `pdf_parser=reachable`. Dokploy shows the compose project name, which is
    `<app-name>` here.
-6. **Sign in.** Open `https://app.mithrahq.com`. The first allowlisted adult uses
-   **Set or reset your password** and becomes the household owner. The owner
-   invites the partner in **Settings**. See
+6. **Sign in.** Open `https://app.mithrahq.com`. Use **Set or reset your
+   password** with `MITHRA_OWNER_EMAIL`; that person becomes the household
+   owner. The owner invites the partner from **Settings**, with no change to
+   the environment and no redeploy. See
    [self-hosting](self-hosting.md#first-login-and-household-setup) for the rest
    of the setup, which is the same for both install paths.
 7. **Set up volume backups.** Under **Volume Backups**, schedule backups of
@@ -115,7 +116,7 @@ Set these in Dokploy. Compose refuses to start when any of them is missing.
 
 | Variable | Example | Purpose |
 | --- | --- | --- |
-| `ALLOWED_EMAILS` | `owner@example.com,partner@example.com` | The only addresses that can sign in. There is no public signup. |
+| `MITHRA_OWNER_EMAIL` | `owner@example.com` | The one person who can start the household at first sign-in. Everyone else is invited from Settings; there is no public signup. Not used again once the household exists. A fresh install without it stops with `error_code=startup_failed stage=owner_email`. |
 | `MITHRA_CANONICAL_ORIGIN` | `https://app.mithrahq.com` | The public origin. Must be HTTPS. Used for links, cookie scope and the CSRF origin check. Never taken from `Host` or forwarding headers. |
 | `MITHRA_PLUNK_FROM` | `Mithra <hello@mithrahq.com>` | The verified Plunk sender. |
 | `MITHRA_TRUSTED_PROXIES` | `10.0.1.0/24` | Comma-separated private CIDRs of the proxy network. Only peers in these networks may supply `X-Forwarded-For`. |
@@ -198,7 +199,7 @@ docker compose -p <app-name> logs app | grep backup_verified
 ```
 
 To restore, run these commands on the server. Restore needs the same master
-key and the current `ALLOWED_EMAILS`.
+key.
 
 ```bash
 docker compose -p <app-name> exec app ls /backups
@@ -236,13 +237,20 @@ Stop the app first and use `run`.
 | Reset the demo household | `docker compose -p <app-name> run --rm --no-deps app reset-demo --owner-email … --partner-email …` |
 
 `reset-demo` only works on the marked demo household. It makes a verified
-backup first, and both addresses must be in `ALLOWED_EMAILS`. It keeps
+backup first. It keeps
 existing password hashes unless you also supply `--owner-password-file` and
 `--partner-password-file`. Those files must be extra compose secrets under
 `/run/secrets`.
 
-To change the allowlist or the origin, edit the environment in Dokploy and
-redeploy.
+To change the origin, edit the environment in Dokploy and redeploy. People
+are invited and removed in **Settings**, not in the environment.
+
+**Coming from `ALLOWED_EMAILS`.** Earlier releases used `ALLOWED_EMAILS` as a
+sign-in allowlist. It still starts the app, and its first address stands in
+for `MITHRA_OWNER_EMAIL`, but nothing else in it is read and removing an
+address no longer removes anyone. Your household and records are unchanged.
+Replace it with `MITHRA_OWNER_EMAIL` when convenient, then manage your partner
+in **Settings**.
 
 ## Upgrades
 
@@ -276,7 +284,7 @@ openssl rand 32 | base64 | tr '+/' '-_' | tr -d '=\n' > ../files/master.key
 printf '%s' 'sk_your_plunk_key' > ../files/plunk.key
 chmod 0644 ../files/*.key   # root-owned and not writable by others is enough
 cat > .env <<'EOF'
-ALLOWED_EMAILS=owner@example.com,partner@example.com
+MITHRA_OWNER_EMAIL=owner@example.com
 MITHRA_CANONICAL_ORIGIN=https://mithra.example.com
 MITHRA_PLUNK_FROM=Mithra <hello@mithra.example.com>
 MITHRA_TRUSTED_PROXIES=172.16.0.0/12

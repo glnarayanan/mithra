@@ -58,7 +58,7 @@ jobs:
           chmod 0644 "$secrets"/*.key
           sudo chown root:root "$secrets"/*.key
           cat > "$RUNNER_TEMP/mithra.env" <<ENV
-          ALLOWED_EMAILS=owner@example.com,partner@example.com
+          MITHRA_OWNER_EMAIL=owner@example.com
           MITHRA_CANONICAL_ORIGIN=https://mithra.ci.invalid
           MITHRA_PLUNK_FROM=Mithra <hello@mithra.ci.invalid>
           MITHRA_TRUSTED_PROXIES=172.16.0.0/12

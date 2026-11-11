@@ -42,7 +42,7 @@ type Options struct {
 	Proxy         ProxyMode
 	PreviousProxy ProxyMode
 	Port          int
-	AllowedEmails []string
+	OwnerEmail    string
 	PlunkFrom     string
 	Archive       string
 	ConfirmPurge  bool
@@ -60,7 +60,7 @@ type HostFacts struct {
 	KeyExists, BackupExists     bool
 	MigrationClean, SQLiteClean bool
 	ArchiveValid, JournalValid  bool
-	KeyMatches, AllowlistValid  bool
+	KeyMatches                  bool
 	FreeBytes                   uint64
 	ArivuPaths                  []string
 	ArivuBaseline               ArivuBaseline
@@ -179,7 +179,7 @@ func BuildPlan(opts Options, facts HostFacts) (Plan, error) {
 		}
 	}
 	if opts.Operation == Install || opts.Operation == Reconfigure {
-		if err := validateAllowlist(opts.AllowedEmails); err != nil {
+		if err := validateOwnerEmail(opts.OwnerEmail, opts.Operation == Install); err != nil {
 			return Plan{}, err
 		}
 		parsed, err := mail.ParseAddress(strings.TrimSpace(opts.PlunkFrom))
@@ -194,8 +194,8 @@ func BuildPlan(opts Options, facts HostFacts) (Plan, error) {
 		}
 	}
 	if opts.Operation == Restore {
-		if opts.Archive == "" || !facts.ArchiveValid || !facts.JournalValid || !facts.KeyExists || !facts.KeyMatches || !facts.AllowlistValid {
-			return Plan{}, errors.New("restore requires a verified archive, matching retained key, valid deletion journal, and current allowlist")
+		if opts.Archive == "" || !facts.ArchiveValid || !facts.JournalValid || !facts.KeyExists || !facts.KeyMatches {
+			return Plan{}, errors.New("restore requires a verified archive, matching retained key, and valid deletion journal")
 		}
 	}
 	paths := OwnedPaths(opts.Root, proxy)
@@ -231,7 +231,7 @@ func BuildPlan(opts Options, facts HostFacts) (Plan, error) {
 		plan.Actions = []string{"drain mutations", "snapshot one database/source/journal generation", "authenticate manifest", "rotate successful archives"}
 		plan.Mutations = []string{paths.Backups}
 	case Restore:
-		plan.Actions = []string{"verify and extract into staging", "reconcile deletion journal", "clear access and provider state", "apply current allowlist", "activate atomically", "verify health or roll back"}
+		plan.Actions = []string{"verify and extract into staging", "reconcile deletion journal", "clear access and provider state", "activate atomically", "verify health or roll back"}
 		plan.Mutations = []string{paths.Data}
 	case Uninstall:
 		plan.Actions = []string{"stop service", "remove owned runtime and Plunk credential", "preserve recovery state"}
@@ -257,17 +257,19 @@ func BuildPlan(opts Options, facts HostFacts) (Plan, error) {
 	return plan, nil
 }
 
-// validateAllowlist rejects entries that cannot pass the same address rules
-// used by runtime allowlist synchronization before lifecycle work begins.
-func validateAllowlist(emails []string) error {
-	if len(emails) == 0 {
-		return errors.New("at least one allowlisted email is required")
-	}
-	for _, email := range emails {
-		parsed, err := mail.ParseAddress(strings.TrimSpace(email))
-		if err != nil || !strings.EqualFold(parsed.Address, strings.TrimSpace(email)) {
-			return fmt.Errorf("invalid allowlisted email %q", email)
+// validateOwnerEmail checks the address that may start the household. A new
+// install needs one; later operations may keep the household they have.
+func validateOwnerEmail(email string, required bool) error {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		if required {
+			return errors.New("an owner email is required")
 		}
+		return nil
+	}
+	parsed, err := mail.ParseAddress(email)
+	if err != nil || !strings.EqualFold(parsed.Address, email) {
+		return fmt.Errorf("invalid owner email %q", email)
 	}
 	return nil
 }
@@ -357,7 +359,7 @@ func InferOwnedProxyMode(root string) ProxyMode {
 
 func RuntimeFacts(root string, port int) HostFacts {
 	paths := OwnedPaths(root, AppOnly)
-	facts := HostFacts{OS: runtime.GOOS, Arch: runtime.GOARCH, Commands: map[string]string{}, Listeners: map[int]string{}, VHosts: map[string]string{}, AppPortAvailable: ProbeLoopback(port), MigrationClean: true, SQLiteClean: true, AllowlistValid: true}
+	facts := HostFacts{OS: runtime.GOOS, Arch: runtime.GOARCH, Commands: map[string]string{}, Listeners: map[int]string{}, VHosts: map[string]string{}, AppPortAvailable: ProbeLoopback(port), MigrationClean: true, SQLiteClean: true}
 	facts.Systemd = exists(rooted(root, "/run/systemd/system")) || root != "/"
 	facts.SQLite = true
 	facts.MithraInstalled, facts.DBExists, facts.KeyExists = exists(paths.Binary), exists(paths.Database), exists(paths.MasterKey)

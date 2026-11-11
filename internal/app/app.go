@@ -50,9 +50,14 @@ const (
 // Config is the application configuration required before the HTTP server can
 // listen. Network listener policy belongs to cmd/mithra.
 type Config struct {
-	DatabasePath    string
-	DatabaseKey     []byte // SQLCipher page key; nil opens plain SQLite.
-	AllowedEmails   []string
+	DatabasePath string
+	DatabaseKey  []byte // SQLCipher page key; nil opens plain SQLite.
+	// OwnerEmail may start this install's household at first sign-in.
+	// Everyone else joins through an invitation sent from Settings.
+	OwnerEmail string
+	// RequireOwner refuses to start a fresh install that has neither an
+	// owner email nor a household, since nobody could ever sign in.
+	RequireOwner    bool
 	CanonicalOrigin string
 	SecureCookies   bool
 	TrustedProxy    bool
@@ -117,16 +122,16 @@ type NavigationItem struct {
 	PhoneMenu bool
 }
 
+// ErrOwnerRequired means a fresh install has no owner email, so nobody could
+// ever sign in.
+var ErrOwnerRequired = errors.New("owner email is required until the household exists")
+
 // New opens a verified SQLite database before making a handler available.
 func New(ctx context.Context, cfg Config) (*App, error) {
 	if strings.TrimSpace(cfg.DatabasePath) == "" {
 		return nil, errors.New("application database path is required")
 	}
 	origin, err := canonicalOrigin(cfg.CanonicalOrigin, cfg.SecureCookies)
-	if err != nil {
-		return nil, err
-	}
-	allowedEmails, err := normalizeAllowlist(cfg.AllowedEmails)
 	if err != nil {
 		return nil, err
 	}
@@ -144,9 +149,16 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	if service == nil {
 		service = auth.New(db, auth.Config{})
 	}
-	if err := service.SynchronizeAllowlist(ctx, allowedEmails); err != nil {
+	if err := service.ConfigureOwner(ctx, cfg.OwnerEmail); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("synchronize allowlist: %w", err)
+		return nil, fmt.Errorf("configure owner: %w", err)
+	}
+	if cfg.RequireOwner && strings.TrimSpace(cfg.OwnerEmail) == "" {
+		exists, err := service.HasHousehold(ctx)
+		if err != nil || !exists {
+			_ = db.Close()
+			return nil, ErrOwnerRequired
+		}
 	}
 	mailer := cfg.Mailer
 	if mailer == nil {

@@ -139,7 +139,7 @@ func runAutomaticUpgrade(ctx context.Context, parsed parsedInstallerCommand, out
 	if *f.root != "/" {
 		args = append(args, "--root", *f.root)
 	}
-	for _, flag := range [][2]string{{"--domain", *f.domain}, {"--proxy", *f.proxy}, {"--allowed-emails", *f.emails}} {
+	for _, flag := range [][2]string{{"--domain", *f.domain}, {"--proxy", *f.proxy}, {"--owner-email", *f.ownerEmail}, {"--allowed-emails", *f.emails}} {
 		if flag[1] != "" {
 			args = append(args, flag[0], flag[1])
 		}

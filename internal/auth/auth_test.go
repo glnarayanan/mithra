@@ -11,12 +11,12 @@ import (
 	"github.com/glnarayanan/mithra/internal/database"
 )
 
-func TestAllowlistBootstrapInvitationAndImmediateRevocation(t *testing.T) {
+func TestOwnerBootstrapInvitationAndImmediateRemoval(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 7, 18, 0, 0, 0, 0, time.UTC)
 	db := testDB(t)
 	service := New(db, Config{Now: func() time.Time { return now }, Token: tokens()})
-	if err := service.SynchronizeAllowlist(ctx, []string{"Alice@example.com", "bob@example.com", "carol@example.com"}); err != nil {
+	if err := service.ConfigureOwner(ctx, "Alice@example.com"); err != nil {
 		t.Fatal(err)
 	}
 	if delivery, err := service.RequestPasswordReset(ctx, "nobody@example.com", "ip"); err != nil || delivery != nil {
@@ -28,7 +28,7 @@ func TestAllowlistBootstrapInvitationAndImmediateRevocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	if alice.Scope.Role != "owner" || alice.Scope.HouseholdID == "" {
-		t.Fatalf("first adult did not own one-person household: %#v", alice.Scope)
+		t.Fatalf("configured owner did not own one-person household: %#v", alice.Scope)
 	}
 	if err := service.VerifyCSRF(ctx, alice.Cookie, alice.CSRF); err != nil {
 		t.Fatalf("csrf: %v", err)
@@ -41,6 +41,11 @@ func TestAllowlistBootstrapInvitationAndImmediateRevocation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// An invitee uses the invitation, not a reset link, and cannot start a
+	// household of their own.
+	if delivery, err := service.RequestPasswordReset(ctx, "bob@example.com", "bob-ip"); err != nil || delivery != nil {
+		t.Fatalf("invitee reset = %#v, %v", delivery, err)
+	}
 	bob, err := service.SetPassword(ctx, "", "another secure password", invite.Token)
 	if err != nil {
 		t.Fatal(err)
@@ -52,64 +57,91 @@ func TestAllowlistBootstrapInvitationAndImmediateRevocation(t *testing.T) {
 		t.Fatalf("reused invitation password setup = %v", err)
 	}
 	assertNoPlaintext(t, db, invite.Token)
-	carolReset := resetFor(t, ctx, service, "carol@example.com", "carol-ip")
-	if _, err := service.SetPassword(ctx, carolReset, "third adult password", ""); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := service.CreateInvitation(ctx, alice.Scope, "carol@example.com", time.Hour); err == nil {
 		t.Fatal("third adult invitation unexpectedly succeeded")
 	}
-	if err := service.SynchronizeAllowlist(ctx, []string{"bob@example.com", "carol@example.com"}); err != nil {
+	if _, err := service.CreateInvitation(ctx, bob.Scope, "carol@example.com", time.Hour); err == nil {
+		t.Fatal("partner sent an invitation")
+	}
+	access, err := service.Access(ctx, alice.Scope)
+	if err != nil || len(access) != 2 || access[1].Email != "bob@example.com" || access[1].State != "active" {
+		t.Fatalf("access = %#v, %v", access, err)
+	}
+	if err := service.RemovePartner(ctx, alice.Scope, "bob@example.com"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Authenticate(ctx, alice.Cookie); err != ErrSession {
-		t.Fatalf("removed account retained session: %v", err)
-	}
 	if _, err := service.Authenticate(ctx, bob.Cookie); err != ErrSession {
-		t.Fatalf("remaining adult retained session in ownerless household: %v", err)
+		t.Fatalf("removed partner retained session: %v", err)
 	}
-	var status, householdStatus string
-	if err := db.QueryRow(`SELECT status FROM users WHERE email='alice@example.com'`).Scan(&status); err != nil || status != "disabled" {
-		t.Fatalf("alice status = %q, %v", status, err)
+	if _, err := service.Login(ctx, "bob@example.com", "another secure password", "bob-login"); err != ErrInvalidCredentials {
+		t.Fatalf("removed partner signed in: %v", err)
 	}
-	if err := db.QueryRow(`SELECT status FROM households WHERE id=?`, alice.Scope.HouseholdID).Scan(&householdStatus); err != nil || householdStatus != "closed" {
-		t.Fatalf("household state = %q, %v", householdStatus, err)
+	if _, err := service.Authenticate(ctx, alice.Cookie); err != nil {
+		t.Fatalf("owner lost session when removing partner: %v", err)
 	}
-	if err := service.RecoverOwner(ctx, alice.Scope.HouseholdID, "bob@example.com"); err != nil {
-		t.Fatalf("promote remaining adult: %v", err)
+	again, err := service.CreateInvitation(ctx, alice.Scope, "bob@example.com", time.Hour)
+	if err != nil {
+		t.Fatalf("invite removed partner again: %v", err)
 	}
-	if _, err := service.Authenticate(ctx, bob.Cookie); err != ErrSession {
-		t.Fatalf("recovery revived a revoked cookie: %v", err)
+	returned, err := service.SetPassword(ctx, "", "a returning password", again.Token)
+	if err != nil {
+		t.Fatalf("returning partner: %v", err)
+	}
+	if returned.Scope.HouseholdID != alice.Scope.HouseholdID || returned.Scope.Role != "adult" {
+		t.Fatalf("returning partner scope = %#v", returned.Scope)
+	}
+	if _, err := service.SetPassword(ctx, "", "a returning password", again.Token); err != ErrInvalidReset {
+		t.Fatalf("returning invitation reused = %v", err)
 	}
 }
 
-func TestSoleOwnerRemovalClosesHousehold(t *testing.T) {
+func TestOnlyTheConfiguredOwnerStartsTheHousehold(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 7, 18, 0, 0, 0, 0, time.UTC)
 	db := testDB(t)
 	service := New(db, Config{Now: func() time.Time { return now }, Token: tokens()})
-	if err := service.SynchronizeAllowlist(ctx, []string{"owner@example.com"}); err != nil {
+	stamp := now.Format(time.RFC3339Nano)
+	// A pending account left from an older allowlist cannot start a second
+	// household or get a reset link.
+	if _, err := db.Exec(`INSERT INTO users(id,email,status,created_at,updated_at) VALUES('legacy','legacy@example.com','pending',?1,?1)`, stamp); err != nil {
 		t.Fatal(err)
+	}
+	if err := service.ConfigureOwner(ctx, "owner@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if delivery, err := service.RequestPasswordReset(ctx, "legacy@example.com", "legacy-ip"); err != nil || delivery != nil {
+		t.Fatalf("legacy pending reset = %#v, %v", delivery, err)
 	}
 	owner, err := service.SetPassword(ctx, resetFor(t, ctx, service, "owner@example.com", "owner-ip"), "long enough password", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := service.SynchronizeAllowlist(ctx, nil); err != nil {
+	if exists, err := service.HasHousehold(ctx); err != nil || !exists {
+		t.Fatalf("household after owner sign-in = %t, %v", exists, err)
+	}
+	// Changing the configured owner later does not open a second household.
+	if err := service.ConfigureOwner(ctx, "new-owner@example.com"); err != nil {
 		t.Fatal(err)
 	}
-	var status string
-	if err := db.QueryRow(`SELECT status FROM households WHERE id=?`, owner.Scope.HouseholdID).Scan(&status); err != nil || status != "closed" {
-		t.Fatalf("sole-owner household = %q, %v", status, err)
+	if delivery, err := service.RequestPasswordReset(ctx, "new-owner@example.com", "new-ip"); err != nil || delivery == nil {
+		t.Fatalf("new owner reset = %#v, %v", delivery, err)
+	} else if _, err := service.SetPassword(ctx, delivery.Token, "another long password", ""); err == nil {
+		t.Fatal("second household started")
 	}
-	if err := service.SynchronizeAllowlist(ctx, []string{"owner@example.com"}); err != nil {
+	var households int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM households`).Scan(&households); err != nil || households != 1 {
+		t.Fatalf("households = %d, %v", households, err)
+	}
+	// The original owner is unaffected.
+	if _, err := service.Authenticate(ctx, owner.Cookie); err != nil {
+		t.Fatalf("owner session: %v", err)
+	}
+	// Recovery still works for a closed household from an older release.
+	if _, err := db.Exec(`UPDATE households SET status='closed',owner_user_id=NULL`); err != nil {
 		t.Fatal(err)
 	}
 	if err := service.RecoverOwner(ctx, owner.Scope.HouseholdID, "owner@example.com"); err != nil {
-		t.Fatalf("recover reallowlisted owner: %v", err)
-	}
-	if _, err := service.Login(ctx, "owner@example.com", "long enough password", "pre-bootstrap-login"); err != ErrInvalidCredentials {
-		t.Fatalf("pending recovered owner logged in with retired password: %v", err)
+		t.Fatalf("recover owner: %v", err)
 	}
 	recovered, err := service.SetPassword(ctx, resetFor(t, ctx, service, "owner@example.com", "recovery-ip"), "new recovery password", "")
 	if err != nil {
@@ -125,7 +157,7 @@ func TestPasswordAndSessionRotation(t *testing.T) {
 	now := time.Date(2026, 7, 18, 0, 0, 0, 0, time.UTC)
 	db := testDB(t)
 	service := New(db, Config{Now: func() time.Time { return now }, Token: tokens()})
-	if err := service.SynchronizeAllowlist(ctx, []string{"owner@example.com"}); err != nil {
+	if err := service.ConfigureOwner(ctx, "owner@example.com"); err != nil {
 		t.Fatal(err)
 	}
 	reset := resetFor(t, ctx, service, "owner@example.com", "owner-ip")

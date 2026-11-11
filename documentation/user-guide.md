@@ -7,11 +7,17 @@ mediator, reminder service, or automation tool.
 
 ## First use
 
-Mithra has no public signup. An operator allowlists the adults who may use the
-household. Use **Set or reset your password** from the sign-in page to activate
-your allowlisted account. The first active adult becomes the household owner.
-The owner can invite the second allowlisted adult from **Settings**; the invite
-is email-bound and one-use.
+Mithra has no public signup. The operator sets one owner email. The owner uses
+**Set or reset your password** from the sign-in page to choose a password and
+becomes the household owner.
+
+A household holds two adults. The owner invites the second one from
+**Settings**, under **Household access**. The invitation is emailed, works for
+seven days, and only works once, for that address. The partner opens the link
+and chooses their own password. From the same place the owner can send the
+link again, cancel it, or remove the partner's access. Removing access signs
+the partner out everywhere; their records stay with the household and the
+owner can invite them again later.
 
 Use **Help** in the application for short, contextual guidance. Press
 <kbd>Ctrl</kbd>+<kbd>K</kbd> or <kbd>Command</kbd>+<kbd>K</kbd> for quick
@@ -163,6 +169,6 @@ encryption, and provider contract.
 
 Ask the operator to preserve the master key and a verified encrypted backup.
 Restoring a backup deliberately clears passwords, sessions, invitations,
-model-provider credentials, pending work, and cached coaching before current allowlist
+model-provider credentials, pending work, and cached coaching before household
 members start again with **Set or reset your password**. The owner reconnects
 the provider afterward. Voice updates and visual-PDF reading need OpenAI. See [backup and restore](backup-restore.md).

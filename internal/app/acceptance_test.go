@@ -34,7 +34,7 @@ func TestReleaseCandidateSeedAndArbitraryHouseholdSurviveRestartThroughSameServi
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := Config{DatabasePath: databasePath, DatabaseKey: databaseKey, SourceRoot: sourceRoot, MasterKey: key, CanonicalOrigin: "http://127.0.0.1:18099", AllowedEmails: []string{"demo-owner@example.com", "demo-partner@example.com", "arbitrary@example.com"}}
+	cfg := Config{DatabasePath: databasePath, DatabaseKey: databaseKey, SourceRoot: sourceRoot, MasterKey: key, CanonicalOrigin: "http://127.0.0.1:18099", OwnerEmail: "arbitrary@example.com"}
 	application, err := New(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)

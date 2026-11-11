@@ -163,7 +163,14 @@ func runParsed(ctx context.Context, parsed parsedInstallerCommand, output io.Wri
 		return runAutomaticUpgrade(ctx, parsed, output)
 	}
 	plunkPath, plunkFrom, ownerEmail, partnerEmail, ownerPasswordPath, partnerPasswordPath, masterKeyPath := f.plunkPath, f.plunkFrom, f.ownerEmail, f.partnerEmail, f.ownerPasswordPath, f.partnerPasswordPath, f.masterKeyPath
-	allowed := splitEmails(*emails)
+	ownerAddress := strings.TrimSpace(*ownerEmail)
+	if ownerAddress == "" {
+		// --allowed-emails is the old sign-in allowlist. Only its first
+		// address is still used, as the owner for a first sign-in.
+		if legacy := splitEmails(*emails); len(legacy) > 0 {
+			ownerAddress = legacy[0]
+		}
+	}
 	basePaths := installer.OwnedPaths(*root, "")
 	configuredProxy, configuredDomain, configuredPort := installedRuntime(basePaths.Config)
 	if configuredProxy == "" {
@@ -180,25 +187,22 @@ func runParsed(ctx context.Context, parsed parsedInstallerCommand, output io.Wri
 	}
 	facts := installer.DetectHost(ctx, *root, *domain, *port)
 	paths := installer.OwnedPaths(*root, installer.ProxyMode(*proxy))
-	if (operation == installer.Upgrade || operation == installer.Restore) && len(allowed) == 0 {
-		allowed = installedAllowlist(paths.Config)
+	if (operation == installer.Upgrade || operation == installer.Reconfigure || operation == installer.Restore) && ownerAddress == "" && parsed.name != "reset-demo" {
+		ownerAddress = installedOwnerEmail(paths.Config)
 	}
 	if parsed.planOnly && (operation == installer.Upgrade || operation == installer.Reconfigure || operation == installer.Restore) {
 		preflightPlanFacts(ctx, operation, paths, *archive, &facts)
 	}
 	if parsed.planOnly {
-		plan, err := installer.BuildPlan(installer.Options{Operation: operation, Root: *root, Domain: *domain, Proxy: installer.ProxyMode(*proxy), PreviousProxy: configuredProxy, Port: *port, AllowedEmails: allowed, PlunkFrom: *plunkFrom, Archive: *archive, ConfirmPurge: *confirm || operation == installer.Purge}, facts)
+		plan, err := installer.BuildPlan(installer.Options{Operation: operation, Root: *root, Domain: *domain, Proxy: installer.ProxyMode(*proxy), PreviousProxy: configuredProxy, Port: *port, OwnerEmail: ownerAddress, PlunkFrom: *plunkFrom, Archive: *archive, ConfirmPurge: *confirm || operation == installer.Purge}, facts)
 		if err != nil {
 			return err
 		}
 		return json.NewEncoder(output).Encode(plan)
 	}
 	if parsed.name == "reset-demo" {
-		if len(allowed) == 0 {
-			allowed = installedAllowlist(paths.Config)
-		}
-		if !emailAllowed(allowed, *ownerEmail) || !emailAllowed(allowed, *partnerEmail) {
-			return errors.New("both demo accounts must already be in the installed allowlist")
+		if strings.TrimSpace(*ownerEmail) == "" || strings.TrimSpace(*partnerEmail) == "" {
+			return errors.New("reset-demo requires --owner-email and --partner-email")
 		}
 		if *masterKeyPath == "" {
 			*masterKeyPath = paths.MasterKey
@@ -267,9 +271,6 @@ func runParsed(ctx context.Context, parsed parsedInstallerCommand, output io.Wri
 		fmt.Println(archive)
 		return nil
 	case installer.Restore:
-		if len(allowed) == 0 {
-			allowed = installedAllowlist(paths.Config)
-		}
 		key, err := readMasterKey(paths.MasterKey)
 		if err != nil {
 			return err
@@ -279,7 +280,7 @@ func runParsed(ctx context.Context, parsed parsedInstallerCommand, output io.Wri
 			clear(key)
 			return err
 		}
-		prepared, err := installer.PrepareRestore(ctx, paths, *archive, key, allowed, owner)
+		prepared, err := installer.PrepareRestore(ctx, paths, *archive, key, owner)
 		if err != nil {
 			clear(key)
 			return err
@@ -329,7 +330,7 @@ func runParsed(ctx context.Context, parsed parsedInstallerCommand, output io.Wri
 			}
 			return installer.VerifyArivuBaseline(ctx, *root, facts.ArivuBaseline)
 		}
-		err = installer.RestorePrepared(ctx, paths, prepared, key, allowed, owner, health)
+		err = installer.RestorePrepared(ctx, paths, prepared, key, owner, health)
 		clear(key)
 		if err != nil {
 			return errors.Join(err, restart())
@@ -355,7 +356,7 @@ func runParsed(ctx context.Context, parsed parsedInstallerCommand, output io.Wri
 		}
 		return json.NewEncoder(output).Encode(report)
 	}
-	plan, err := installer.BuildPlan(installer.Options{Operation: operation, Root: *root, Domain: *domain, Proxy: installer.ProxyMode(*proxy), PreviousProxy: configuredProxy, Port: *port, AllowedEmails: allowed, PlunkFrom: *plunkFrom, Archive: *archive, ConfirmPurge: *confirm}, facts)
+	plan, err := installer.BuildPlan(installer.Options{Operation: operation, Root: *root, Domain: *domain, Proxy: installer.ProxyMode(*proxy), PreviousProxy: configuredProxy, Port: *port, OwnerEmail: ownerAddress, PlunkFrom: *plunkFrom, Archive: *archive, ConfirmPurge: *confirm}, facts)
 	if err != nil {
 		return err
 	}
@@ -1149,25 +1150,23 @@ func serviceOwnership(root string) (installer.RestoreOwnership, error) {
 	return installer.RestoreOwnership{UID: uid, GID: gid, Set: true}, nil
 }
 
-func installedAllowlist(path string) []string {
+// installedOwnerEmail reads the owner from the installed configuration. An
+// older configuration only has ALLOWED_EMAILS; its first address is used.
+func installedOwnerEmail(path string) string {
 	raw, err := os.ReadFile(path)
 	if err != nil || len(raw) > 64<<10 {
-		return nil
+		return ""
 	}
+	legacy := ""
 	for _, line := range strings.Split(string(raw), "\n") {
+		if value, ok := strings.CutPrefix(line, "MITHRA_OWNER_EMAIL="); ok {
+			return strings.Trim(strings.TrimSpace(value), `"`)
+		}
 		if value, ok := strings.CutPrefix(line, "ALLOWED_EMAILS="); ok {
-			return splitEmails(strings.Trim(strings.TrimSpace(value), `"`))
+			if emails := splitEmails(strings.Trim(strings.TrimSpace(value), `"`)); len(emails) > 0 {
+				legacy = emails[0]
+			}
 		}
 	}
-	return nil
-}
-
-func emailAllowed(allowed []string, candidate string) bool {
-	candidate = strings.ToLower(strings.TrimSpace(candidate))
-	for _, email := range allowed {
-		if email == candidate {
-			return true
-		}
-	}
-	return false
+	return legacy
 }

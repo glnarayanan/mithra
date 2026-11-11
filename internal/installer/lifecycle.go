@@ -28,7 +28,6 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 
-	"github.com/glnarayanan/mithra/internal/auth"
 	mithradb "github.com/glnarayanan/mithra/internal/database"
 	"github.com/glnarayanan/mithra/internal/imports"
 	"github.com/glnarayanan/mithra/internal/storage"
@@ -209,8 +208,8 @@ func InstallRelease(plan Plan, release ReleaseInstall) error {
 		clear(key)
 		files = append(files, OwnedFile{Path: paths.MasterKey, Mode: 0o600, Content: []byte(encoded)})
 	}
-	if len(plan.Options.AllowedEmails) == 0 || ((plan.Options.Operation == Install || plan.Options.Operation == Reconfigure) && !strings.HasPrefix(strings.TrimSpace(release.PlunkCredential), "sk_")) {
-		return errors.New("current allowlist and operation-required Plunk credential are required")
+	if (plan.Options.Operation == Install && strings.TrimSpace(plan.Options.OwnerEmail) == "") || ((plan.Options.Operation == Install || plan.Options.Operation == Reconfigure) && !strings.HasPrefix(strings.TrimSpace(release.PlunkCredential), "sk_")) {
+		return errors.New("owner email and operation-required Plunk credential are required")
 	}
 	return ApplyOwnedFiles(plan, files, release.Validate)
 }
@@ -366,8 +365,8 @@ func RehearseMigrations(ctx context.Context, databasePath string) error {
 
 // PreflightRestore authenticates and opens every recovery input before the
 // caller quiesces the running service. It only creates a temporary directory.
-func PreflightRestore(ctx context.Context, paths Paths, archive string, masterKey []byte, allowedEmails []string, owner RestoreOwnership) error {
-	prepared, err := PrepareRestore(ctx, paths, archive, masterKey, allowedEmails, owner)
+func PreflightRestore(ctx context.Context, paths Paths, archive string, masterKey []byte, owner RestoreOwnership) error {
+	prepared, err := PrepareRestore(ctx, paths, archive, masterKey, owner)
 	if prepared != nil {
 		prepared.Cleanup()
 	}
@@ -377,12 +376,9 @@ func PreflightRestore(ctx context.Context, paths Paths, archive string, masterKe
 // PrepareRestore authenticates and opens every recovery input before the
 // caller quiesces the running service. The returned generation is private to
 // the installer and must be consumed or cleaned up.
-func PrepareRestore(ctx context.Context, paths Paths, archive string, masterKey []byte, allowedEmails []string, owner RestoreOwnership) (*PreparedRestore, error) {
+func PrepareRestore(ctx context.Context, paths Paths, archive string, masterKey []byte, owner RestoreOwnership) (*PreparedRestore, error) {
 	if len(masterKey) != 32 {
-		return nil, errors.New("restore requires the retained key and current non-empty allowlist")
-	}
-	if err := validateAllowlist(allowedEmails); err != nil {
-		return nil, err
+		return nil, errors.New("restore requires the retained key")
 	}
 	if err := validateRestoreOwnership(paths, owner); err != nil {
 		return nil, err
@@ -428,24 +424,24 @@ func PrepareRestore(ctx context.Context, paths Paths, archive string, masterKey 
 	return prepared, nil
 }
 
-func RestoreBackup(ctx context.Context, paths Paths, archive string, masterKey []byte, allowedEmails []string, health func() error) error {
-	return RestoreBackupWithOwnership(ctx, paths, archive, masterKey, allowedEmails, RestoreOwnership{}, health)
+func RestoreBackup(ctx context.Context, paths Paths, archive string, masterKey []byte, health func() error) error {
+	return RestoreBackupWithOwnership(ctx, paths, archive, masterKey, RestoreOwnership{}, health)
 }
 
-func RestoreBackupWithOwnership(ctx context.Context, paths Paths, archive string, masterKey []byte, allowedEmails []string, owner RestoreOwnership, health func() error) error {
-	prepared, err := PrepareRestore(ctx, paths, archive, masterKey, allowedEmails, owner)
+func RestoreBackupWithOwnership(ctx context.Context, paths Paths, archive string, masterKey []byte, owner RestoreOwnership, health func() error) error {
+	prepared, err := PrepareRestore(ctx, paths, archive, masterKey, owner)
 	if err != nil {
 		return err
 	}
 	defer prepared.Cleanup()
-	return RestorePrepared(ctx, paths, prepared, masterKey, allowedEmails, owner, health)
+	return RestorePrepared(ctx, paths, prepared, masterKey, owner, health)
 }
 
 // RestorePrepared activates a generation returned by PrepareRestore without
 // rereading its original archive.
-func RestorePrepared(ctx context.Context, paths Paths, prepared *PreparedRestore, masterKey []byte, allowedEmails []string, owner RestoreOwnership, health func() error) error {
-	if prepared == nil || prepared.stage == "" || len(masterKey) != 32 || len(allowedEmails) == 0 {
-		return errors.New("restore requires a prepared authenticated generation and current allowlist")
+func RestorePrepared(ctx context.Context, paths Paths, prepared *PreparedRestore, masterKey []byte, owner RestoreOwnership, health func() error) error {
+	if prepared == nil || prepared.stage == "" || len(masterKey) != 32 {
+		return errors.New("restore requires a prepared authenticated generation")
 	}
 	if err := validateRestoreOwnership(paths, owner); err != nil {
 		return err
@@ -459,7 +455,7 @@ func RestorePrepared(ctx context.Context, paths Paths, prepared *PreparedRestore
 	if err != nil {
 		return err
 	}
-	if err := sanitizeRestore(ctx, stage, intents, allowedEmails, masterKey); err != nil {
+	if err := sanitizeRestore(ctx, stage, intents, masterKey); err != nil {
 		return err
 	}
 	if err := os.Remove(filepath.Join(stage, "manifest.json")); err != nil {
@@ -827,7 +823,7 @@ func mergeDeletionJournals(archivedPath, currentPath string, key []byte) ([]impo
 	return intents, nil
 }
 
-func sanitizeRestore(ctx context.Context, stage string, intents []imports.DeletionIntent, allowlist []string, masterKey []byte) error {
+func sanitizeRestore(ctx context.Context, stage string, intents []imports.DeletionIntent, masterKey []byte) error {
 	dbPath := filepath.Join(stage, "mithra.sqlite3")
 	key, err := databaseKey(dbPath, masterKey)
 	if err != nil {
@@ -885,7 +881,7 @@ func sanitizeRestore(ctx context.Context, stage string, intents []imports.Deleti
 		discardedSources = append(discardedSources, source)
 	}
 	for _, statement := range []string{
-		`UPDATE users SET password_hash='',status='pending'`,
+		`UPDATE users SET password_hash='',status=CASE status WHEN 'disabled' THEN 'disabled' ELSE 'pending' END`,
 		`DELETE FROM household_openai_settings`, `DELETE FROM browser_sessions`, `DELETE FROM password_reset_tokens`, `DELETE FROM invitations`, `DELETE FROM auth_throttles`,
 		`DELETE FROM jobs`, `DELETE FROM coaching_cache`, `DELETE FROM coaching_nudges`,
 		`UPDATE document_imports SET state='discarded',proposal_json='',consent_token_hash=NULL,consent_expires_at=NULL,deletion_token_hash=NULL,deletion_expires_at=NULL,version=version+1,updated_at=? WHERE state IN ('review','awaiting_visual_consent','visual_processing')`,
@@ -903,9 +899,6 @@ func sanitizeRestore(ctx context.Context, stage string, intents []imports.Deleti
 		if err := sources.RemoveCiphertext(source); err != nil {
 			return err
 		}
-	}
-	if err := auth.New(db, auth.Config{}).SynchronizeAllowlist(ctx, allowlist); err != nil {
-		return err
 	}
 	_, err = db.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)")
 	return err

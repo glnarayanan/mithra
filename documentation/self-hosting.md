@@ -38,9 +38,12 @@ the service or writes Mithra paths.
 sudo mithra-installer plan \
   --domain mithra.example.com \
   --proxy caddy \
-  --allowed-emails owner@example.com,partner@example.com \
+  --owner-email owner@example.com \
   --plunk-from 'Mithra <hello@mithra.example.com>'
 ```
+
+`--owner-email` names the one person who can start the household. Nobody
+else can sign up: the owner invites their partner from **Settings**.
 
 For app-only use `--proxy app-only --port 8090` and omit `--domain`. The plan
 will refuse an occupied loopback port, a domain already owned by another vhost,
@@ -88,7 +91,7 @@ test "$(sha256sum "$stage/install.sh" | awk '{print $1}')" = "$expected"
 sudo env MITHRA_VERSION="$release" sh "$stage/install.sh" \
   --domain mithra.example.com \
   --proxy caddy \
-  --allowed-emails owner@example.com,partner@example.com \
+  --owner-email owner@example.com \
   --plunk-from 'Mithra <hello@mithra.example.com>' \
   --plunk-key-file /secure/path/plunk.key
 ```
@@ -103,10 +106,23 @@ the staging directory or credentials until you have read the safe error output.
 ## First login and household setup
 
 Open the configured HTTPS hostname in proxied mode or the loopback address in
-app-only mode. Use **Set or reset your password** for the first allowlisted
-adult. That adult becomes the owner and sends the partner invitation in
-**Settings**. The invitee must already be in `--allowed-emails` and completes
-the normal password flow.
+app-only mode. Use **Set or reset your password** with the owner email. That
+person becomes the household owner.
+
+A household holds two adults. The owner manages the second one in
+**Settings**, under **Household access**:
+
+- **Send invitation** emails your partner a one-use link that works for seven
+  days. They choose their own password from it. No configuration change or
+  restart is needed.
+- **Send again** replaces an unused or expired link with a new one, and
+  **Cancel invitation** stops the link working.
+- **Remove access** signs the partner out everywhere and ends their access at
+  once. Their records stay with the household and they keep the partner
+  place, so **Invite again** restores them with a new password.
+
+The owner email is only used before the household exists. Changing it later
+does not create a second household or change who owns this one.
 
 Only the owner can choose a model provider in **Settings**. It is optional:
 connect a provider key to enable Capture, Import mapping, and explicit coaching
@@ -158,7 +174,6 @@ Plan or pin a release manually only when required:
 ```bash
 sudo mithra-installer plan upgrade
 sudo mithra-installer plan reconfigure \
-  --allowed-emails owner@example.com,partner@example.com \
   --plunk-from 'Mithra <hello@mithra.example.com>'
 ```
 
@@ -175,12 +190,12 @@ pre-mutation backup, stages and rehearses the candidate, then activates it
 atomically. Failed health checks restore the prior complete generation; Mithra
 does not attempt a schema down-migration.
 
-Use the installed installer to change the allowlist or Plunk sender/key without
-replacing application binaries:
+Use the installed installer to change the Plunk sender/key without replacing
+application binaries. It keeps the installed owner email unless you pass
+`--owner-email`:
 
 ```bash
 sudo mithra-installer reconfigure \
-  --allowed-emails owner@example.com,partner@example.com \
   --plunk-from 'Mithra <hello@mithra.example.com>' \
   --plunk-key-file /secure/path/new-plunk.key
 ```
@@ -192,23 +207,22 @@ the same rollback boundary and validates both affected proxy services.
 
 ## Restore
 
-Plan a restore, then provide the archive and the current allowlist:
+Plan a restore, then provide the archive:
 
 ```bash
 sudo mithra-installer plan restore \
-  --archive /secure/mithra-YYYYMMDDTHHMMSS.mbackup \
-  --allowed-emails owner@example.com,partner@example.com
+  --archive /secure/mithra-YYYYMMDDTHHMMSS.mbackup
 
 sudo mithra-installer restore \
-  --archive /secure/mithra-YYYYMMDDTHHMMSS.mbackup \
-  --allowed-emails owner@example.com,partner@example.com
+  --archive /secure/mithra-YYYYMMDDTHHMMSS.mbackup
 ```
 
 Restore authenticates and stages the archive before stopping Mithra, reconciles
-the deletion journal, applies the current allowlist, and swaps the generation
+the deletion journal, and swaps the generation
 only after health checks pass. It clears restored password hashes, sessions,
 reset and invitation tokens, model-provider credentials, pending work, and cached
-coaching. Each eligible adult must use **Set or reset your password** again;
+coaching. People removed from the household stay removed. Each member must use
+**Set or reset your password** again;
 the owner reconnects the provider. On failure, the previous generation is restored.
 
 ## Shell completions and command reference
@@ -233,9 +247,23 @@ mithra-installer completion fish
 
 `mithra version` and `mithra-installer version` print their build version.
 `mithra recover-owner` is an offline recovery command. It requires
-`--household` and `--email`, plus the current allowlist through
-`--allowed-emails` or `ALLOWED_EMAILS`; select the database with `--db` or
-`MITHRA_DB`. Stop Mithra before using it.
+`--household` and `--email`; select the database with `--db` or `MITHRA_DB`.
+Stop Mithra before using it. It only applies to a closed household, which
+older releases created when the owner left the `ALLOWED_EMAILS` list.
+
+### Upgrading from `ALLOWED_EMAILS`
+
+Older releases kept a sign-in allowlist in `ALLOWED_EMAILS`
+(`--allowed-emails`). Mithra no longer reads it as an allowlist:
+
+- Your household, members and records are unchanged by the upgrade.
+- `mithra-installer upgrade` rewrites `/etc/mithra/mithra.env` with
+  `MITHRA_OWNER_EMAIL` taken from the first old address and drops
+  `ALLOWED_EMAILS`. Once the household exists that value is not used again.
+- Removing an address from the old list no longer removes anyone. Use
+  **Remove access** in **Settings** instead.
+- `--allowed-emails` is still accepted for scripts; only its first address is
+  used, as the owner email.
 
 ## Troubleshooting and removal
 

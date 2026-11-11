@@ -260,6 +260,7 @@ Confident and quiet at once: navy slabs in the display face.
 - **Hover / Focus:** background eases to Mithra blue over 220ms; presses translate 1px; focus shows a 0.1875rem link-blue outline offset 0.25rem.
 - **Quiet / Secondary:** paper or paper-surface with navy text and the subtle ring; hover to paper-hover.
 - **Toolbar tools:** transparent, display face 500, paper-hover on hover. Add update is the one navy toolbar button and hovers to blue; its `kbd` hint sits on a darker navy key cap.
+- **Destructive disclosure:** removals that end access or hide records (Remove access in Settings, Remove from Family) open in place before they act. The summary is terracotta display-face text with a paper-hover background; when open it reads "Keep …" in link blue. The body states what happens in plain facts, then a plain button confirms.
 
 ### Cards / Containers
 - **Corner Style:** 0.75rem.

@@ -16,7 +16,11 @@ services:
     restart: unless-stopped
     command: ["serve"]
     environment:
-      ALLOWED_EMAILS: ${ALLOWED_EMAILS:?set the comma-separated sign-in allowlist}
+      # The one person who can start the household. Everyone else is
+      # invited from Settings. ALLOWED_EMAILS is the older name; only its
+      # first address is read.
+      MITHRA_OWNER_EMAIL: ${MITHRA_OWNER_EMAIL:-}
+      ALLOWED_EMAILS: ${ALLOWED_EMAILS:-}
       MITHRA_CANONICAL_ORIGIN: ${MITHRA_CANONICAL_ORIGIN:?set the public https origin, for example https://app.mithrahq.com}
       MITHRA_PLUNK_FROM: ${MITHRA_PLUNK_FROM:?set the verified Plunk sender, for example Mithra <hello@mithrahq.com>}
       MITHRA_TRUSTED_PROXIES: ${MITHRA_TRUSTED_PROXIES:?set the private CIDR of the reverse-proxy network}
