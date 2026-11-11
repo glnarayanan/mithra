@@ -55,6 +55,7 @@ type chartDay struct {
 	Short string `json:"short"`
 	Num   string `json:"num"`
 	Long  string `json:"long"`
+	Mark  string `json:"mark"`
 }
 
 type chartEvent struct {
@@ -106,9 +107,13 @@ type PatternsView struct {
 	Ranges     []FamilyOptionView
 	Days       int
 	Caption    string
-	Facts      []BabyPatternView
-	Charts     []PatternChart
-	Empty      bool
+	// Lead is the child's chosen measure, shown in a colour panel; Facts
+	// are the other figures, in a hairline row under it.
+	Lead    *BabyPatternView
+	Facts   []BabyPatternView
+	Charts  []PatternChart
+	Heading string
+	Empty   bool
 }
 
 var patternRanges = []int{7, 14, 30, 90}
@@ -247,11 +252,12 @@ func patternsView(person people.Person, events, allWeights []carelog.Event, now 
 	for _, d := range patternRanges {
 		view.Ranges = append(view.Ranges, FamilyOptionView{Value: view.PageURL + "?days=" + strconv.Itoa(d), Label: strconv.Itoa(d) + " days", Selected: d == days})
 	}
-	view.Caption = shortDate(keys[0]) + " to " + shortDate(keys[len(keys)-1]) + ", " + plural(days, "day", "days")
+	view.Heading = "Last " + plural(days, "day", "days")
+	view.Caption = shortDate(keys[0]) + " to " + shortDate(keys[len(keys)-1])
 
 	data := chartData{From: keys[0].UnixMilli(), To: now.UnixMilli()}
 	for _, k := range keys {
-		data.Days = append(data.Days, chartDay{Key: k.Format("2006-01-02"), Short: k.Format("Mon"), Num: k.Format("2"), Long: k.Format("Mon 2 Jan")})
+		data.Days = append(data.Days, chartDay{Key: k.Format("2006-01-02"), Short: k.Format("Mon"), Num: k.Format("2"), Long: k.Format("Mon 2 Jan"), Mark: k.Format("2 Jan")})
 	}
 	feedsPer := make([]int, days)
 	wetPer, dirtyPer, spitPer := make([]int, days), make([]int, days), make([]int, days)
@@ -329,14 +335,14 @@ func patternsView(person people.Person, events, allWeights []carelog.Event, now 
 	}
 
 	if logged > 0 {
-		view.Facts = append(view.Facts, BabyPatternView{Label: "Feeds a day", Value: perDay(float64(sum(feedsPer))), Note: plural(sum(feedsPer), "feed", "feeds") + " in " + plural(logged, "day", "days")})
+		view.Facts = append(view.Facts, BabyPatternView{Key: focusFeeds, Label: "Feeds a day", Value: perDay(float64(sum(feedsPer))), Note: plural(sum(feedsPer), "feed", "feeds") + " in " + plural(logged, "day", "days")})
 		if len(gaps) > 0 {
 			view.Facts = append(view.Facts, BabyPatternView{Label: "Gap between feeds", Value: hm(gaps[len(gaps)/2]), Note: "Median of " + plural(len(gaps), "gap", "gaps")})
 		}
 		if bottles > 0 {
-			view.Facts = append(view.Facts, BabyPatternView{Label: "Bottle intake", Value: strconv.FormatFloat(mlTotal/float64(logged), 'f', 0, 64), Unit: "ml a day", Note: strconv.FormatFloat(mlTotal/float64(bottles), 'f', 0, 64) + " ml a bottle"})
+			view.Facts = append(view.Facts, BabyPatternView{Key: focusBottle, Label: "Bottle intake", Value: strconv.FormatFloat(mlTotal/float64(logged), 'f', 0, 64), Unit: "ml a day", Note: strconv.FormatFloat(mlTotal/float64(bottles), 'f', 0, 64) + " ml a bottle"})
 		}
-		view.Facts = append(view.Facts, BabyPatternView{Label: "Wet diapers", Value: perDay(float64(sum(wetPer))), Unit: "a day", Note: "Dirty " + perDay(float64(sum(dirtyPer))) + " a day"})
+		view.Facts = append(view.Facts, BabyPatternView{Key: focusDiapers, Label: "Wet diapers", Value: perDay(float64(sum(wetPer))), Unit: "a day", Note: "Dirty " + perDay(float64(sum(dirtyPer))) + " a day"})
 	}
 
 	rhythm := PatternChart{ID: "rhythm", Title: "Daily rhythm", Kind: "rhythm", Legend: []string{"feed", "diaper", "spitup"}, Empty: "No feeds, diapers or spit-ups in these days."}
@@ -390,6 +396,35 @@ func patternsView(person people.Person, events, allWeights []carelog.Event, now 
 		focusDiapers: {diapers, rhythm, bottle, weight},
 	}
 	view.Charts = order[childFocus(person)]
+	if days > 30 {
+		for i := range view.Charts {
+			if view.Charts[i].ID == "rhythm" && view.Charts[i].Data != "" {
+				view.Charts[i].Note = "The chart shows the last 30 days. The figures cover all " + strconv.Itoa(days) + "."
+			}
+		}
+	}
+	focus := childFocus(person)
+	if focus == focusWeight && len(weightData.Weights) > 0 {
+		last := weightData.Weights[len(weightData.Weights)-1]
+		lead := BabyPatternView{Key: focusWeight, Label: "Weight", Value: formatKG(last.KG), Unit: "kg", Note: "Latest, " + last.Label}
+		if len(weight.Figures) == 3 {
+			lead.Note = weight.Figures[0].Value + " " + weight.Figures[0].Label + ", " + weight.Figures[1].Value + " " + weight.Figures[1].Label
+		} else if len(weight.Figures) == 2 {
+			lead.Note = weight.Figures[0].Value + " " + weight.Figures[0].Label
+		}
+		view.Lead = &lead
+	}
+	for i := 0; view.Lead == nil && i < len(view.Facts); i++ {
+		if view.Facts[i].Key == focus {
+			lead := view.Facts[i]
+			view.Lead = &lead
+			view.Facts = append(view.Facts[:i:i], view.Facts[i+1:]...)
+		}
+	}
+	if view.Lead == nil && len(view.Facts) > 0 {
+		lead := view.Facts[0]
+		view.Lead, view.Facts = &lead, view.Facts[1:]
+	}
 	view.Empty = logged == 0 && len(weightData.Weights) == 0
 	return view
 }

@@ -1,3 +1,5 @@
+{{define "baby-weight-row"}}<li><div class="row"><span class="mark mark-baby" aria-hidden="true"></span><span><span class="row-title">{{.Value}}</span><span class="row-meta"><time datetime="{{.TimeISO}}">{{.DateLabel}}</time>{{if .Who}}<span>{{.Who}}</span>{{end}}{{if .Note}}<span>{{.Note}}</span>{{end}}</span></span></div></li>{{end}}
+
 {{define "baby-strip"}}<svg class="baby-strip" viewBox="0 0 320 40" role="img" aria-label="{{.Strip.Label}}"><rect class="strip-bg" x="0" y="0" width="320" height="40" rx="10"></rect>{{if .RunningX}}<line class="strip-running" x1="{{.RunningX}}" y1="13" x2="308" y2="13"></line>{{end}}{{range .Strip.Feeds}}<circle class="strip-feed" cx="{{.}}" cy="13" r="4.5"></circle>{{end}}{{range .Strip.Diapers}}<circle class="strip-diaper" cx="{{.}}" cy="28" r="3.5"></circle>{{end}}</svg>
         <p class="strip-axis" aria-hidden="true"><span>24 h ago</span><span>12 h</span><span>Now</span></p>
         <p class="strip-legend"><span class="legend-feed">Feeds</span><span class="legend-diaper">Diapers</span></p>{{end}}
@@ -115,21 +117,20 @@
     <div>
       <section class="baby-block" aria-labelledby="baby-patterns-title">
         <div class="section-head"><h3 id="baby-patterns-title">Last {{if $b.PatternDays}}{{if eq $b.PatternDays 1}}day{{else}}{{$b.PatternDays}} days{{end}}{{else}}7 days{{end}}</h3></div>
-        {{if $b.Patterns}}<div class="cards cards-two">{{range $b.Patterns}}<div class="card"><span class="card-head">{{.Label}}</span><span class="card-value">{{.Value}}{{if .Unit}}<small>{{.Unit}}</small>{{end}}</span><span class="card-foot">{{.Note}}</span></div>{{end}}</div>
-        <p class="chart-note">These numbers describe what was logged. They are not medical advice. <a href="/help#baby-averages">How they are worked out</a>.</p>
-        <p><a class="button button-small" href="{{$b.PatternsURL}}">See patterns and trends</a></p>
+        {{if $b.Patterns}}<dl class="stat-row">{{range $b.Patterns}}<div><dt>{{.Label}}</dt><dd><span class="stat-value">{{.Value}}{{if .Unit}}<small>{{.Unit}}</small>{{end}}</span><span class="stat-note">{{.Note}}</span></dd></div>{{end}}</dl>
+        <p class="chart-note">These numbers describe what was logged. They are not medical advice. <a href="{{$b.PatternsURL}}">More in Patterns</a>.</p>
         {{else}}<p class="quiet">Averages appear once something is logged.</p>{{end}}
       </section>
 
       <section class="baby-block" id="baby-weights" aria-labelledby="baby-weights-title">
         <div class="section-head"><h3 id="baby-weights-title">Weight</h3></div>
         {{if $b.LatestWeight}}{{if ne $b.Focus "weight"}}<div class="card weight-card"><span class="card-head">Latest</span><span class="card-value">{{$b.LatestWeight}}<small>kg</small></span>{{if $b.WeightChangeNote}}<span class="card-foot">{{$b.WeightChangeNote}}</span>{{end}}{{if gt (len $b.Weights) 1}}<div class="chart-wrap" data-chart="weight" data-compact data-chart-data="{{$b.WeightData}}" tabindex="0" aria-label="Weight chart. Point at it, tap it, or use the arrow keys to read each weight."></div>{{end}}<span class="card-foot">{{with index $b.Weights 0}}Logged {{.DateLabel}}{{end}}{{if gt (len $b.Weights) 1}}, {{len $b.Weights}} weights in all{{end}}</span></div>{{end}}
-        <ul class="rows" role="list">{{range $i, $w := $b.Weights}}{{if lt $i 6}}{{template "baby-entry-row" $w}}{{end}}{{end}}</ul>
+        <ul class="rows weight-rows" role="list">{{range $i, $w := $b.Weights}}{{if lt $i 3}}{{template "baby-weight-row" $w}}{{end}}{{end}}</ul>{{if gt (len $b.Weights) 3}}<details class="entry-details"><summary class="button button-small">All {{len $b.Weights}} weights</summary><ul class="rows weight-rows" role="list">{{range $i, $w := $b.Weights}}{{if ge $i 3}}{{template "baby-weight-row" $w}}{{end}}{{end}}</ul></details>{{end}}
         {{else}}<p class="quiet">No weights logged yet.</p>{{end}}
         {{if ne $b.Focus "weight"}}<details class="entry-details"{{if eq $b.ErrorCard "weight"}} open{{end}}><summary class="button button-small">Log a weight</summary>
           <form method="post" action="{{$b.LogURL}}" class="field-grid entry-form" data-care-form>{{template "baby-hidden" $csrf}}<input type="hidden" name="action" value="weight"><label class="field"><span>Weight, kg</span><input type="number" name="kg" min="0.01" max="100" step="0.001" inputmode="decimal" required value="{{index $b.Values "kg"}}"></label><label class="field"><span>Date</span><input type="date" name="date" value="{{index $b.Values "date"}}"></label>{{template "baby-card-error" (babyCardError $b "weight")}}<div class="row-actions"><button type="submit" class="button button-feed">Save weight</button></div></form>
         </details>{{end}}
-        <p class="hint"><a href="{{$b.SettingsURL}}#import">Import past weights from a spreadsheet</a></p>
+        <p class="hint"><a href="{{$b.SettingsURL}}#import">Import past entries</a></p>
       </section>
 
       <section class="baby-block" aria-labelledby="baby-milestones-title">

@@ -69,7 +69,7 @@ type BabyStripView struct {
 	FeedsN, DiapersN int
 }
 
-type BabyPatternView struct{ Label, Value, Unit, Note string }
+type BabyPatternView struct{ Key, Label, Value, Unit, Note string }
 
 // BabyUndoView offers one undo after a log or a delete.
 type BabyUndoView struct {
@@ -295,15 +295,20 @@ func babyLogView(person people.Person, events, weights []carelog.Event, now time
 		}
 		view.PatternDays = days
 		per := func(n int) string { return formatAmount(float64(n) / float64(days)) }
-		view.Patterns = append(view.Patterns, BabyPatternView{Label: "Feeds a day", Value: per(feedsWeek), Note: "Average of logged feeds"})
+		view.Patterns = append(view.Patterns, BabyPatternView{Key: focusFeeds, Label: "Feeds a day", Value: per(feedsWeek), Note: "Average of logged feeds"})
 		if today.GapSamples > 0 {
 			gap := today.MedianGap.Round(time.Minute)
 			view.Patterns = append(view.Patterns, BabyPatternView{Label: "Gap between feeds", Value: strconv.Itoa(int(gap/time.Hour)) + "h " + strconv.Itoa(int(gap%time.Hour/time.Minute)) + "m", Note: "Median of " + plural(today.GapSamples, "gap", "gaps")})
 		}
 		if bottleCount > 0 {
-			view.Patterns = append(view.Patterns, BabyPatternView{Label: "Bottle intake", Value: strconv.FormatFloat(bottleTotal/float64(days), 'f', 0, 64), Unit: "ml a day", Note: strconv.FormatFloat(bottleTotal/bottleCount, 'f', 0, 64) + " ml a bottle"})
+			view.Patterns = append(view.Patterns, BabyPatternView{Key: focusBottle, Label: "Bottle intake", Value: strconv.FormatFloat(bottleTotal/float64(days), 'f', 0, 64), Unit: "ml a day", Note: strconv.FormatFloat(bottleTotal/bottleCount, 'f', 0, 64) + " ml a bottle"})
 		}
-		view.Patterns = append(view.Patterns, BabyPatternView{Label: "Wet diapers", Value: per(wetWeek), Unit: "a day", Note: "Dirty " + per(dirtyWeek) + " a day"})
+		view.Patterns = append(view.Patterns, BabyPatternView{Key: focusDiapers, Label: "Wet diapers", Value: per(wetWeek), Unit: "a day", Note: "Dirty " + per(dirtyWeek) + " a day"})
+		// The log keeps two figures, the chosen measure's first; Patterns has the rest.
+		sort.SliceStable(view.Patterns, func(i, j int) bool { return view.Patterns[i].Key == view.Focus && view.Patterns[j].Key != view.Focus })
+		if len(view.Patterns) > 2 {
+			view.Patterns = view.Patterns[:2]
+		}
 		over := "over the last " + plural(days, "day", "days")
 		if days == 1 {
 			over = "since logging began today"

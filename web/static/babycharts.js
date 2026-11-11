@@ -16,11 +16,14 @@
   const kg = (value) => String(Math.round(value * 1000) / 1000);
 
   // A transparent band that answers the pointer and the keys with a tooltip.
-  const hit = (x, y, w, h, title, lines) => `<rect class="hit" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(1, w).toFixed(1)}" height="${h.toFixed(1)}" data-tip="${esc(title)}" data-lines="${esc(lines.join("\n"))}"/>`;
+  // ax, ay is the mark the tooltip points at, in chart units.
+  const hit = (x, y, w, h, title, lines, ax, ay) => `<rect class="hit" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(1, w).toFixed(1)}" height="${h.toFixed(1)}" data-ax="${(ax ?? x + w / 2).toFixed(1)}" data-ay="${(ay ?? y).toFixed(1)}" data-tip="${esc(title)}" data-lines="${esc(lines.join("\n"))}"/>`;
 
   const table = (caption, head, rows) => `<table class="visually-hidden"><caption>${esc(caption)}</caption><thead><tr>${head.map((c) => `<th scope="col">${esc(c)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((c, i) => (i ? `<td>${esc(c)}</td>` : `<th scope="row">${esc(c)}</th>`)).join("")}</tr>`).join("")}</tbody></table>`;
 
-  const dayLabel = (day, days) => (days.length > 14 ? day.num : day.short);
+  // Short ranges name the weekday; longer ones the date, with the month on
+  // the first row and on the first of each month.
+  const dayLabel = (day, days, index) => (days.length <= 14 ? day.short : index === 0 || day.num === "1" ? day.mark : day.num);
 
   function perDay(data, test) {
     const counts = data.days.map(() => 0);
@@ -43,7 +46,8 @@
     let marks = "";
     let hits = "";
     days.forEach((day, i) => {
-      hits += hit(i * slot, top - 14, slot, base - top + 14, day.long, tip(i));
+      const tallest = Math.max(...series.map((s) => s.values[i]));
+      hits += hit(i * slot, top - 14, slot, base - top + 14, day.long, tip(i), i * slot + slot / 2, tallest ? base - Math.max(3, ((base - top) * tallest) / max) : base);
       const x0 = i * slot + (slot - group) / 2;
       series.forEach((s, si) => {
         const value = s.values[i];
@@ -51,7 +55,7 @@
         if (h) marks += `<rect class="cm ${s.cls}" x="${(x0 + si * bar).toFixed(1)}" y="${(base - h).toFixed(1)}" width="${Math.max(2, bar - 2).toFixed(1)}" height="${h.toFixed(1)}" rx="${Math.min(6, Math.max(2, bar / 4)).toFixed(1)}"/>`;
         if (value && days.length <= 7 && series.length === 1) marks += `<text class="chart-value" x="${(x0 + group / 2).toFixed(1)}" y="${(base - h - 6).toFixed(1)}" text-anchor="middle">${Math.round(value)}</text>`;
       });
-      if (i % step === 0 || i === days.length - 1) marks += `<text class="chart-label" x="${(i * slot + slot / 2).toFixed(1)}" y="${height - 6}" text-anchor="middle">${esc(dayLabel(day, days))}</text>`;
+      if (i % step === 0 || i === days.length - 1) marks += `<text class="chart-label" x="${(i * slot + slot / 2).toFixed(1)}" y="${height - 6}" text-anchor="middle">${esc(dayLabel(day, days, i))}</text>`;
     });
     return `<svg class="chart" viewBox="0 0 ${W} ${height}" width="${W}" height="${height}" role="img" aria-label="${esc(label)}">${hits}<line class="axis" x1="0" x2="${W}" y1="${base}" y2="${base}"/>${marks}</svg>`;
   }
@@ -63,20 +67,30 @@
     return `<circle class="cm feed" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}"/>`;
   }
 
-  function rhythm(W, data) {
+  function rhythm(W, full) {
+    // Past 30 rows the dots run together, so the chart keeps the last 30 days.
+    const skip = Math.max(0, full.days.length - 30);
+    const data = { days: full.days.slice(skip), events: full.events.filter((e) => e.d >= skip).map((e) => ({ ...e, d: e.d - skip })) };
     const days = data.days;
     const n = days.length;
     const row = n > 31 ? 6 : n > 14 ? 9 : n > 7 ? 14 : 22;
-    const left = 44;
+    const left = 50;
     const height = n * row + 30;
     const feeds = perDay(data, (e) => e.t === "feed");
     const diapers = perDay(data, (e) => e.t === "diaper");
     const spits = perDay(data, (e) => e.t === "spitup");
+    // Every fifth row is named, plus the first of a month; a name never sits
+    // within two rows of another.
+    const labelled = new Set();
+    days.forEach((day, i) => { if (n <= 7 || day.num === "1") labelled.add(i); });
+    days.forEach((day, i) => {
+      if ((i % 5 === 0 || i === n - 1) && ![...labelled].some((j) => Math.abs(j - i) < 3)) labelled.add(i);
+    });
     let grid = "";
     let hits = "";
     days.forEach((day, i) => {
       const y = i * row + row / 2;
-      if (n <= 7 || i % (n > 31 ? 10 : 5) === 0 || i === n - 1) grid += `<text class="chart-label" x="0" y="${(y + 4).toFixed(1)}">${esc(dayLabel(day, days))}</text>`;
+      if (labelled.has(i)) grid += `<text class="chart-label" x="0" y="${(y + 4).toFixed(1)}">${esc(dayLabel(day, days, i))}</text>`;
       grid += `<line class="grid" x1="${left}" x2="${W}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}"/>`;
       hits += hit(left, i * row, W - left, row, day.long, [plural(feeds[i], "feed", "feeds"), plural(diapers[i], "diaper", "diapers"), plural(spits[i], "spit-up", "spit-ups")]);
     });
@@ -102,7 +116,7 @@
     const wet = perDay(data, (e) => e.t === "diaper" && (e.k === "wet" || e.k === "both"));
     const dirty = perDay(data, (e) => e.t === "diaper" && (e.k === "dirty" || e.k === "both"));
     const all = perDay(data, (e) => e.t === "diaper");
-    return bars(W, data, [{ cls: "diaper", values: wet }, { cls: "dirty", values: dirty }], "Wet and dirty diapers per day", (i) => [plural(all[i], "diaper", "diapers"), `${wet[i]} wet, ${dirty[i]} dirty`]) +
+    return bars(W, data, [{ cls: "wet", values: wet }, { cls: "dirty", values: dirty }], "Wet and dirty diapers per day", (i) => [plural(all[i], "diaper", "diapers"), `${wet[i]} wet, ${dirty[i]} dirty`]) +
       table("Diapers per day", ["Day", "Wet", "Dirty"], data.days.map((d, i) => [d.long, wet[i], dirty[i]]));
   }
 
@@ -112,17 +126,23 @@
     const entries = data.weights || [];
     if (!entries.length) return "";
     const height = compact ? 150 : 180;
-    const left = 44;
+    const left = 52;
     const values = entries.map((e) => e.kg);
-    const pad = Math.max(0.05, (Math.max(...values) - Math.min(...values)) * 0.08);
-    const min = Math.min(...values) - pad;
-    const max = Math.max(...values) + pad;
+    // Round ticks, so a weight can be read against 4.5 or 5.0 kg.
+    const lo = Math.min(...values);
+    const hi = Math.max(...values);
+    const step = [0.05, 0.1, 0.2, 0.5, 1, 2, 5].find((s) => (hi - lo) / s <= 3) || 10;
+    const min = Math.floor(lo / step) * step;
+    const max = Math.max(Math.ceil(hi / step) * step, min + step);
+    const ticks = [];
+    for (let v = min; v <= max + step / 2; v += step) ticks.push(v);
     const span = Math.max(data.to - data.from, 1);
-    const plotTop = 10;
+    const plotTop = 12;
     const plotBottom = height - 30;
     const x = (at) => left + 8 + ((at - data.from) / span) * (W - left - 16);
     const y = (v) => plotBottom - ((v - min) / Math.max(max - min, 0.001)) * (plotBottom - plotTop);
-    const grid = [min + pad, (min + max) / 2, max - pad].filter((v, i, all) => i === 0 || Math.abs(v - all[i - 1]) > 0.0005).map((v) => `<line class="grid" x1="${left}" x2="${W}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="chart-label" x="0" y="${(y(v) + 4).toFixed(1)}">${fixed(v, 2)}</text>`).join("");
+    const digits = step < 0.1 ? 2 : step < 1 ? 1 : 0;
+    const grid = ticks.map((v, i) => `<line class="grid" x1="${left}" x2="${W}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="chart-label" x="0" y="${(y(v) + 4).toFixed(1)}">${fixed(v, digits)}${i === ticks.length - 1 ? " kg" : ""}</text>`).join("");
     const xs = entries.map((e) => x(e.at));
     const points = entries.map((e, i) => `${xs[i].toFixed(1)},${y(e.kg).toFixed(1)}`).join(" ");
     const dots = entries.map((e, i) => `<circle class="cm weight" cx="${xs[i].toFixed(1)}" cy="${y(e.kg).toFixed(1)}" r="${entries.length > 40 ? 3 : 4.5}"/>`).join("");
@@ -137,7 +157,7 @@
         lines.push(`${signed(grams)} g since the weight before`);
         if (daysBetween >= 0.5) lines.push(`${signed(grams / daysBetween)} g a day over ${plural(Math.round(daysBetween), "day", "days")}`);
       }
-      return hit(from, plotTop - 6, to - from, plotBottom - plotTop + 12, e.label, lines);
+      return hit(from, plotTop - 6, to - from, plotBottom - plotTop + 12, e.label, lines, xs[i], y(e.kg));
     }).join("");
     const edges = `<text class="chart-label" x="${left + 8}" y="${height - 6}">${esc(data.fromLabel)}</text><text class="chart-label" x="${W}" y="${height - 6}" text-anchor="end">${esc(data.toLabel)}</text>`;
     return `<svg class="chart" viewBox="0 0 ${W} ${height}" width="${W}" height="${height}" role="img" aria-label="Weight in kilograms, ${plural(entries.length, "weight", "weights")} from ${esc(data.fromLabel)} to ${esc(data.toLabel)}">${hits}${grid}<polyline class="line weight" points="${points}"/>${dots}${edges}</svg>` +
@@ -180,15 +200,17 @@
     const tip = tooltip(wrap);
     tip.innerHTML = `<strong>${esc(band.dataset.tip)}</strong>${band.dataset.lines.split("\n").filter(Boolean).map((line) => `<span>${esc(line)}</span>`).join("")}`;
     tip.hidden = false;
+    // Point at the mark: centred on it, above it when there is room,
+    // otherwise below, so the mark itself stays in view.
     const box = wrap.getBoundingClientRect();
-    const rect = band.getBoundingClientRect();
+    const svg = wrap.querySelector("svg");
+    const scale = svg ? svg.getBoundingClientRect().width / svg.viewBox.baseVal.width : 1;
+    const ax = Number(band.dataset.ax) * scale;
+    const ay = Number(band.dataset.ay) * scale;
     const width = tip.offsetWidth;
-    const center = rect.left + rect.width / 2 - box.left;
-    // Sit beside the band, on the side with room, so the mark stays visible.
-    let left = center < box.width / 2 ? Math.min(rect.right - box.left + 8, box.width - width) : Math.max(rect.left - box.left - width - 8, 0);
-    if (rect.width > box.width / 3) left = Math.min(Math.max(center - width / 2, 0), box.width - width);
-    tip.style.left = `${Math.max(0, left)}px`;
-    tip.style.top = `${Math.max(0, rect.top - box.top)}px`;
+    const height = tip.offsetHeight;
+    tip.style.left = `${Math.min(Math.max(ax - width / 2, 0), Math.max(box.width - width, 0))}px`;
+    tip.style.top = `${ay - height - 12 >= 0 ? ay - height - 12 : ay + 14}px`;
   }
 
   function hide(wrap) {

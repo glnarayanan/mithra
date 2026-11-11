@@ -14,10 +14,13 @@
       <header class="page-head"><div><p class="crumb"><a href="/family">Family</a></p><h1>{{.Person.Name}}</h1><p class="lede">{{.Person.RelationshipLabel}}{{if .Person.Age}}, {{.Person.Age}}{{end}}{{if .Person.BirthLabel}}. {{.Person.BirthLabel}}{{end}}.</p></div></header>
       {{template "child-nav" (childNav .Person.URL "Patterns")}}
       <section class="section patterns" aria-labelledby="patterns-title">
-        <div class="section-head patterns-head"><div><h2 id="patterns-title">Patterns</h2><p class="patterns-caption">{{.Caption}}</p></div>
+        <div class="section-head patterns-head"><div><h2 id="patterns-title">{{.Heading}}</h2><p class="patterns-caption">{{.Caption}}</p></div>
           <nav class="segmented" aria-label="Days to show">{{range .Ranges}}<a href="{{.Value}}"{{if .Selected}} aria-current="page"{{end}}>{{.Label}}</a>{{end}}</nav></div>
         {{if .Empty}}<div class="empty-state"><p>Nothing logged in these days yet. Log feeds, diapers or a weight on the <a href="{{.Person.URL}}">baby log</a>, or bring in past entries from <a href="{{.Person.URL}}/settings#import">Child settings</a>.</p></div>{{else}}
-        {{if .Facts}}<div class="cards pattern-facts">{{range .Facts}}<div class="card"><span class="card-head">{{.Label}}</span><span class="card-value">{{.Value}}{{if .Unit}}<small>{{.Unit}}</small>{{end}}</span><span class="card-foot">{{.Note}}</span></div>{{end}}</div>{{end}}
+        <div class="pattern-summary">
+          {{with .Lead}}<div class="panel panel-week pattern-lead"><span class="panel-label">{{.Label}}</span><span class="panel-number">{{.Value}}{{if .Unit}}<small>{{.Unit}}</small>{{end}}</span><span class="panel-note">{{.Note}}</span></div>{{end}}
+          {{if .Facts}}<dl class="stat-row">{{range .Facts}}<div><dt>{{.Label}}</dt><dd><span class="stat-value">{{.Value}}{{if .Unit}}<small>{{.Unit}}</small>{{end}}</span><span class="stat-note">{{.Note}}</span></dd></div>{{end}}</dl>{{end}}
+        </div>
         <div class="chart-blocks">
         {{range .Charts}}<section class="chart-block" aria-labelledby="chart-{{.ID}}-title">
           <div class="chart-block-head"><h3 id="chart-{{.ID}}-title">{{.Title}}</h3>{{if .Legend}}<p class="chart-legend" aria-hidden="true">{{range .Legend}}<span class="key key-{{.}}">{{if eq . "feed"}}Feed{{else if eq . "diaper"}}Diaper{{else if eq . "spitup"}}Spit-up{{else if eq . "wet"}}Wet{{else if eq . "dirty"}}Dirty{{end}}</span>{{end}}</p>{{end}}</div>
@@ -61,7 +64,7 @@
               <fieldset class="focus-options"><legend class="visually-hidden">Lead with</legend>
                 {{range .Focus}}<label class="focus-option"><input type="radio" name="focus" value="{{.Value}}"{{if .Selected}} checked{{end}}><span><span class="focus-option-title">{{.Label}}</span><span class="focus-option-note">{{.Note}}</span></span></label>{{end}}
               </fieldset>
-              <div class="row-actions"><button type="submit">Save</button></div>
+              <div class="row-actions"><button type="submit">Save choice</button></div>
             </form>
           </section>
 
