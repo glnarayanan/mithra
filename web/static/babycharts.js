@@ -68,8 +68,10 @@
   }
 
   function rhythm(W, full) {
-    // Past 30 rows the dots run together, so the chart keeps the last 30 days.
-    const skip = Math.max(0, full.days.length - 30);
+    // Past 30 rows (14 on a phone) the dots run together, so the chart keeps
+    // the most recent days and says so.
+    const cap = W < 520 ? 14 : 30;
+    const skip = Math.max(0, full.days.length - cap);
     const data = { days: full.days.slice(skip), events: full.events.filter((e) => e.d >= skip).map((e) => ({ ...e, d: e.d - skip })) };
     const days = data.days;
     const n = days.length;
@@ -100,7 +102,8 @@
     }).join("");
     const r = n > 31 ? 2.2 : n > 14 ? 3 : 4.5;
     const dots = data.events.map((e) => shape(e.t, left + ((W - left) * e.m) / 1440, e.d * row + row / 2, r)).join("");
-    return `<svg class="chart" viewBox="0 0 ${W} ${height}" width="${W}" height="${height}" role="img" aria-label="Feeds, diapers and spit-ups by time of day, one row per day">${hits}${grid}${hours}${dots}</svg>` +
+    const capped = skip ? `<p class="chart-cap">The chart shows the last ${n} days. The figures above cover all ${full.days.length}.</p>` : "";
+    return `<svg class="chart" viewBox="0 0 ${W} ${height}" width="${W}" height="${height}" role="img" aria-label="Feeds, diapers and spit-ups by time of day, one row per day">${hits}${grid}${hours}${dots}</svg>${capped}` +
       table("Entries per day", ["Day", "Feeds", "Diapers", "Spit-ups"], days.map((d, i) => [d.long, feeds[i], diapers[i], spits[i]]));
   }
 
@@ -174,7 +177,7 @@
       return;
     }
     const kind = wrap.dataset.chart;
-    if (!draw[kind]) return;
+    if (!draw[kind]) return; // server-drawn, such as the 24-hour strip
     const W = Math.max(260, Math.round(wrap.clientWidth || 600));
     wrap.innerHTML = draw[kind](W, data, wrap.hasAttribute("data-compact"));
     wrap.dataset.drawn = String(W);
@@ -209,8 +212,15 @@
     const ay = Number(band.dataset.ay) * scale;
     const width = tip.offsetWidth;
     const height = tip.offsetHeight;
-    tip.style.left = `${Math.min(Math.max(ax - width / 2, 0), Math.max(box.width - width, 0))}px`;
-    tip.style.top = `${ay - height - 12 >= 0 ? ay - height - 12 : ay + 14}px`;
+    if (ay - height - 12 >= 0) {
+      tip.style.left = `${Math.min(Math.max(ax - width / 2, 0), Math.max(box.width - width, 0))}px`;
+      tip.style.top = `${ay - height - 12}px`;
+    } else {
+      // No room above: sit beside the mark, on the side with more room.
+      const right = ax + 14 + width <= box.width || ax < box.width / 2;
+      tip.style.left = `${right ? Math.min(ax + 14, Math.max(box.width - width, 0)) : Math.max(ax - 14 - width, 0)}px`;
+      tip.style.top = `${Math.max(0, ay - 10)}px`;
+    }
   }
 
   function hide(wrap) {
@@ -229,11 +239,11 @@
     wrap.addEventListener("pointerleave", (event) => { if (event.pointerType === "mouse") hide(wrap); });
     wrap.addEventListener("blur", () => hide(wrap));
     wrap.addEventListener("focus", () => {
-      const bands = wrap.querySelectorAll(".hit");
+      const bands = [...wrap.querySelectorAll(".hit")].sort((a, b) => Number(a.dataset.ax) - Number(b.dataset.ax));
       if (bands.length) show(wrap, bands[bands.length - 1]);
     });
     wrap.addEventListener("keydown", (event) => {
-      const bands = [...wrap.querySelectorAll(".hit")];
+      const bands = [...wrap.querySelectorAll(".hit")].sort((a, b) => Number(a.dataset.ax) - Number(b.dataset.ax) || Number(a.dataset.ay) - Number(b.dataset.ay));
       if (!bands.length || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "Escape"].includes(event.key)) return;
       event.preventDefault();
       if (event.key === "Escape") return hide(wrap);
@@ -243,6 +253,14 @@
       next = Math.min(Math.max(next, 0), bands.length - 1);
       show(wrap, bands[next]);
     });
+  }
+
+  // On the child settings page, move focus to an import result so it is
+  // read out and in view. The baby log does this for its own messages.
+  const message = document.querySelector("[data-focus-on-load]");
+  if (message && !message.closest("[data-baby-log]")) {
+    message.focus({ preventScroll: true });
+    message.scrollIntoView({ block: "center" });
   }
 
   const wraps = [...document.querySelectorAll("[data-chart]")];
@@ -255,7 +273,7 @@
   window.addEventListener("resize", () => {
     clearTimeout(timer);
     timer = setTimeout(() => {
-      wraps.forEach((wrap) => { if (String(Math.max(260, Math.round(wrap.clientWidth))) !== wrap.dataset.drawn) render(wrap); });
+      wraps.forEach((wrap) => { if (draw[wrap.dataset.chart] && String(Math.max(260, Math.round(wrap.clientWidth))) !== wrap.dataset.drawn) render(wrap); });
     }, 150);
   });
 })();

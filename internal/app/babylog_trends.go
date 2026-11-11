@@ -396,13 +396,6 @@ func patternsView(person people.Person, events, allWeights []carelog.Event, now 
 		focusDiapers: {diapers, rhythm, bottle, weight},
 	}
 	view.Charts = order[childFocus(person)]
-	if days > 30 {
-		for i := range view.Charts {
-			if view.Charts[i].ID == "rhythm" && view.Charts[i].Data != "" {
-				view.Charts[i].Note = "The chart shows the last 30 days. The figures cover all " + strconv.Itoa(days) + "."
-			}
-		}
-	}
 	focus := childFocus(person)
 	if focus == focusWeight && len(weightData.Weights) > 0 {
 		last := weightData.Weights[len(weightData.Weights)-1]
@@ -424,6 +417,17 @@ func patternsView(person people.Person, events, allWeights []carelog.Event, now 
 	if view.Lead == nil && len(view.Facts) > 0 {
 		lead := view.Facts[0]
 		view.Lead, view.Facts = &lead, view.Facts[1:]
+	}
+	// The lead panel already states its chart's figures; keep only what it
+	// does not say.
+	for i := range view.Charts {
+		c := &view.Charts[i]
+		switch {
+		case view.Lead.Key == focusWeight && c.ID == "weight", view.Lead.Key == focusDiapers && c.ID == "diapers":
+			c.Figures = nil
+		case view.Lead.Key == focusBottle && c.ID == "bottle" && len(c.Figures) == 3:
+			c.Figures = c.Figures[2:]
+		}
 	}
 	view.Empty = logged == 0 && len(weightData.Weights) == 0
 	return view

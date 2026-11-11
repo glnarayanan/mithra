@@ -77,7 +77,7 @@ func TestChildPagesImportExportAndFocus(t *testing.T) {
 		t.Fatalf("export rows=%v err=%v", rows, err)
 	}
 	again := uploadLog(t, application, session, base+"/log", export.Body.String())
-	if body := get(again.Header().Get("Location")).Body.String(); !strings.Contains(body, "Imported 0 entries. 7 were already in the log.") {
+	if body := get(again.Header().Get("Location")).Body.String(); !strings.Contains(body, "Nothing new to add. All 7 entries in the file were already in the log.") {
 		t.Fatal("re-importing the download added entries")
 	}
 

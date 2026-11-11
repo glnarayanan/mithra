@@ -76,7 +76,7 @@
               <li><span class="step-title">Fill it in</span><span class="step-body">Open it in any spreadsheet. Replace the examples with your entries, one row each, and save it as CSV.</span>
                 <details class="column-guide"><summary>What goes in each column</summary><dl>{{range .Columns}}<div><dt><code>{{.Name}}</code></dt><dd>{{.Meaning}}</dd></div>{{end}}</dl></details></li>
               <li><span class="step-title">Import it</span>
-                <form method="post" action="{{.LogURL}}" enctype="multipart/form-data" class="stack import-form"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="import"><label class="field"><span>CSV file</span><input type="file" name="file" accept=".csv,text/csv" required></label><p class="hint">Nothing is added unless every row reads cleanly. Importing the same file again adds nothing new.</p><div class="row-actions"><button type="submit">Import entries</button></div></form></li>
+                <form method="post" action="{{.LogURL}}" enctype="multipart/form-data" class="stack import-form"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="action" value="import">{{if .ImportError}}<p class="notice notice-error" id="import-error" role="alert" tabindex="-1" data-focus-on-load>{{.ImportError}}</p>{{end}}{{if .ImportStatus}}<p class="status-message" role="status" tabindex="-1" data-focus-on-load>{{.ImportStatus}} <a href="{{.Person.URL}}">See the log</a></p>{{end}}<label class="field"><span>CSV file</span><input type="file" name="file" accept=".csv,text/csv" required{{if .ImportError}} aria-invalid="true" aria-describedby="import-error"{{end}}></label><p class="hint">Nothing is added unless every row reads cleanly. Importing the same file again adds nothing new.</p><div class="row-actions"><button type="submit">Import entries</button></div></form></li>
             </ol>
           </section>
         </div>
@@ -95,6 +95,7 @@
         </div>
       </div>
     </main>
+    <script defer src="/assets/babycharts.js"></script>
   </body>
 </html>
 {{end}}

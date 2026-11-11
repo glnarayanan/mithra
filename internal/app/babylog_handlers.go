@@ -65,9 +65,12 @@ type BabyEntryView struct {
 
 type BabyStripView struct {
 	Label            string
-	Feeds, Diapers   []string
+	Feeds, Diapers   []StripMark
 	FeedsN, DiapersN int
 }
+
+// StripMark is one entry on the 24-hour strip, with what its tooltip says.
+type StripMark struct{ X, Left, Title, Line string }
 
 type BabyPatternView struct{ Key, Label, Value, Unit, Note string }
 
@@ -252,12 +255,18 @@ func babyLogView(person people.Person, events, weights []carelog.Event, now time
 			}
 		}
 		if !e.OccurredAt.Before(dayStart) {
-			x := strconv.FormatFloat(12+e.OccurredAt.Sub(dayStart).Hours()/24*296, 'f', 1, 64)
+			at := 12 + e.OccurredAt.Sub(dayStart).Hours()/24*296
+			entry := babyEntry(e, location)
+			line := entry.TimeLabel + ", " + agoLabel(now.Sub(e.OccurredAt))
+			if len(entry.Meta) > 0 {
+				line = strings.Join(entry.Meta, ", ") + ". " + line
+			}
+			mark := StripMark{X: strconv.FormatFloat(at, 'f', 1, 64), Left: strconv.FormatFloat(at-6, 'f', 1, 64), Title: entry.Title, Line: line}
 			switch e.Type {
 			case carelog.Feed:
-				view.Strip.Feeds = append(view.Strip.Feeds, x)
+				view.Strip.Feeds = append(view.Strip.Feeds, mark)
 			case carelog.Diaper:
-				view.Strip.Diapers = append(view.Strip.Diapers, x)
+				view.Strip.Diapers = append(view.Strip.Diapers, mark)
 			}
 		}
 		if !e.OccurredAt.Before(midnight) && e.Type != carelog.Weight && e.Type != carelog.Milestone {
@@ -488,7 +497,7 @@ func (a *App) familyLog(w http.ResponseWriter, r *http.Request, scope policy.Act
 			} else {
 				logRequestError(a.logger, r.Context(), "carelog_import_failed")
 			}
-			a.renderChildSettings(r.Context(), w, scope, csrf, person, "", message, http.StatusBadRequest)
+			a.renderChildSettings(r.Context(), w, scope, csrf, person, "", "", http.StatusBadRequest, "", message)
 			return
 		}
 		http.Redirect(w, r, back+"/settings?imported="+strconv.Itoa(result.imported)+"&kept="+strconv.Itoa(result.existing)+"&skipped="+strconv.Itoa(result.skipped)+"#import", http.StatusSeeOther)
@@ -569,7 +578,7 @@ type BabyPanelView struct {
 	// with when the child's settings choose something other than feeds.
 	Focus, Label, Value, Unit, Note string
 	ActionURL, ActionLabel          string
-	WeightData                      string
+	WeightData, RunningX            string
 	HasChart                        bool
 }
 
@@ -602,7 +611,7 @@ func (a *App) babyPanels(ctx context.Context, scope policy.ActorScope) []BabyPan
 				diapers++
 			}
 		}
-		panel := BabyPanelView{Name: person.Name, URL: "/family/" + url.PathEscape(person.ID) + "#baby-log", SinceISO: log.SinceISO, LastLabel: log.LastLabel, HasFeed: log.HasFeed, Running: log.Running != nil, SinceHours: log.SinceHours, SinceMinutes: log.SinceMinutes, Strip: log.Strip, TodayLine: plural(log.Feeds, "feed", "feeds") + " and " + plural(diapers, "diaper", "diapers") + " today", Focus: log.Focus}
+		panel := BabyPanelView{Name: person.Name, URL: "/family/" + url.PathEscape(person.ID) + "#baby-log", SinceISO: log.SinceISO, LastLabel: log.LastLabel, HasFeed: log.HasFeed, Running: log.Running != nil, SinceHours: log.SinceHours, SinceMinutes: log.SinceMinutes, Strip: log.Strip, RunningX: log.RunningX, TodayLine: plural(log.Feeds, "feed", "feeds") + " and " + plural(diapers, "diaper", "diapers") + " today", Focus: log.Focus}
 		page := "/family/" + url.PathEscape(person.ID)
 		switch log.Focus {
 		case focusWeight:

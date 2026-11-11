@@ -330,6 +330,9 @@ func logCSV(events []carelog.Event, location *time.Location) []byte {
 
 func importStatus(imported, kept, skipped int) string {
 	line := "Imported " + plural(imported, "entry", "entries") + "."
+	if imported == 0 && kept > 0 && skipped == 0 {
+		return "Nothing new to add. All " + plural(kept, "entry", "entries") + " in the file " + map[bool]string{true: "was", false: "were"}[kept == 1] + " already in the log."
+	}
 	if kept > 0 {
 		if kept == 1 {
 			line += " 1 was already in the log."
