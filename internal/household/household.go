@@ -170,7 +170,12 @@ func (s *Service) CreateInvitation(ctx context.Context, scope policy.ActorScope,
 		}
 	}
 	expires := s.now().UTC().Add(lifetime)
-	if _, err := tx.ExecContext(ctx, `UPDATE invitations SET revoked_at=? WHERE household_id=? AND invited_email=? AND used_at IS NULL AND revoked_at IS NULL`, now, scope.HouseholdID, email); err != nil {
+	// The household has one partner place, so only the newest invitation
+	// stays open. Accounts that only had an older invitation close again.
+	if _, err := tx.ExecContext(ctx, `UPDATE users SET status='disabled',disabled_at=?,updated_at=? WHERE status='pending' AND password_hash='' AND email<>? AND email IN (SELECT invited_email FROM invitations WHERE household_id=? AND used_at IS NULL AND revoked_at IS NULL) AND id NOT IN (SELECT user_id FROM household_members WHERE role='owner')`, now, now, email, scope.HouseholdID); err != nil {
+		return Invitation{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE invitations SET revoked_at=? WHERE household_id=? AND used_at IS NULL AND revoked_at IS NULL`, now, scope.HouseholdID); err != nil {
 		return Invitation{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO invitations(token_hash,household_id,inviter_user_id,invited_email,expires_at,created_at) VALUES(?,?,?,?,?,?)`, tokenHash(token), scope.HouseholdID, scope.ActorID, email, expires.Format(time.RFC3339Nano), now); err != nil {

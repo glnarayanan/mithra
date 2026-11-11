@@ -430,3 +430,20 @@ func activateInvitationLogin(t testing.TB, application *App, email, password str
 	}
 	return browserSession{session: responseCookie(t, response, application.cookieName(sessionCookieName)), csrf: responseCookie(t, response, application.cookieName(csrfCookieName))}
 }
+
+func TestSettingsCancelInvitationStopsTheLink(t *testing.T) {
+	application, mailer := newAuthTestApp(t, "owner@example.com")
+	owner := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
+	if response := serve(application, settingsPost(owner, "partner@example.com")); response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Cancel invitation") || strings.Contains(response.Body.String(), `id="email"`) {
+		t.Fatalf("invited settings = %d %q", response.Code, response.Body.String())
+	}
+	token := tokenFromMessage(t, mailer.last(t), "token")
+	cancel := authForm(http.MethodPost, "/settings", url.Values{"action": {"cancel_invite"}, "email": {"partner@example.com"}, "csrf": {owner.csrf.Value}}, []*http.Cookie{owner.session, owner.csrf})
+	if response := serve(application, cancel); response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "cancelled") || !strings.Contains(response.Body.String(), `id="email"`) {
+		t.Fatalf("cancel invitation = %d %q", response.Code, response.Body.String())
+	}
+	use := authForm(http.MethodPost, "/auth/password", url.Values{"password": {"a partner secure password"}}, []*http.Cookie{bootstrapInvitation(t, application, token)})
+	if response := serve(application, use); response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "invalid or expired") {
+		t.Fatalf("cancelled invitation still worked = %d", response.Code)
+	}
+}

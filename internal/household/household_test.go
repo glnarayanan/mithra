@@ -139,6 +139,16 @@ func TestInvitationsAreManagedByTheOwner(t *testing.T) {
 	if err := db.QueryRow(`SELECT status FROM users WHERE email='partner@example.com'`).Scan(&status); err != nil || status != "pending" {
 		t.Fatalf("re-invited account = %q, %v", status, err)
 	}
+	// Inviting someone else replaces the open invitation.
+	if _, err := service.CreateInvitation(ctx, owner, "second@example.com", time.Hour); err != nil {
+		t.Fatalf("invite second address: %v", err)
+	}
+	if err := db.QueryRow(`SELECT status FROM users WHERE email='partner@example.com'`).Scan(&status); err != nil || status != "disabled" {
+		t.Fatalf("replaced invitee account = %q, %v", status, err)
+	}
+	if access, _ := service.Access(ctx, "home"); len(access) != 2 || access[1].Email != "second@example.com" {
+		t.Fatalf("access after replacing invitation = %#v", access)
+	}
 }
 
 func TestRemovedPartnerKeepsThePlaceUntilInvitedAgain(t *testing.T) {
