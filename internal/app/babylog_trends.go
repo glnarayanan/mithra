@@ -404,7 +404,8 @@ func patternsView(person people.Person, events, allWeights []carelog.Event, now 
 	}
 	view.Charts = order[childFocus(person)]
 	focus := childFocus(person)
-	if focus == focusWeight && len(weightData.Weights) > 0 {
+	var weightLead *BabyPatternView
+	if len(weightData.Weights) > 0 {
 		last := weightData.Weights[len(weightData.Weights)-1]
 		lead := BabyPatternView{Key: focusWeight, Label: "Weight", Value: formatKG(last.KG), Unit: "kg", Note: "Latest, " + last.Label}
 		if len(weight.Figures) == 3 {
@@ -412,7 +413,10 @@ func patternsView(person people.Person, events, allWeights []carelog.Event, now 
 		} else if len(weight.Figures) == 2 {
 			lead.Note = weight.Figures[0].Value + " " + weight.Figures[0].Label
 		}
-		view.Lead = &lead
+		weightLead = &lead
+	}
+	if focus == focusWeight {
+		view.Lead = weightLead
 	}
 	for i := 0; view.Lead == nil && i < len(view.Facts); i++ {
 		if view.Facts[i].Key == focus {
@@ -424,6 +428,15 @@ func patternsView(person people.Person, events, allWeights []carelog.Event, now 
 	if view.Lead == nil && len(view.Facts) > 0 {
 		lead := view.Facts[0]
 		view.Lead, view.Facts = &lead, view.Facts[1:]
+	}
+	// A log with only weights in these days (an import of past weights, say)
+	// leads with weight whatever the chosen focus.
+	if view.Lead == nil {
+		view.Lead = weightLead
+	}
+	if view.Lead == nil {
+		view.Empty = true
+		return view
 	}
 	// The lead panel already states its chart's figures; keep only what it
 	// does not say.
