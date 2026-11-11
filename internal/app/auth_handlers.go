@@ -314,9 +314,9 @@ func inviteError(err error) string {
 	case errors.Is(err, household.ErrNotOwner):
 		return "Only the household owner can invite a partner."
 	case errors.Is(err, household.ErrAlreadyBound):
-		return "That account already belongs to a household."
+		return "That account already belongs to another household. An account can belong to one household only."
 	case errors.Is(err, household.ErrAdultLimit):
-		return "This household already has two adults."
+		return "This household already has two adults, the most a household holds."
 	case errors.Is(err, household.ErrAlreadyMember):
 		return "That person already belongs to this household."
 	default:

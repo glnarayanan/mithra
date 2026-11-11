@@ -41,7 +41,7 @@ func accessRows(list []household.Access, scope policy.ActorScope) ([]AccessRow, 
 			row.Label, row.Detail = "Partner", "Joined on "+shortDate(entry.Since)+"."
 			row.CanRemove = owner
 		case entry.State == "pending":
-			row.Label, row.Detail = "Partner", "Has not chosen a password since the last restore. Forgot password on the sign-in page sets one."
+			row.Label, row.Detail = "Partner", "Has not chosen a password since Mithra was restored from a backup. Forgot password on the sign-in page sets one."
 			row.CanRemove = owner
 		case entry.State == "removed":
 			row.Label, row.Detail = "Access removed", "Their records stay with the household."

@@ -690,12 +690,16 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .access-actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.5rem; margin-left: -0.5rem; }
 .access-actions .inline-form { gap: 0; }
 .access-remove { flex: 1 1 100%; }
-.access-remove-toggle { display: inline-flex; align-items: center; min-height: var(--tap); padding: 0 0.5rem; border-radius: var(--radius-control); font: 600 0.9375rem var(--display); color: var(--terracotta); cursor: pointer; list-style: none; }
-.access-remove-toggle::-webkit-details-marker { display: none; }
-.access-remove-toggle:hover { background: var(--hover); color: var(--terracotta); }
-.access-remove-toggle .when-open, .access-remove[open] .access-remove-toggle .when-closed { display: none; }
-.access-remove[open] .access-remove-toggle .when-open { display: inline; }
-.access-remove[open] .access-remove-toggle { color: var(--link); }
+.remove-toggle { display: inline-flex; align-items: center; min-height: var(--tap); padding: 0 0.5rem; border-radius: var(--radius-control); font: 600 0.9375rem var(--display); color: var(--terracotta); cursor: pointer; list-style: none; }
+.remove-toggle::-webkit-details-marker { display: none; }
+.remove-toggle:hover { background: var(--hover); color: var(--terracotta); }
+.remove-toggle .when-open, details[open] > .remove-toggle .when-closed { display: none; }
+details[open] > .remove-toggle .when-open { display: inline; }
+details[open] > .remove-toggle { color: var(--link); }
+.danger-zone > .remove-toggle { margin-left: -0.5rem; }
+.access-row.is-removed .member-email { color: var(--muted); }
+/* The notice takes focus only so screen readers read it; it is not a control. */
+#household-notice:focus { outline: none; }
 .access-remove-body { display: grid; gap: 0.75rem; padding: 0.25rem 0 0.25rem 0.5rem; }
 .access-remove-body p { max-width: 60ch; color: var(--muted); font-size: 0.9375rem; }
 .access-remove-body form { display: block; }

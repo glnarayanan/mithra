@@ -642,6 +642,11 @@
     global.Mithra = api;
     global.document.addEventListener("DOMContentLoaded", function () {
       install(global.document);
+      // After a Household access action the page reloads; take focus to the
+      // result, or back to the email field when the invitation was refused.
+      var field = global.document.querySelector("#invite-error") && global.document.getElementById("email");
+      var notice = field || global.document.getElementById("household-notice");
+      if (notice) notice.focus();
     });
   }
 })(typeof globalThis === "undefined" ? null : globalThis);
