@@ -38,22 +38,32 @@
     const height = 180;
     const top = 22;
     const base = height - 26;
-    const max = Math.max(1, ...series.flatMap((s) => s.values));
     const slot = W / days.length;
+    const stacked = series.length > 1 && slot < 18;
+    const bar1 = Math.max(2, Math.min(slot * 0.7, 14));
+    const max = Math.max(1, ...(stacked ? days.map((_, i) => series.reduce((sum, s) => sum + s.values[i], 0)) : series.flatMap((s) => s.values)));
     const group = Math.min(36, slot * 0.7);
     const bar = group / series.length;
     const step = Math.max(1, Math.ceil(44 / slot));
     let marks = "";
     let hits = "";
     days.forEach((day, i) => {
-      const tallest = Math.max(...series.map((s) => s.values[i]));
+      const tallest = stacked ? series.reduce((sum, s) => sum + s.values[i], 0) : Math.max(...series.map((s) => s.values[i]));
       hits += hit(i * slot, top - 14, slot, base - top + 14, day.long, tip(i), i * slot + slot / 2, tallest ? base - Math.max(3, ((base - top) * tallest) / max) : base);
       const x0 = i * slot + (slot - group) / 2;
+        // Narrow slots stack the series in one bar; wide ones set them side by side.
+      let stackTop = base;
       series.forEach((s, si) => {
         const value = s.values[i];
         const h = value ? Math.max(3, ((base - top) * value) / max) : 0;
-        if (h) marks += `<rect class="cm ${s.cls}" x="${(x0 + si * bar).toFixed(1)}" y="${(base - h).toFixed(1)}" width="${Math.max(2, bar - 2).toFixed(1)}" height="${h.toFixed(1)}" rx="${Math.min(6, Math.max(2, bar / 4)).toFixed(1)}"/>`;
-        if (value && days.length <= 7 && series.length === 1) marks += `<text class="chart-value" x="${(x0 + group / 2).toFixed(1)}" y="${(base - h - 6).toFixed(1)}" text-anchor="middle">${Math.round(value)}</text>`;
+        if (!h) return;
+        if (stacked) {
+          marks += `<rect class="cm ${s.cls}" x="${(i * slot + (slot - bar1) / 2).toFixed(1)}" y="${(stackTop - h).toFixed(1)}" width="${bar1.toFixed(1)}" height="${h.toFixed(1)}"/>`;
+          stackTop -= h;
+          return;
+        }
+        marks += `<rect class="cm ${s.cls}" x="${(x0 + si * bar).toFixed(1)}" y="${(base - h).toFixed(1)}" width="${Math.max(2, bar - 2).toFixed(1)}" height="${h.toFixed(1)}" rx="${Math.min(6, Math.max(2, bar / 4)).toFixed(1)}"/>`;
+        if (days.length <= 7 && series.length === 1) marks += `<text class="chart-value" x="${(x0 + group / 2).toFixed(1)}" y="${(base - h - 6).toFixed(1)}" text-anchor="middle">${Math.round(value)}</text>`;
       });
       if (i % step === 0 || i === days.length - 1) marks += `<text class="chart-label" x="${(i * slot + slot / 2).toFixed(1)}" y="${height - 6}" text-anchor="middle">${esc(dayLabel(day, days, i))}</text>`;
     });
@@ -76,7 +86,7 @@
     const days = data.days;
     const n = days.length;
     const row = n > 31 ? 6 : n > 14 ? 9 : n > 7 ? 14 : 22;
-    const left = 50;
+    const left = 56;
     const height = n * row + 30;
     const feeds = perDay(data, (e) => e.t === "feed");
     const diapers = perDay(data, (e) => e.t === "diaper");
@@ -84,7 +94,7 @@
     // Every fifth row is named, plus the first of a month; a name never sits
     // within two rows of another.
     const labelled = new Set();
-    days.forEach((day, i) => { if (n <= 7 || day.num === "1") labelled.add(i); });
+    days.forEach((day, i) => { if (n <= 14 || day.num === "1") labelled.add(i); });
     days.forEach((day, i) => {
       if ((i % 5 === 0 || i === n - 1) && ![...labelled].some((j) => Math.abs(j - i) < 3)) labelled.add(i);
     });
@@ -92,7 +102,7 @@
     let hits = "";
     days.forEach((day, i) => {
       const y = i * row + row / 2;
-      if (labelled.has(i)) grid += `<text class="chart-label" x="0" y="${(y + 4).toFixed(1)}">${esc(dayLabel(day, days, i))}</text>`;
+      if (labelled.has(i)) grid += `<text class="chart-label" x="0" y="${(y + 4).toFixed(1)}">${esc(n <= 14 ? `${day.short} ${day.num}` : dayLabel(day, days, i))}</text>`;
       grid += `<line class="grid" x1="${left}" x2="${W}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}"/>`;
       hits += hit(left, i * row, W - left, row, day.long, [plural(feeds[i], "feed", "feeds"), plural(diapers[i], "diaper", "diapers"), plural(spits[i], "spit-up", "spit-ups")]);
     });
@@ -212,9 +222,15 @@
     const ay = Number(band.dataset.ay) * scale;
     const width = tip.offsetWidth;
     const height = tip.offsetHeight;
-    if (ay - height - 12 >= 0) {
+    // Above may rise over the figures above the chart, never off the card.
+    const roomAbove = Math.min(box.top - (wrap.closest(".chart-block, .card, .baby-hero, .baby-panel") || wrap).getBoundingClientRect().top, 96);
+    // Over bars, float above the tallest bar so no bar or value label is
+    // covered; elsewhere, just above the mark.
+    const bars = wrap.dataset.chart === "bottle" || wrap.dataset.chart === "diapers";
+    const ceiling = bars ? Math.min(...[...wrap.querySelectorAll(".hit")].map((n) => Number(n.dataset.ay))) * scale - 22 : ay - 12;
+    if (ceiling - height >= -roomAbove) {
       tip.style.left = `${Math.min(Math.max(ax - width / 2, 0), Math.max(box.width - width, 0))}px`;
-      tip.style.top = `${ay - height - 12}px`;
+      tip.style.top = `${ceiling - height}px`;
     } else {
       // No room above: sit beside the mark, on the side with more room.
       const right = ax + 14 + width <= box.width || ax < box.width / 2;

@@ -30,6 +30,8 @@ type ChildSettingsView struct {
 	// ImportStatus and ImportError sit by the import form, where the
 	// person is looking after an import.
 	ImportStatus, ImportError string
+	// UndoBatch offers to take a just-finished import back out.
+	UndoBatch string
 }
 
 // familyChildPage serves the pages under /family/{id}/ besides the log.
@@ -73,7 +75,16 @@ func (a *App) familyChildPage(w http.ResponseWriter, r *http.Request, scope poli
 				imported, _ := strconv.Atoi(raw)
 				kept, _ := strconv.Atoi(query.Get("kept"))
 				skipped, _ := strconv.Atoi(query.Get("skipped"))
-				a.renderChildSettings(r.Context(), w, scope, csrf, person, "", "", http.StatusOK, importStatus(imported, kept, skipped), "")
+				batch := ""
+				if imported > 0 && len(query.Get("batch")) <= 32 {
+					batch = query.Get("batch")
+				}
+				a.renderChildSettings(r.Context(), w, scope, csrf, person, "", "", http.StatusOK, importStatus(imported, kept, skipped), "", batch)
+				return
+			}
+			if raw := query.Get("undone"); raw != "" {
+				undone, _ := strconv.Atoi(raw)
+				a.renderChildSettings(r.Context(), w, scope, csrf, person, "", "", http.StatusOK, "Import undone. Removed "+plural(undone, "entry", "entries")+" from the log.", "", "")
 				return
 			}
 			switch query.Get("saved") {
@@ -82,14 +93,14 @@ func (a *App) familyChildPage(w http.ResponseWriter, r *http.Request, scope poli
 			case "details":
 				status = "Details saved."
 			}
-			a.renderChildSettings(r.Context(), w, scope, csrf, person, status, "", http.StatusOK, "", "")
+			a.renderChildSettings(r.Context(), w, scope, csrf, person, status, "", http.StatusOK, "", "", "")
 		case http.MethodPost:
 			if !a.validSessionMutation(r, a.sessionCookie(r)) {
 				writeError(w, http.StatusForbidden, "request verification failed")
 				return
 			}
 			if err := a.people.SetFocus(r.Context(), scope, person.ID, boundedField(r, "focus", 16)); err != nil {
-				a.renderChildSettings(r.Context(), w, scope, csrf, person, "", "Choose one of the measures.", http.StatusBadRequest, "", "")
+				a.renderChildSettings(r.Context(), w, scope, csrf, person, "", "Choose one of the measures.", http.StatusBadRequest, "", "", "")
 				return
 			}
 			http.Redirect(w, r, "/family/"+url.PathEscape(person.ID)+"/settings?saved=focus", http.StatusSeeOther)
@@ -106,10 +117,10 @@ func writeCSV(w http.ResponseWriter, name string, body []byte) {
 	w.Write(body)
 }
 
-func (a *App) renderChildSettings(ctx context.Context, w http.ResponseWriter, scope policy.ActorScope, csrf string, person people.Person, status, problem string, code int, importStatus, importError string) {
+func (a *App) renderChildSettings(ctx context.Context, w http.ResponseWriter, scope policy.ActorScope, csrf string, person people.Person, status, problem string, code int, importStatus, importError, undoBatch string) {
 	now := a.householdNow(ctx, scope)
 	base := "/family/" + url.PathEscape(person.ID)
-	view := ChildSettingsView{Navigation: navigationForPath("/family/"), CSRF: csrf, Status: status, Error: problem, Person: familyPersonView(person, now, 0), Relationships: relationshipOptions(person.Relationship), Focus: focusOptions(childFocus(person)), HasLog: true, LogURL: base + "/log", SettingsURL: base + "/settings", SampleURL: base + "/sample.csv", ExportURL: base + "/export.csv", Columns: logColumnHelp, ImportStatus: importStatus, ImportError: importError}
+	view := ChildSettingsView{Navigation: navigationForPath("/family/"), CSRF: csrf, Status: status, Error: problem, Person: familyPersonView(person, now, 0), Relationships: relationshipOptions(person.Relationship), Focus: focusOptions(childFocus(person)), HasLog: true, LogURL: base + "/log", SettingsURL: base + "/settings", SampleURL: base + "/sample.csv", ExportURL: base + "/export.csv", Columns: logColumnHelp, ImportStatus: importStatus, ImportError: importError, UndoBatch: undoBatch}
 	if events, err := a.carelog.List(ctx, scope, person.ID, time.Time{}); err == nil {
 		view.Entries = len(events)
 	}

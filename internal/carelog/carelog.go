@@ -58,6 +58,8 @@ type Input struct {
 	ClientID   string
 	Source     string
 	Fields     map[string]string
+	// Batch tags entries added by one import, so the import can be undone.
+	Batch string
 }
 
 type Service struct {
@@ -202,6 +204,9 @@ func (s *Service) Create(ctx context.Context, actor policy.ActorScope, personID 
 	if err != nil {
 		return Event{}, err
 	}
+	if in.Batch != "" {
+		details["import_batch"] = in.Batch
+	}
 	if in.OccurredAt.IsZero() {
 		in.OccurredAt = s.now()
 	}
@@ -241,6 +246,17 @@ func (s *Service) Create(ctx context.Context, actor policy.ActorScope, personID 
 	result, err := s.db.ExecContext(ctx, `INSERT INTO care_events(id,household_id,person_id,actor_user_id,client_id,source,type,occurred_at,ended_at,details_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(household_id,client_id) DO NOTHING`, id, actor.HouseholdID, personID, actor.ActorID, in.ClientID, in.Source, in.Type, in.OccurredAt.UTC().Format(time.RFC3339), ended, string(raw), stamp, stamp)
 	if err != nil {
 		return Event{}, err
+	}
+	if changed, _ := result.RowsAffected(); changed == 0 && in.Source == "import" {
+		// An import brings back a row an earlier import put in and someone
+		// removed, such as after undoing that import.
+		revived, err := s.db.ExecContext(ctx, `UPDATE care_events SET deleted_at='',details_json=?,updated_at=? WHERE household_id=? AND person_id=? AND client_id=? AND deleted_at<>''`, string(raw), stamp, actor.HouseholdID, personID, in.ClientID)
+		if err != nil {
+			return Event{}, err
+		}
+		if n, _ := revived.RowsAffected(); n == 1 {
+			result = revived
+		}
 	}
 	event, err := s.byClient(ctx, actor, in.ClientID)
 	if changed, _ := result.RowsAffected(); changed == 0 {
@@ -327,6 +343,24 @@ func (s *Service) Delete(ctx context.Context, actor policy.ActorScope, personID,
 
 func (s *Service) Restore(ctx context.Context, actor policy.ActorScope, personID, eventID string) error {
 	return s.setDeleted(ctx, actor, personID, eventID, "")
+}
+
+// DeleteBatch removes every live entry one import added, and returns how
+// many. Entries changed since the import keep no batch and stay.
+func (s *Service) DeleteBatch(ctx context.Context, actor policy.ActorScope, personID, batch string) (int, error) {
+	if batch == "" {
+		return 0, ErrNotFound
+	}
+	if err := s.visiblePerson(ctx, actor, personID); err != nil {
+		return 0, err
+	}
+	stamp := s.now().UTC().Format(time.RFC3339Nano)
+	result, err := s.db.ExecContext(ctx, `UPDATE care_events SET deleted_at=?,updated_at=? WHERE household_id=? AND person_id=? AND deleted_at='' AND json_extract(details_json,'$.import_batch')=?`, stamp, stamp, actor.HouseholdID, personID, batch)
+	if err != nil {
+		return 0, err
+	}
+	changed, _ := result.RowsAffected()
+	return int(changed), nil
 }
 
 func (s *Service) setDeleted(ctx context.Context, actor policy.ActorScope, personID, eventID, value string) error {

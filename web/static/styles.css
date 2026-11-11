@@ -342,7 +342,7 @@ label { font-size: 0.875rem; font-weight: 600; color: var(--muted); }
 .panel-paper .panel-note { color: var(--muted); }
 .panel-week { background: var(--week); }
 :root[data-theme="night"] .panel-navy, :root[data-theme="night"] .panel-week { box-shadow: inset 0 0 0 1px var(--line); }
-:root[data-theme="night"] .panel-week { background: color-mix(in oklab, var(--mustard) 22%, var(--paper)); box-shadow: none; }
+:root[data-theme="night"] .panel-week { box-shadow: inset 0 2px 0 var(--mustard), inset 0 0 0 1px var(--line); }
 a.panel { transition: transform 220ms var(--ease), box-shadow 220ms var(--ease); }
 a.panel:hover { transform: translateY(-0.1875rem); text-decoration: none; }
 @media (max-width: 47.99rem) {
@@ -761,7 +761,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="day"]) .chip-private { box-shadow: inset 0 0 0 1px var(--line); }
   :root:not([data-theme="day"]) .panel-navy, :root:not([data-theme="day"]) .panel-week { box-shadow: inset 0 0 0 1px var(--line); }
-  :root:not([data-theme="day"]) .panel-week { background: color-mix(in oklab, var(--mustard) 22%, var(--paper)); box-shadow: none; }
+  :root:not([data-theme="day"]) .panel-week { box-shadow: inset 0 2px 0 var(--mustard), inset 0 0 0 1px var(--line); }
   :root:not([data-theme="day"]) .week { box-shadow: inset 0 2px 0 var(--mustard), inset 0 0 0 1px var(--line); }
   :root:not([data-theme="day"]) :is(.baby-panel, .baby-hero) { background: var(--navy-raised); box-shadow: inset 0 0 0 1px var(--line); }
   :root:not([data-theme="day"]) .tile-feed { background: var(--surface); box-shadow: inset 0 2px 0 var(--mustard); }

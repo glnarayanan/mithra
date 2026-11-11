@@ -497,10 +497,17 @@ func (a *App) familyLog(w http.ResponseWriter, r *http.Request, scope policy.Act
 			} else {
 				logRequestError(a.logger, r.Context(), "carelog_import_failed")
 			}
-			a.renderChildSettings(r.Context(), w, scope, csrf, person, "", "", http.StatusBadRequest, "", message)
+			a.renderChildSettings(r.Context(), w, scope, csrf, person, "", "", http.StatusBadRequest, "", message, "")
 			return
 		}
-		http.Redirect(w, r, back+"/settings?imported="+strconv.Itoa(result.imported)+"&kept="+strconv.Itoa(result.existing)+"&skipped="+strconv.Itoa(result.skipped)+"#import", http.StatusSeeOther)
+		http.Redirect(w, r, back+"/settings?imported="+strconv.Itoa(result.imported)+"&kept="+strconv.Itoa(result.existing)+"&skipped="+strconv.Itoa(result.skipped)+"&batch="+result.batch+"#import", http.StatusSeeOther)
+	case "undo_import":
+		removed, err := a.carelog.DeleteBatch(r.Context(), scope, person.ID, boundedField(r, "batch", 32))
+		if err != nil {
+			a.renderChildSettings(r.Context(), w, scope, csrf, person, "", "", http.StatusBadRequest, "", "That import could not be undone. Reload the page and try again.", "")
+			return
+		}
+		http.Redirect(w, r, back+"/settings?undone="+strconv.Itoa(removed)+"#import", http.StatusSeeOther)
 	case carelog.Feed, carelog.Diaper, carelog.SpitUp, carelog.Weight, carelog.Milestone:
 		at, err := entryTime(r, now)
 		if err != nil {

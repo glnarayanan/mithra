@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/csv"
 	"encoding/hex"
@@ -44,7 +45,10 @@ var logColumnHelp = []LogColumnHelp{
 	{"note", "Anything else. Optional."},
 }
 
-type entryImport struct{ imported, existing, skipped int }
+type entryImport struct {
+	imported, existing, skipped int
+	batch                       string
+}
 
 var whatAliases = map[string]string{
 	"weight": "weight", "breast": "breast", "breast feed": "breast", "breastfeed": "breast",
@@ -234,8 +238,12 @@ func lowerFirst(s string) string {
 }
 
 func (a *App) saveImported(r *http.Request, scope policy.ActorScope, personID string, rows []pendingEntry, result *entryImport) error {
+	var raw [8]byte
+	_, _ = rand.Read(raw[:])
+	result.batch = hex.EncodeToString(raw[:])
 	for _, row := range rows {
 		row.input.ClientID = row.clientID
+		row.input.Batch = result.batch
 		event, err := a.carelog.Create(r.Context(), scope, personID, row.input)
 		if err != nil {
 			return err

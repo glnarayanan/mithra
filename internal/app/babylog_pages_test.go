@@ -58,6 +58,24 @@ func TestChildPagesImportExportAndFocus(t *testing.T) {
 	if imported.Code != http.StatusSeeOther || !strings.Contains(get(imported.Header().Get("Location")).Body.String(), "Imported 7 entries.") {
 		t.Fatalf("sample import status=%d body=%q", imported.Code, imported.Body.String())
 	}
+	// The result offers to undo the whole import, and undo removes only it.
+	location, _ := url.Parse(imported.Header().Get("Location"))
+	batch := location.Query().Get("batch")
+	if batch == "" || !strings.Contains(get(imported.Header().Get("Location")).Body.String(), "Undo import") {
+		t.Fatal("no undo after an import")
+	}
+	undone := serve(application, authenticatedHealthRequest(session, http.MethodPost, base+"/log", url.Values{"action": {"undo_import"}, "batch": {batch}}))
+	if body := get(undone.Header().Get("Location")).Body.String(); !strings.Contains(body, "Import undone. Removed 7 entries from the log.") {
+		t.Fatalf("undo status=%d", undone.Code)
+	}
+	if left, _ := application.carelog.List(ctx, scope, baby.ID, time.Time{}); len(left) != 0 {
+		t.Fatalf("undo left %d entries", len(left))
+	}
+	// Importing the file again after an undo brings the entries back.
+	imported = uploadLog(t, application, session, base+"/log", sample.Body.String())
+	if !strings.Contains(get(imported.Header().Get("Location")).Body.String(), "Imported 7 entries.") {
+		t.Fatal("re-import after undo did not bring the entries back")
+	}
 	events, _ := application.carelog.List(ctx, scope, baby.ID, time.Time{})
 	kinds := map[string]int{}
 	for _, e := range events {
