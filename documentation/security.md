@@ -2,20 +2,30 @@
 
 ## Admission and household lifecycle
 
-Mithra has no signup route. At startup, the operator allowlist is synchronized
-into pending, active, or disabled users. A reset request always receives the
-same acknowledgement, while only an eligible allowlisted user receives mail.
-The first activated adult owns a one-person household. A second adult joins
-only with an allowlisted, email-bound, one-use invitation; database constraints
-cap membership at two.
+Mithra has no signup route. The operator configures one owner email
+(`MITHRA_OWNER_EMAIL`); startup records it as a pending account and never
+disables anyone. Only that address can start a household without an
+invitation, and only while the install has no household. A reset request
+always receives the same acknowledgement, while mail goes only to a household
+member or to the configured owner before first sign-in. Someone holding only
+an invitation must use it.
 
-Removing any user revokes their sessions, reset tokens, invitations, and
-undelivered access. Removing an owner closes the household and revokes every
-member session, so an ownerless household exposes no data. The explicit
-`mithra recover-owner` operator operation may promote an active or pending
-allowlisted adult already in that closed household, or attach an unbound adult.
-It rejects disabled or foreign-household candidates. A pending candidate stays
-pending after reassignment and must complete normal password bootstrap before
+A second adult joins only through an email-bound, seven-day, one-use
+invitation the owner creates in Settings; the invitation creates the pending
+account. Database constraints cap membership at two. The owner can cancel an
+open invitation, which revokes it and closes the unused account.
+
+Removing the partner in Settings disables the account, clears its password and
+revokes its sessions, reset tokens and invitations in one transaction. The
+membership row stays, so the partner's records keep their scope and the place
+stays theirs until the owner invites them again.
+
+Older releases could also remove an owner through the allowlist, which closed
+the household and revoked every member session, so an ownerless household
+exposes no data. The explicit `mithra recover-owner` operator operation
+reopens such a household for an adult already in it, an unbound adult, or a
+new address. It rejects foreign-household candidates. The candidate is left
+pending with no password and must complete normal password bootstrap before
 any session can be created.
 
 ## Passwords, tokens, and sessions

@@ -122,6 +122,10 @@ type NavigationItem struct {
 	PhoneMenu bool
 }
 
+// ErrOwnerRequired means a fresh install has no owner email, so nobody could
+// ever sign in.
+var ErrOwnerRequired = errors.New("owner email is required until the household exists")
+
 // New opens a verified SQLite database before making a handler available.
 func New(ctx context.Context, cfg Config) (*App, error) {
 	if strings.TrimSpace(cfg.DatabasePath) == "" {
@@ -153,7 +157,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		exists, err := service.HasHousehold(ctx)
 		if err != nil || !exists {
 			_ = db.Close()
-			return nil, errors.New("owner email is required until the household exists")
+			return nil, ErrOwnerRequired
 		}
 	}
 	mailer := cfg.Mailer

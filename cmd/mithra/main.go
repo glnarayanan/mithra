@@ -220,6 +220,9 @@ func runWithOutput(args []string, output io.Writer) error {
 		SourceRoot:      *sourceRoot,
 		ImportPDF:       configuredPDFParser(*pdfParserSocket),
 	})
+	if errors.Is(err, app.ErrOwnerRequired) {
+		return failStartup("owner_email", err)
+	}
 	if err != nil {
 		return failStartup("application", fmt.Errorf("initialize Mithra: %w", err))
 	}

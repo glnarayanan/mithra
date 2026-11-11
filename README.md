@@ -60,14 +60,14 @@ GOCACHE=/private/tmp/mithra-build-cache \
 go run ./cmd/mithra
 ```
 
-Open `http://127.0.0.1:8090`; readiness is `/healthz`. An allowlisted person
-uses **Set or reset your password** on first visit.
+Open `http://127.0.0.1:8090`; readiness is `/healthz`. The owner email
+(`MITHRA_OWNER_EMAIL`) uses **Set or reset your password** on first visit, then
+invites a partner from **Settings**.
 
 ## Synthetic demo household
 
 An operator can reset the marked synthetic household and set two demo
-passwords without publishing them. Both email addresses must already be in the
-installed allowlist. Each password file must be a private regular file owned by
+passwords without publishing them. Each password file must be a private regular file owned by
 root, and contain a 12–128 byte password.
 
 ```bash

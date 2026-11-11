@@ -44,7 +44,7 @@ directory and never edits the global Caddyfile.
 mithra-installer plan \
   --domain mithrahq.com \
   --proxy caddy \
-  --allowed-emails owner@example.com,partner@example.com \
+  --owner-email owner@example.com \
   --plunk-from 'Mithra <hello@mithrahq.com>'
 ```
 
@@ -111,7 +111,7 @@ sudo mithra-installer reset-demo \
   --partner-email demo-partner@example.com
 ```
 
-Both addresses must be current allowlist entries. Reset revokes their browser
+Reset revokes their browser
 sessions and reset tokens. It preserves the configured model provider and
 keeps established password hashes unless the operator supplies private
 root-owned password files. It restarts the service, checks both accounts and
@@ -122,6 +122,6 @@ service state. Share demo credentials privately; never commit them.
 ## Recovery ownership
 
 Keep three things independently: the master-key credential, at least one
-verified backup, and the current allowlist. Losing the key makes encrypted
+verified backup, and the owner email. Losing the key makes encrypted
 sources and authenticated backups unrecoverable. See
 [backup and restore](backup-restore.md) for the recovery drill.
