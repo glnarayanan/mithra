@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -151,5 +152,58 @@ func TestChildPagesImportExportAndFocus(t *testing.T) {
 	adult, _ := application.people.Create(ctx, scope, people.Draft{Name: "Amma", Relationship: "parent"})
 	if response := get("/family/" + adult.ID + "/patterns"); response.Code != http.StatusNotFound {
 		t.Fatalf("adult patterns status=%d", response.Code)
+	}
+}
+
+// A log with no entries in the chosen days, or only past weights, must still
+// render Patterns: the weight panel leads when nothing else can.
+func TestPatternsWithOnlyPastWeights(t *testing.T) {
+	application, mailer := newAuthTestApp(t, "owner@example.com")
+	session := activate(t, application, mailer, "owner@example.com", "an owner secure password", nil)
+	scope := ownerScope(t, application, session)
+	ctx := context.Background()
+	get := func(target string) *httptest.ResponseRecorder {
+		return serve(application, authenticatedHealthRequest(session, http.MethodGet, target, nil))
+	}
+	blank, err := application.people.Create(ctx, scope, people.Draft{Name: "Asha", Relationship: "child"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	baby, err := application.people.Create(ctx, scope, people.Draft{Name: "Meera", Relationship: "child", BirthDate: time.Now().AddDate(-1, 0, 0).Format("2006-01-02")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var export strings.Builder
+	export.WriteString("id,type,occurred_at,kg\n")
+	for i := 0; i < 20; i++ {
+		at := time.Now().AddDate(0, 0, -150+i*7).UTC().Format(time.RFC3339)
+		export.WriteString("w" + strconv.Itoa(i) + ",weight," + at + "," + strconv.FormatFloat(3.2+float64(i)*0.15, 'f', 2, 64) + "\n")
+	}
+	if imported := uploadLog(t, application, session, "/family/"+baby.ID+"/log", export.String()); imported.Code != http.StatusSeeOther {
+		t.Fatalf("import status=%d", imported.Code)
+	}
+	for _, child := range []people.Person{blank, baby} {
+		for _, focus := range append([]string{""}, people.Focuses...) {
+			if focus != "" {
+				if err := application.people.SetFocus(ctx, scope, child.ID, focus); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, days := range []string{"7", "30", "90"} {
+				response := get("/family/" + child.ID + "/patterns?days=" + days)
+				if response.Code != http.StatusOK {
+					t.Fatalf("%s focus=%q days=%s status=%d", child.Name, focus, days, response.Code)
+				}
+				body := response.Body.String()
+				switch {
+				case child.ID == blank.ID || days == "7":
+					if !strings.Contains(body, "Nothing logged in these days yet.") {
+						t.Fatalf("%s focus=%q days=%s: no empty state", child.Name, focus, days)
+					}
+				case !strings.Contains(body, `pattern-lead"><span class="panel-label">Weight</span>`):
+					t.Fatalf("%s focus=%q days=%s: weight does not lead", child.Name, focus, days)
+				}
+			}
+		}
 	}
 }
