@@ -41,7 +41,9 @@ type AuthView struct {
 
 type SettingsView struct {
 	Navigation                                               []NavigationItem
-	Members                                                  []household.Member
+	Access                                                   []AccessRow
+	CanInvite                                                bool
+	SlotHolder                                               string
 	Owner, ProviderConfigured                                bool
 	ProviderID, ProviderName, ProviderModel, ProviderBaseURL string
 	Providers                                                []providers.ModelProvider
@@ -106,24 +108,6 @@ func canonicalOrigin(raw string, secure bool) (*url.URL, error) {
 		}
 	}
 	return origin, nil
-}
-
-func normalizeAllowlist(values []string) ([]string, error) {
-	unique := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		for _, email := range strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ';' || r == '\n' }) {
-			normalized, err := household.NormalizeEmail(email)
-			if err != nil {
-				return nil, errors.New("allowlist contains an invalid email")
-			}
-			unique[normalized] = struct{}{}
-		}
-	}
-	result := make([]string, 0, len(unique))
-	for email := range unique {
-		result = append(result, email)
-	}
-	return result, nil
 }
 
 func (a *App) login(w http.ResponseWriter, r *http.Request) {
@@ -304,6 +288,10 @@ func (a *App) settings(w http.ResponseWriter, r *http.Request) {
 		switch r.PostForm.Get("action") {
 		case "invite":
 			a.invitePartner(w, r, scope, csrf)
+		case "cancel_invite":
+			a.cancelInvitation(w, r, scope, csrf)
+		case "remove_partner":
+			a.removePartner(w, r, scope, csrf)
 		case "save_provider", "save_openai":
 			a.saveProviderSetting(w, r, scope, csrf)
 		case "remove_provider", "remove_openai":
@@ -328,8 +316,10 @@ func inviteError(err error) string {
 		return "That account already belongs to a household."
 	case errors.Is(err, household.ErrAdultLimit):
 		return "This household already has two adults."
+	case errors.Is(err, household.ErrAlreadyMember):
+		return "That person already belongs to this household."
 	default:
-		return "That invitation is not available. Check that the email is allowlisted and unassigned."
+		return "Enter a valid email address."
 	}
 }
 
@@ -536,7 +526,7 @@ func (a *App) renderAuth(ctx context.Context, w http.ResponseWriter, view AuthVi
 }
 
 func (a *App) renderSettings(ctx context.Context, w http.ResponseWriter, scope policy.ActorScope, csrf, status, problem string) {
-	members, err := a.auth.Members(ctx, scope)
+	access, err := a.auth.Access(ctx, scope)
 	if err != nil {
 		logRequestError(a.logger, ctx, "settings_members_failed")
 		writeError(w, http.StatusInternalServerError, "internal server error")
@@ -579,7 +569,9 @@ func (a *App) renderSettings(ctx context.Context, w http.ResponseWriter, scope p
 		provider, _ := providers.ModelProviderByID(providers.ProviderOpenAI)
 		config.ProviderID, config.Model, config.BaseURL = provider.ID, provider.DefaultModel, provider.BaseURL
 	}
-	a.renderTemplate(ctx, w, "settings.html", SettingsView{Navigation: navigationForPath("/settings"), Members: members, Owner: scope.Role == "owner", ProviderConfigured: configured, ProviderID: config.ProviderID, ProviderName: providerName(config.ProviderID), ProviderModel: config.Model, ProviderBaseURL: config.BaseURL, Providers: providers.ModelProviders(), Timezone: timezone, Locales: localeOptions(locale), Currencies: currencyOptions(currency), CSRF: csrf, Status: status, Error: problem})
+	view := SettingsView{Navigation: navigationForPath("/settings"), Owner: scope.Role == "owner", ProviderConfigured: configured, ProviderID: config.ProviderID, ProviderName: providerName(config.ProviderID), ProviderModel: config.Model, ProviderBaseURL: config.BaseURL, Providers: providers.ModelProviders(), Timezone: timezone, Locales: localeOptions(locale), Currencies: currencyOptions(currency), CSRF: csrf, Status: status, Error: problem}
+	view.Access, view.CanInvite, view.SlotHolder = accessRows(access, scope)
+	a.renderTemplate(ctx, w, "settings.html", view)
 }
 
 func providerName(id string) string {

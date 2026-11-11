@@ -437,10 +437,6 @@ func runRestore(args []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	allowedEmails, err := parseAllowedEmails(environmentDefault("ALLOWED_EMAILS", ""))
-	if err != nil {
-		return err
-	}
 	lock, err := acquireDataLock(config.lockFile)
 	if err != nil {
 		return err
@@ -452,7 +448,7 @@ func runRestore(args []string, output io.Writer) error {
 	}
 	defer clear(masterKey)
 	ctx := context.Background()
-	if err := installer.RestoreBackup(ctx, config.paths(), *archive, masterKey, allowedEmails, func() error {
+	if err := installer.RestoreBackup(ctx, config.paths(), *archive, masterKey, func() error {
 		return installer.DatabasePreflightWithKey(ctx, config.databasePath, masterKey)
 	}); err != nil {
 		return fmt.Errorf("restore failed; current data kept: %w", err)
@@ -466,8 +462,8 @@ func runRestore(args []string, output io.Writer) error {
 func runResetDemo(args []string, output io.Writer) error {
 	flags := flag.NewFlagSet("mithra reset-demo", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	ownerEmail := flags.String("owner-email", "", "allowlisted demo owner email")
-	partnerEmail := flags.String("partner-email", "", "allowlisted demo partner email")
+	ownerEmail := flags.String("owner-email", "", "demo owner email")
+	partnerEmail := flags.String("partner-email", "", "demo partner email")
 	ownerPasswordFile := flags.String("owner-password-file", "", "optional private owner password file")
 	partnerPasswordFile := flags.String("partner-password-file", "", "optional private partner password file")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 0 || *ownerEmail == "" || *partnerEmail == "" {
@@ -483,12 +479,8 @@ func runResetDemo(args []string, output io.Writer) error {
 	if config.backupDir == "" {
 		return errors.New("MITHRA_BACKUP_DIR is required")
 	}
-	allowedEmails, err := parseAllowedEmails(environmentDefault("ALLOWED_EMAILS", ""))
-	if err != nil {
-		return err
-	}
-	if !containsEmail(allowedEmails, *ownerEmail) || !containsEmail(allowedEmails, *partnerEmail) {
-		return errors.New("both demo emails must be in ALLOWED_EMAILS")
+	if _, err := parseAllowedEmails(*ownerEmail + "," + *partnerEmail); err != nil {
+		return errors.New("reset-demo needs valid owner and partner emails")
 	}
 	lock, err := acquireDataLock(config.lockFile)
 	if err != nil {
@@ -523,19 +515,6 @@ func runResetDemo(args []string, output io.Writer) error {
 	}
 	fmt.Fprintf(output, "household=%s fixture=%s shared=%d backup=%s\n", receipt.HouseholdID, receipt.FixtureVersion, receipt.SharedRecords, filepath.Base(receipt.BackupArchive))
 	return nil
-}
-
-func containsEmail(emails []string, raw string) bool {
-	wanted, err := parseAllowedEmails(raw)
-	if err != nil || len(wanted) != 1 {
-		return false
-	}
-	for _, email := range emails {
-		if email == wanted[0] {
-			return true
-		}
-	}
-	return false
 }
 
 // listenContainer binds the explicit host:port behind the platform proxy.

@@ -103,7 +103,7 @@ func TestContainerModeRefusesUntrustedOrPlainHTTPConfiguration(t *testing.T) {
 	}
 	t.Setenv("MITHRA_PROXY_MODE", containerProxyMode)
 	t.Setenv("MITHRA_ADDR", "127.0.0.1:0")
-	t.Setenv("ALLOWED_EMAILS", "owner@example.com")
+	t.Setenv("MITHRA_OWNER_EMAIL", "owner@example.com")
 	t.Setenv("MITHRA_MASTER_KEY_FILE", keyPath)
 	plunkPath := filepath.Join(directory, "plunk.key")
 	if err := os.WriteFile(plunkPath, []byte("sk_test_container"), 0o600); err != nil {

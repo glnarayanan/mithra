@@ -1,4 +1,4 @@
-// Package auth owns allowlisted password bootstrap and cookie-session state.
+// Package auth owns owner bootstrap, invitation sign-up and cookie-session state.
 package auth
 
 import (
@@ -74,8 +74,19 @@ func New(db *sql.DB, cfg Config) *Service {
 	return &Service{db: db, now: cfg.Now, token: cfg.Token, passwords: make(chan struct{}, cfg.PasswordSlots), households: household.New(db, household.Config{Now: cfg.Now, Token: cfg.Token})}
 }
 
-func (s *Service) SynchronizeAllowlist(ctx context.Context, emails []string) error {
-	return s.households.SyncAllowlist(ctx, emails)
+// ConfigureOwner names the address that may start this install's household
+// and records it as a pending account. An empty email leaves an existing
+// household untouched; it only matters before the first sign-in.
+func (s *Service) ConfigureOwner(ctx context.Context, email string) error {
+	if err := s.households.SetOwnerEmail(email); err != nil {
+		return err
+	}
+	return s.households.EnsureOwner(ctx)
+}
+
+// HasHousehold reports whether the install already has a real household.
+func (s *Service) HasHousehold(ctx context.Context) (bool, error) {
+	return s.households.HasHousehold(ctx)
 }
 
 // RequestPasswordReset returns no delivery for unknown or disabled addresses;
@@ -91,7 +102,9 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email, throttleKey s
 		return nil, nil
 	}
 	var userID string
-	if err := s.db.QueryRowContext(ctx, `SELECT id FROM users WHERE email=? AND status IN ('pending','active')`, normalized).Scan(&userID); err != nil {
+	// Reset links go only to household members and to the configured owner
+	// before their first sign-in. Someone with only an invitation uses it.
+	if err := s.db.QueryRowContext(ctx, `SELECT u.id FROM users u LEFT JOIN household_members m ON m.user_id=u.id WHERE u.email=? AND u.status IN ('pending','active') AND (m.user_id IS NOT NULL OR u.email=?)`, normalized, s.households.OwnerEmail()).Scan(&userID); err != nil {
 		return nil, nil
 	}
 	token, err := s.token()
@@ -280,6 +293,18 @@ func (s *Service) CreateInvitation(ctx context.Context, scope policy.ActorScope,
 }
 func (s *Service) RecoverOwner(ctx context.Context, householdID, email string) error {
 	return s.households.RecoverOwner(ctx, householdID, email)
+}
+func (s *Service) CancelInvitation(ctx context.Context, scope policy.ActorScope, email string) error {
+	return s.households.CancelInvitation(ctx, scope, email)
+}
+func (s *Service) RemovePartner(ctx context.Context, scope policy.ActorScope, email string) error {
+	return s.households.RemovePartner(ctx, scope, email)
+}
+func (s *Service) Access(ctx context.Context, scope policy.ActorScope) ([]household.Access, error) {
+	if !scope.Valid() {
+		return nil, ErrSession
+	}
+	return s.households.Access(ctx, scope.HouseholdID)
 }
 func (s *Service) Members(ctx context.Context, scope policy.ActorScope) ([]household.Member, error) {
 	if !scope.Valid() {

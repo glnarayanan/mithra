@@ -24,7 +24,7 @@ import (
 )
 
 func healthyFacts() HostFacts {
-	return HostFacts{OS: "linux", Arch: "amd64", Systemd: true, SQLite: true, Commands: map[string]string{"caddy": "/usr/bin/caddy", "nginx": "/usr/sbin/nginx", "apache2ctl": "/usr/sbin/apache2ctl"}, Listeners: map[int]string{}, VHosts: map[string]string{}, AppPortAvailable: true, FreeBytes: 1 << 30, MigrationClean: true, SQLiteClean: true, KeyMatches: true, AllowlistValid: true, CaddyImportsOwnedDir: true}
+	return HostFacts{OS: "linux", Arch: "amd64", Systemd: true, SQLite: true, Commands: map[string]string{"caddy": "/usr/bin/caddy", "nginx": "/usr/sbin/nginx", "apache2ctl": "/usr/sbin/apache2ctl"}, Listeners: map[int]string{}, VHosts: map[string]string{}, AppPortAvailable: true, FreeBytes: 1 << 30, MigrationClean: true, SQLiteClean: true, KeyMatches: true, CaddyImportsOwnedDir: true}
 }
 
 func TestApplyDataOwnershipRestrictsTheLiveMithraTree(t *testing.T) {
@@ -58,7 +58,7 @@ func TestBuildPlanCoversProxyAndOperationPreconditionsWithoutArivuMutation(t *te
 	facts := healthyFacts()
 	facts.ArivuPaths = []string{filepath.Join(root, "etc/arivu"), filepath.Join(root, "var/lib/arivu")}
 	for _, mode := range []ProxyMode{AppOnly, Caddy, Nginx, Apache} {
-		plan, err := BuildPlan(Options{Operation: Install, Root: root, Domain: "home.example", Proxy: mode, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}, facts)
+		plan, err := BuildPlan(Options{Operation: Install, Root: root, Domain: "home.example", Proxy: mode, Port: 18090, OwnerEmail: "owner@example.com", PlunkFrom: "Mithra <mail@example.com>"}, facts)
 		if err != nil {
 			t.Fatalf("%s plan: %v", mode, err)
 		}
@@ -118,11 +118,11 @@ func TestDatabasePreflightAcceptsAnExactOlderMigrationPrefix(t *testing.T) {
 func TestProxyHostnameAndRuntimeConfigurationAreStrictAndStable(t *testing.T) {
 	facts := healthyFacts()
 	for _, domain := range []string{"home.example:443", "home.example/path", "home.example\nreverse_proxy evil", "{home.example}", "home..example", "-home.example"} {
-		if _, err := BuildPlan(Options{Operation: Install, Root: t.TempDir(), Domain: domain, Proxy: Caddy, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}, facts); err == nil {
+		if _, err := BuildPlan(Options{Operation: Install, Root: t.TempDir(), Domain: domain, Proxy: Caddy, Port: 18090, OwnerEmail: "owner@example.com", PlunkFrom: "Mithra <mail@example.com>"}, facts); err == nil {
 			t.Fatalf("unsafe hostname accepted: %q", domain)
 		}
 	}
-	plan, err := BuildPlan(Options{Operation: Install, Root: t.TempDir(), Proxy: AppOnly, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}, facts)
+	plan, err := BuildPlan(Options{Operation: Install, Root: t.TempDir(), Proxy: AppOnly, Port: 18090, OwnerEmail: "owner@example.com", PlunkFrom: "Mithra <mail@example.com>"}, facts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestReconfigureRetiresOnlyPreviousOwnedProxyFragment(t *testing.T) {
 		t.Fatal(err)
 	}
 	facts := healthyFacts()
-	install, err := BuildPlan(Options{Operation: Install, Root: root, Domain: "home.example", Proxy: Caddy, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}, facts)
+	install, err := BuildPlan(Options{Operation: Install, Root: root, Domain: "home.example", Proxy: Caddy, Port: 18090, OwnerEmail: "owner@example.com", PlunkFrom: "Mithra <mail@example.com>"}, facts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestReconfigureRetiresOnlyPreviousOwnedProxyFragment(t *testing.T) {
 		t.Fatal(err)
 	}
 	facts.MithraInstalled, facts.DBExists, facts.KeyExists, facts.BackupExists = true, true, true, true
-	nginx, err := BuildPlan(Options{Operation: Reconfigure, Root: root, Domain: "home.example", Proxy: Nginx, PreviousProxy: Caddy, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}, facts)
+	nginx, err := BuildPlan(Options{Operation: Reconfigure, Root: root, Domain: "home.example", Proxy: Nginx, PreviousProxy: Caddy, Port: 18090, OwnerEmail: "owner@example.com", PlunkFrom: "Mithra <mail@example.com>"}, facts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +216,7 @@ func TestReconfigureRetiresOnlyPreviousOwnedProxyFragment(t *testing.T) {
 	if containsPath(owned.Paths, caddyPath) || !containsPath(owned.Paths, nginxPath) {
 		t.Fatalf("caddy->nginx owned manifest = %q", owned.Paths)
 	}
-	appOnly, err := BuildPlan(Options{Operation: Reconfigure, Root: root, Proxy: AppOnly, PreviousProxy: Nginx, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}, facts)
+	appOnly, err := BuildPlan(Options{Operation: Reconfigure, Root: root, Proxy: AppOnly, PreviousProxy: Nginx, Port: 18090, OwnerEmail: "owner@example.com", PlunkFrom: "Mithra <mail@example.com>"}, facts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,19 +238,32 @@ func TestReconfigureRetiresOnlyPreviousOwnedProxyFragment(t *testing.T) {
 	}
 }
 
-func TestPrepareRestoreRejectsMalformedAllowlistBeforeStaging(t *testing.T) {
-	paths := OwnedPaths(t.TempDir(), AppOnly)
-	if _, err := PrepareRestore(context.Background(), paths, "unreadable.mbackup", bytes.Repeat([]byte{1}, 32), []string{"owner@example.com", "not an email"}, RestoreOwnership{}); err == nil || !strings.Contains(err.Error(), "invalid allowlisted email") {
-		t.Fatalf("malformed allowlist result = %v", err)
+func TestBuildPlanRequiresOwnerEmailOnlyForInstall(t *testing.T) {
+	facts := healthyFacts()
+	if _, err := BuildPlan(Options{Operation: Install, Root: t.TempDir(), Proxy: AppOnly, Port: 18090, PlunkFrom: "Mithra <mail@example.com>"}, facts); err == nil || !strings.Contains(err.Error(), "owner email") {
+		t.Fatalf("install without owner = %v", err)
 	}
-	if exists(filepath.Dir(paths.Data)) {
-		t.Fatal("restore preflight created a staging parent before allowlist validation")
+	if _, err := BuildPlan(Options{Operation: Install, Root: t.TempDir(), Proxy: AppOnly, Port: 18090, OwnerEmail: "not an email", PlunkFrom: "Mithra <mail@example.com>"}, facts); err == nil || !strings.Contains(err.Error(), "invalid owner email") {
+		t.Fatalf("install with malformed owner = %v", err)
+	}
+	installed := healthyFacts()
+	installed.MithraInstalled, installed.DBExists, installed.KeyExists, installed.BackupExists, installed.AppPortAvailable = true, true, true, true, true
+	plan, err := BuildPlan(Options{Operation: Reconfigure, Root: t.TempDir(), Proxy: AppOnly, Port: 18090, PlunkFrom: "Mithra <mail@example.com>"}, installed)
+	if err != nil {
+		t.Fatalf("reconfigure without owner = %v", err)
+	}
+	if config := RuntimeConfig(plan); strings.Contains(config, "MITHRA_OWNER_EMAIL") || strings.Contains(config, "ALLOWED_EMAILS") {
+		t.Fatalf("config without owner = %q", config)
+	}
+	plan.Options.OwnerEmail = "owner@example.com"
+	if config := RuntimeConfig(plan); !strings.Contains(config, "MITHRA_OWNER_EMAIL=owner@example.com\n") || strings.Contains(config, "ALLOWED_EMAILS") {
+		t.Fatalf("config with owner = %q", config)
 	}
 }
 
 func TestParserUnitsAreOwnedAndConstrained(t *testing.T) {
 	root := t.TempDir()
-	plan, err := BuildPlan(Options{Operation: Install, Root: root, Proxy: AppOnly, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}, healthyFacts())
+	plan, err := BuildPlan(Options{Operation: Install, Root: root, Proxy: AppOnly, Port: 18090, OwnerEmail: "owner@example.com", PlunkFrom: "Mithra <mail@example.com>"}, healthyFacts())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -342,7 +355,7 @@ func TestReleaseManifestAuthenticatesBootstrapAndVersionTransitionBeforeMutation
 	if err := VerifyReleaseVersion(ReleaseManifest{Version: "v1.2.3-rc1"}, "v1.2.3-rc1", ""); err == nil {
 		t.Fatal("malformed candidate version was accepted")
 	}
-	plan, err := BuildPlan(Options{Operation: Install, Root: t.TempDir(), Proxy: AppOnly, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}, healthyFacts())
+	plan, err := BuildPlan(Options{Operation: Install, Root: t.TempDir(), Proxy: AppOnly, Port: 18090, OwnerEmail: "owner@example.com", PlunkFrom: "Mithra <mail@example.com>"}, healthyFacts())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -471,7 +484,7 @@ func TestAtomicOwnedApplyRollsBackAndLeavesArivuByteStable(t *testing.T) {
 	}
 	before, _ := os.ReadFile(arivu)
 	facts := healthyFacts()
-	plan, err := BuildPlan(Options{Operation: Install, Root: root, Proxy: AppOnly, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}, facts)
+	plan, err := BuildPlan(Options{Operation: Install, Root: root, Proxy: AppOnly, Port: 18090, OwnerEmail: "owner@example.com", PlunkFrom: "Mithra <mail@example.com>"}, facts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -528,7 +541,7 @@ func TestAtomicOwnedApplyRejectsSymlinkedParent(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(root, "etc")); err != nil {
 		t.Fatal(err)
 	}
-	plan, err := BuildPlan(Options{Operation: Install, Root: root, Proxy: AppOnly, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}, healthyFacts())
+	plan, err := BuildPlan(Options{Operation: Install, Root: root, Proxy: AppOnly, Port: 18090, OwnerEmail: "owner@example.com", PlunkFrom: "Mithra <mail@example.com>"}, healthyFacts())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -565,7 +578,7 @@ func TestArivuBaselineDetectsImmutableArtifactChange(t *testing.T) {
 func TestCaddyRequiresPreexistingOwnedImport(t *testing.T) {
 	facts := healthyFacts()
 	facts.CaddyImportsOwnedDir = false
-	_, err := BuildPlan(Options{Operation: Install, Root: t.TempDir(), Domain: "home.example", Proxy: Caddy, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}, facts)
+	_, err := BuildPlan(Options{Operation: Install, Root: t.TempDir(), Domain: "home.example", Proxy: Caddy, Port: 18090, OwnerEmail: "owner@example.com", PlunkFrom: "Mithra <mail@example.com>"}, facts)
 	if err == nil || !strings.Contains(err.Error(), "already import") {
 		t.Fatalf("Caddy import prerequisite = %v", err)
 	}
@@ -589,7 +602,7 @@ func TestInstallReconfigureUninstallAndConfirmedPurgePreserveExactBoundaries(t *
 	}
 	signature := ed25519.Sign(privateKey, raw)
 	facts := healthyFacts()
-	options := Options{Operation: Install, Root: root, Proxy: AppOnly, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}
+	options := Options{Operation: Install, Root: root, Proxy: AppOnly, Port: 18090, OwnerEmail: "owner@example.com", PlunkFrom: "Mithra <mail@example.com>"}
 	plan, err := BuildPlan(options, facts)
 	if err != nil {
 		t.Fatal(err)
@@ -622,7 +635,7 @@ func TestInstallReconfigureUninstallAndConfirmedPurgePreserveExactBoundaries(t *
 		t.Fatal(err)
 	}
 	facts.MithraInstalled, facts.DBExists, facts.KeyExists, facts.BackupExists = true, true, true, true
-	reconfigure, err := BuildPlan(Options{Operation: Reconfigure, Root: root, Proxy: AppOnly, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <new@example.com>"}, facts)
+	reconfigure, err := BuildPlan(Options{Operation: Reconfigure, Root: root, Proxy: AppOnly, Port: 18090, OwnerEmail: "owner@example.com", PlunkFrom: "Mithra <new@example.com>"}, facts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -737,7 +750,7 @@ func TestBackupRestoreAuthenticatesGenerationReconcilesDeletionAndClearsAccess(t
 		t.Fatal(err)
 	}
 	owner := RestoreOwnership{UID: os.Getuid(), GID: os.Getgid(), Set: true}
-	prepared, err := PrepareRestore(ctx, target, archive, key, []string{"owner@example.com"}, owner)
+	prepared, err := PrepareRestore(ctx, target, archive, key, owner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -745,7 +758,7 @@ func TestBackupRestoreAuthenticatesGenerationReconcilesDeletionAndClearsAccess(t
 	if err := os.WriteFile(archive, []byte("replaced-after-preflight"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := RestorePrepared(ctx, target, prepared, key, []string{"owner@example.com"}, owner, func() error { return nil }); err != nil {
+	if err := RestorePrepared(ctx, target, prepared, key, owner, func() error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 	restored, err := database.Open(ctx, target.Database)
@@ -812,14 +825,14 @@ func TestBackupRestoreAuthenticatesGenerationReconcilesDeletionAndClearsAccess(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := PreflightRestore(ctx, target, truncated, key, []string{"owner@example.com"}, owner); err == nil {
+	if err := PreflightRestore(ctx, target, truncated, key, owner); err == nil {
 		t.Fatal("truncated backup passed restore preflight")
 	}
 	after, err := os.ReadFile(target.Database)
 	if err != nil || string(after) != string(before) {
 		t.Fatalf("restore preflight changed active database err=%v", err)
 	}
-	if err := RestoreBackup(ctx, OwnedPaths(t.TempDir(), AppOnly), truncated, key, []string{"owner@example.com"}, nil); err == nil {
+	if err := RestoreBackup(ctx, OwnedPaths(t.TempDir(), AppOnly), truncated, key, nil); err == nil {
 		t.Fatal("truncated backup restored")
 	}
 }
@@ -858,7 +871,7 @@ func TestRestoreHealthFailureKeepsCurrentGeneration(t *testing.T) {
 		t.Fatal(err)
 	}
 	healthCalls := 0
-	err = RestoreBackup(ctx, target, archive, key, []string{"owner@example.com"}, func() error {
+	err = RestoreBackup(ctx, target, archive, key, func() error {
 		healthCalls++
 		if healthCalls == 1 {
 			return errors.New("unhealthy")
@@ -881,7 +894,7 @@ func FuzzProxyHostnameNeverRendersUnvalidatedInput(f *testing.F) {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, domain string) {
-		plan, err := BuildPlan(Options{Operation: Install, Root: t.TempDir(), Domain: domain, Proxy: Caddy, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}, healthyFacts())
+		plan, err := BuildPlan(Options{Operation: Install, Root: t.TempDir(), Domain: domain, Proxy: Caddy, Port: 18090, OwnerEmail: "owner@example.com", PlunkFrom: "Mithra <mail@example.com>"}, healthyFacts())
 		if err != nil {
 			if got := ProxyConfig(Plan{Proxy: Caddy, Options: Options{Domain: domain}}); got != "" {
 				t.Fatalf("invalid domain rendered: %q", got)

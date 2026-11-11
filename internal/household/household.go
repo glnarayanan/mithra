@@ -21,6 +21,10 @@ var (
 	ErrAlreadyBound  = errors.New("account already belongs to a household")
 	ErrAdultLimit    = errors.New("household already has two adults")
 	ErrRecovery      = errors.New("ownership recovery is unavailable")
+	ErrAlreadyMember = errors.New("person already belongs to this household")
+	ErrNoInvitation  = errors.New("no open invitation for that address")
+	ErrNotPartner    = errors.New("only the partner can be removed")
+	ErrNotOwnerEmail = errors.New("only the configured owner can start a household")
 )
 
 type Config struct {
@@ -29,9 +33,10 @@ type Config struct {
 }
 
 type Service struct {
-	db    *sql.DB
-	now   func() time.Time
-	token func() (string, error)
+	db         *sql.DB
+	now        func() time.Time
+	token      func() (string, error)
+	ownerEmail string
 }
 
 type Invitation struct {
@@ -55,16 +60,30 @@ func New(db *sql.DB, cfg Config) *Service {
 	return &Service{db: db, now: cfg.Now, token: cfg.Token}
 }
 
-// SyncAllowlist atomically disables removed users and revokes their active
-// access material. Entries re-added by an operator must bootstrap again.
-func (s *Service) SyncAllowlist(ctx context.Context, emails []string) error {
-	allowed := map[string]struct{}{}
-	for _, email := range emails {
-		normalized, err := NormalizeEmail(email)
-		if err != nil {
-			return err
-		}
-		allowed[normalized] = struct{}{}
+// SetOwnerEmail names the one address that may start this install's household
+// without an invitation. It is set once at startup, before any request.
+func (s *Service) SetOwnerEmail(email string) error {
+	if strings.TrimSpace(email) == "" {
+		s.ownerEmail = ""
+		return nil
+	}
+	normalized, err := NormalizeEmail(email)
+	if err != nil {
+		return err
+	}
+	s.ownerEmail = normalized
+	return nil
+}
+
+// OwnerEmail returns the configured owner address, or "" when none is set.
+func (s *Service) OwnerEmail() string { return s.ownerEmail }
+
+// EnsureOwner records the configured owner address as a pending account so
+// the first sign-in can choose a password. It never disables anyone: once a
+// household exists, people are invited and removed from Settings.
+func (s *Service) EnsureOwner(ctx context.Context) error {
+	if s.ownerEmail == "" {
+		return nil
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -72,49 +91,29 @@ func (s *Service) SyncAllowlist(ctx context.Context, emails []string) error {
 	}
 	defer tx.Rollback()
 	now := s.timestamp()
-	rows, err := tx.QueryContext(ctx, `SELECT id,email,status FROM users`)
-	if err != nil {
+	var id, status, bound string
+	err = tx.QueryRowContext(ctx, `SELECT u.id,u.status,COALESCE(m.household_id,'') FROM users u LEFT JOIN household_members m ON m.user_id=u.id WHERE u.email=?`, s.ownerEmail).Scan(&id, &status, &bound)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		if _, err := tx.ExecContext(ctx, `INSERT INTO users(id,email,status,created_at,updated_at) VALUES(?,?,'pending',?,?)`, newID(), s.ownerEmail, now, now); err != nil {
+			return err
+		}
+	case err != nil:
 		return err
-	}
-	defer rows.Close()
-	seen := map[string]struct{}{}
-	for rows.Next() {
-		var id, email, status string
-		if err := rows.Scan(&id, &email, &status); err != nil {
+	case status == "disabled" && bound == "":
+		if _, err := tx.ExecContext(ctx, `UPDATE users SET status='pending',password_hash='',disabled_at=NULL,updated_at=? WHERE id=?`, now, id); err != nil {
 			return err
-		}
-		if _, ok := allowed[email]; ok {
-			seen[email] = struct{}{}
-			if status == "disabled" {
-				if _, err := tx.ExecContext(ctx, `UPDATE users SET status='pending',disabled_at=NULL,updated_at=? WHERE id=?`, now, id); err != nil {
-					return err
-				}
-			}
-			continue
-		}
-		if status != "disabled" {
-			if _, err := tx.ExecContext(ctx, `UPDATE users SET status='disabled',disabled_at=?,updated_at=? WHERE id=?`, now, now, id); err != nil {
-				return err
-			}
-		}
-		if err := revokeUserTx(ctx, tx, id, now); err != nil {
-			return err
-		}
-		if err := closeOwnerHouseholdTx(ctx, tx, id, now); err != nil {
-			return err
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for email := range allowed {
-		if _, ok := seen[email]; !ok {
-			if _, err := tx.ExecContext(ctx, `INSERT INTO users(id,email,status,created_at,updated_at) VALUES(?,?,'pending',?,?)`, newID(), email, now, now); err != nil {
-				return err
-			}
 		}
 	}
 	return tx.Commit()
+}
+
+// HasHousehold reports whether this install already has a real (non-demo)
+// household, open or closed.
+func (s *Service) HasHousehold(ctx context.Context) (bool, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM households WHERE id NOT IN (SELECT household_id FROM demo_households)`).Scan(&count)
+	return count > 0, err
 }
 
 func (s *Service) CreateInvitation(ctx context.Context, scope policy.ActorScope, invitedEmail string, lifetime time.Duration) (Invitation, error) {
@@ -138,22 +137,38 @@ func (s *Service) CreateInvitation(ctx context.Context, scope policy.ActorScope,
 	if err := tx.QueryRowContext(ctx, `SELECT owner_user_id,status FROM households WHERE id=?`, scope.HouseholdID).Scan(&owner, &status); err != nil || owner != scope.ActorID || status != "active" {
 		return Invitation{}, ErrNotOwner
 	}
-	var candidateStatus, bound string
-	err = tx.QueryRowContext(ctx, `SELECT u.status,COALESCE(m.household_id,'') FROM users u LEFT JOIN household_members m ON m.user_id=u.id WHERE u.email=?`, email).Scan(&candidateStatus, &bound)
-	if err != nil || candidateStatus == "disabled" {
-		return Invitation{}, ErrInviteInvalid
-	}
-	if bound != "" {
-		return Invitation{}, ErrAlreadyBound
-	}
-	var count int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM household_members WHERE household_id=?`, scope.HouseholdID).Scan(&count); err != nil {
-		return Invitation{}, err
-	}
-	if count >= 2 {
-		return Invitation{}, ErrAdultLimit
-	}
 	now := s.timestamp()
+	var candidateID, candidateStatus, bound, role string
+	err = tx.QueryRowContext(ctx, `SELECT u.id,u.status,COALESCE(m.household_id,''),COALESCE(m.role,'') FROM users u LEFT JOIN household_members m ON m.user_id=u.id WHERE u.email=?`, email).Scan(&candidateID, &candidateStatus, &bound, &role)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		// Settings is the only way in for a second adult: the invitation
+		// creates the account, which stays pending until the link is used.
+		if _, err := tx.ExecContext(ctx, `INSERT INTO users(id,email,status,created_at,updated_at) VALUES(?,?,'pending',?,?)`, newID(), email, now, now); err != nil {
+			return Invitation{}, err
+		}
+	case err != nil:
+		return Invitation{}, err
+	case bound != "" && bound != scope.HouseholdID:
+		return Invitation{}, ErrAlreadyBound
+	case bound == scope.HouseholdID && (role == "owner" || candidateStatus != "disabled"):
+		return Invitation{}, ErrAlreadyMember
+	case candidateStatus == "disabled":
+		// A removed partner, or someone whose invitation was cancelled. A
+		// fresh invitation restores them; they choose a new password.
+		if _, err := tx.ExecContext(ctx, `UPDATE users SET status='pending',password_hash='',disabled_at=NULL,updated_at=? WHERE id=?`, now, candidateID); err != nil {
+			return Invitation{}, err
+		}
+	}
+	if bound != scope.HouseholdID {
+		var count int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM household_members WHERE household_id=?`, scope.HouseholdID).Scan(&count); err != nil {
+			return Invitation{}, err
+		}
+		if count >= 2 {
+			return Invitation{}, ErrAdultLimit
+		}
+	}
 	expires := s.now().UTC().Add(lifetime)
 	if _, err := tx.ExecContext(ctx, `UPDATE invitations SET revoked_at=? WHERE household_id=? AND invited_email=? AND used_at IS NULL AND revoked_at IS NULL`, now, scope.HouseholdID, email); err != nil {
 		return Invitation{}, err
@@ -184,20 +199,198 @@ func (s *Service) Members(ctx context.Context, householdID string) ([]Member, er
 	return members, rows.Err()
 }
 
+// Access is one line of the household access list in Settings: an adult
+// member, or someone with an open invitation.
+type Access struct {
+	UserID    string // empty for someone who has only an invitation
+	Email     string
+	Role      string // owner, adult, or invited
+	State     string // active, pending, removed, invited, or expired
+	Since     time.Time
+	ExpiresAt time.Time
+}
+
+// Access lists the owner first, then the partner or the open invitation.
+func (s *Service) Access(ctx context.Context, householdID string) ([]Access, error) {
+	type invite struct{ created, expires time.Time }
+	invites := map[string]invite{}
+	rows, err := s.db.QueryContext(ctx, `SELECT invited_email,created_at,expires_at FROM invitations WHERE household_id=? AND used_at IS NULL AND revoked_at IS NULL ORDER BY created_at`, householdID)
+	if err != nil {
+		return nil, err
+	}
+	var order []string
+	for rows.Next() {
+		var email, created, expires string
+		if err := rows.Scan(&email, &created, &expires); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		email = strings.ToLower(email)
+		if _, seen := invites[email]; !seen {
+			order = append(order, email)
+		}
+		invites[email] = invite{parseTime(created), parseTime(expires)}
+	}
+	if err := errors.Join(rows.Close(), rows.Err()); err != nil {
+		return nil, err
+	}
+	rows, err = s.db.QueryContext(ctx, `SELECT u.id,u.email,m.role,u.status,m.created_at FROM household_members m JOIN users u ON u.id=m.user_id WHERE m.household_id=? ORDER BY CASE m.role WHEN 'owner' THEN 0 ELSE 1 END, m.created_at`, householdID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	now := s.now().UTC()
+	var list []Access
+	for rows.Next() {
+		var entry Access
+		var status, joined string
+		if err := rows.Scan(&entry.UserID, &entry.Email, &entry.Role, &status, &joined); err != nil {
+			return nil, err
+		}
+		entry.Since = parseTime(joined)
+		switch status {
+		case "active":
+			entry.State = "active"
+		case "pending":
+			entry.State = "pending"
+		default:
+			entry.State = "removed"
+		}
+		if open, ok := invites[strings.ToLower(entry.Email)]; ok {
+			if entry.State != "active" {
+				entry.State, entry.Since, entry.ExpiresAt = inviteState(open.expires, now), open.created, open.expires
+			}
+			delete(invites, strings.ToLower(entry.Email))
+		}
+		list = append(list, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for _, email := range order {
+		if open, ok := invites[email]; ok {
+			list = append(list, Access{Email: email, Role: "invited", State: inviteState(open.expires, now), Since: open.created, ExpiresAt: open.expires})
+		}
+	}
+	return list, nil
+}
+
+func inviteState(expires, now time.Time) string {
+	if now.Before(expires) {
+		return "invited"
+	}
+	return "expired"
+}
+
+func parseTime(value string) time.Time {
+	parsed, _ := time.Parse(time.RFC3339Nano, value)
+	return parsed
+}
+
+// CancelInvitation withdraws every open invitation to email. The invited
+// account is closed again unless it is an active member.
+func (s *Service) CancelInvitation(ctx context.Context, scope policy.ActorScope, invitedEmail string) error {
+	tx, email, err := s.ownerTx(ctx, scope, invitedEmail)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	now := s.timestamp()
+	result, err := tx.ExecContext(ctx, `UPDATE invitations SET revoked_at=? WHERE household_id=? AND invited_email=? AND used_at IS NULL AND revoked_at IS NULL`, now, scope.HouseholdID, email)
+	if err != nil {
+		return err
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		return ErrNoInvitation
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE users SET status='disabled',disabled_at=?,updated_at=? WHERE email=? AND status='pending' AND password_hash='' AND id NOT IN (SELECT user_id FROM household_members WHERE role='owner')`, now, now, email); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE password_reset_tokens SET revoked_at=? WHERE revoked_at IS NULL AND user_id IN (SELECT id FROM users WHERE email=? AND status='disabled')`, now, email); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// RemovePartner ends the partner's access at once: sessions, reset links and
+// invitations are revoked and the password is cleared. Their records and
+// their place in the household stay, so the owner can invite them again.
+func (s *Service) RemovePartner(ctx context.Context, scope policy.ActorScope, partnerEmail string) error {
+	tx, email, err := s.ownerTx(ctx, scope, partnerEmail)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var userID, status string
+	err = tx.QueryRowContext(ctx, `SELECT u.id,u.status FROM household_members m JOIN users u ON u.id=m.user_id WHERE m.household_id=? AND m.role='adult' AND u.email=?`, scope.HouseholdID, email).Scan(&userID, &status)
+	if err != nil || status == "disabled" {
+		return ErrNotPartner
+	}
+	now := s.timestamp()
+	if _, err := tx.ExecContext(ctx, `UPDATE users SET status='disabled',password_hash='',disabled_at=?,updated_at=? WHERE id=?`, now, now, userID); err != nil {
+		return err
+	}
+	if err := revokeUserTx(ctx, tx, userID, now); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Service) ownerTx(ctx context.Context, scope policy.ActorScope, raw string) (*sql.Tx, string, error) {
+	if !scope.Valid() || scope.Role != "owner" {
+		return nil, "", ErrNotOwner
+	}
+	email, err := NormalizeEmail(raw)
+	if err != nil {
+		return nil, "", ErrInviteInvalid
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	var owner, status string
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(owner_user_id,''),status FROM households WHERE id=?`, scope.HouseholdID).Scan(&owner, &status); err != nil || owner != scope.ActorID || status != "active" {
+		tx.Rollback()
+		return nil, "", ErrNotOwner
+	}
+	return tx, email, nil
+}
+
 // AttachActivationTx is deliberately transaction-local: password activation
 // and membership creation either both commit or neither does.
 func (s *Service) AttachActivationTx(ctx context.Context, tx *sql.Tx, userID, email, invite string) error {
+	now := s.timestamp()
 	var existing string
 	err := tx.QueryRowContext(ctx, `SELECT household_id FROM household_members WHERE user_id=?`, userID).Scan(&existing)
 	if err == nil {
-		return nil
+		// A returning member (a re-invited partner, or anyone after a
+		// restore) keeps their place; any open invitation is now spent.
+		if invite != "" {
+			var invited string
+			if err := tx.QueryRowContext(ctx, `SELECT household_id FROM invitations WHERE token_hash=?`, tokenHash(invite)).Scan(&invited); err != nil || invited != existing {
+				return ErrAlreadyBound
+			}
+		}
+		_, err := tx.ExecContext(ctx, `UPDATE invitations SET used_at=? WHERE household_id=? AND invited_email=? AND used_at IS NULL AND revoked_at IS NULL`, now, existing, email)
+		return err
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	now := s.timestamp()
 	if invite != "" {
 		return s.acceptInvitationTx(ctx, tx, userID, email, invite, now)
+	}
+	// Without an invitation only the configured owner may start the one
+	// household this install keeps.
+	if s.ownerEmail == "" || !strings.EqualFold(email, s.ownerEmail) {
+		return ErrNotOwnerEmail
+	}
+	var households int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM households WHERE id NOT IN (SELECT household_id FROM demo_households)`).Scan(&households); err != nil {
+		return err
+	}
+	if households > 0 {
+		return ErrNotOwnerEmail
 	}
 	householdID := newID()
 	if _, err := tx.ExecContext(ctx, `INSERT INTO households(id,status,owner_user_id,created_at,updated_at) VALUES(?,'active',?,?,?)`, householdID, userID, now, now); err != nil {
@@ -255,11 +448,26 @@ func (s *Service) RecoverOwner(ctx context.Context, householdID, candidateEmail 
 	if err := tx.QueryRowContext(ctx, `SELECT status,COALESCE(owner_user_id,'') FROM households WHERE id=?`, householdID).Scan(&status, &owner); err != nil || status != "closed" || owner != "" {
 		return ErrRecovery
 	}
-	var userID, userStatus, bound string
-	if err := tx.QueryRowContext(ctx, `SELECT u.id,u.status,COALESCE(m.household_id,'') FROM users u LEFT JOIN household_members m ON m.user_id=u.id WHERE u.email=?`, email).Scan(&userID, &userStatus, &bound); err != nil || userStatus == "disabled" || (userStatus != "pending" && userStatus != "active") || (bound != "" && bound != householdID) {
-		return ErrRecovery
-	}
 	now := s.timestamp()
+	var userID, userStatus, bound string
+	err = tx.QueryRowContext(ctx, `SELECT u.id,u.status,COALESCE(m.household_id,'') FROM users u LEFT JOIN household_members m ON m.user_id=u.id WHERE u.email=?`, email).Scan(&userID, &userStatus, &bound)
+	if errors.Is(err, sql.ErrNoRows) {
+		// The operator names the new owner directly; they choose a password
+		// through the usual reset link.
+		userID, userStatus = newID(), "pending"
+		if _, err := tx.ExecContext(ctx, `INSERT INTO users(id,email,status,created_at,updated_at) VALUES(?,?,'pending',?,?)`, userID, email, now, now); err != nil {
+			return err
+		}
+	} else if err != nil || (bound != "" && bound != householdID) {
+		return ErrRecovery
+	} else if userStatus == "disabled" {
+		// The operator chose this person explicitly. They come back pending
+		// and must choose a new password through a reset link.
+		userStatus = "pending"
+		if _, err := tx.ExecContext(ctx, `UPDATE users SET status='pending',password_hash='',disabled_at=NULL,updated_at=? WHERE id=?`, now, userID); err != nil {
+			return err
+		}
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM household_members WHERE household_id=? AND role='owner' AND user_id<>?`, householdID, userID); err != nil {
 		return err
 	}

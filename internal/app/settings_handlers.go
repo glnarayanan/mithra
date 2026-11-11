@@ -6,16 +6,68 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/glnarayanan/mithra/internal/household"
 	"github.com/glnarayanan/mithra/internal/planning"
 	"github.com/glnarayanan/mithra/internal/policy"
 	"github.com/glnarayanan/mithra/internal/providers"
 	"github.com/glnarayanan/mithra/internal/secrets"
 )
 
+// AccessRow is one person in Settings, Household access.
+type AccessRow struct {
+	Email, Label, Detail string
+	Self                 bool
+	// Owner actions on this row.
+	CanResend, CanCancel, CanRemove, CanReinvite bool
+}
+
+// accessRows turns the household access list into rows, and says whether the
+// owner can invite someone new. A household holds two adults; a removed
+// partner keeps the second place (and their records) until invited again.
+func accessRows(list []household.Access, scope policy.ActorScope) ([]AccessRow, bool, string) {
+	owner := scope.Role == "owner"
+	rows := make([]AccessRow, 0, len(list))
+	members, open := 0, false
+	holder := ""
+	for _, entry := range list {
+		row := AccessRow{Email: entry.Email, Self: entry.UserID != "" && entry.UserID == scope.ActorID}
+		if entry.UserID != "" {
+			members++
+		}
+		switch {
+		case entry.Role == "owner":
+			row.Label, row.Detail = "Owner", "Started this household on "+shortDate(entry.Since)
+		case entry.State == "active":
+			row.Label, row.Detail = "Partner", "Joined on "+shortDate(entry.Since)
+			row.CanRemove = owner
+		case entry.State == "pending":
+			row.Label, row.Detail = "Partner", "Needs to choose a new password with Forgot password"
+			row.CanRemove = owner
+		case entry.State == "removed":
+			row.Label, row.Detail = "Partner", "Access removed. Their records stay with the household."
+			row.CanReinvite = owner
+			holder = entry.Email
+		case entry.State == "invited":
+			row.Label, row.Detail = "Invited", "Sent "+shortDate(entry.Since)+". The link works until "+shortDate(entry.ExpiresAt)+"."
+			row.CanResend, row.CanCancel = owner, owner
+			open = true
+		default:
+			row.Label, row.Detail = "Invitation expired", "The link stopped working on "+shortDate(entry.ExpiresAt)+"."
+			row.CanResend, row.CanCancel = owner, owner
+			open = true
+		}
+		if row.Self {
+			row.Label += ", you"
+		}
+		rows = append(rows, row)
+	}
+	return rows, owner && members < 2 && !open, holder
+}
+
 func (a *App) invitePartner(w http.ResponseWriter, r *http.Request, scope policy.ActorScope, csrf string) {
-	email := r.PostForm.Get("email")
-	if strings.TrimSpace(email) == "" || len(email) > 254 {
-		a.renderSettings(r.Context(), w, scope, csrf, "", "Enter an email approved for this household.")
+	email := strings.TrimSpace(r.PostForm.Get("email"))
+	if email == "" || len(email) > 254 {
+		a.renderSettings(r.Context(), w, scope, csrf, "", "Enter your partner’s email address.")
 		return
 	}
 	invitation, err := a.auth.CreateInvitation(r.Context(), scope, email, invitationLifetime)
@@ -24,12 +76,38 @@ func (a *App) invitePartner(w http.ResponseWriter, r *http.Request, scope policy
 		return
 	}
 	link := a.canonicalLink("/auth/invitation", "token", invitation.Token)
-	if err := a.mailer.Send(r.Context(), providers.Message{To: email, Subject: "You have been invited to Mithra", Text: "Join this Mithra household within seven days:\n" + link}); err != nil {
+	if err := a.mailer.Send(r.Context(), providers.Message{To: email, Subject: "You have been invited to Mithra", Text: "You have been invited to share a Mithra household. Choose your password within seven days:\n" + link}); err != nil {
 		logRequestError(a.logger, r.Context(), "invitation_delivery_failed")
-		a.renderSettings(r.Context(), w, scope, csrf, "", "The invitation could not be delivered. Try again later.")
+		a.renderSettings(r.Context(), w, scope, csrf, "", "The invitation is saved, but the email could not be sent. Use Send again in a few minutes.")
 		return
 	}
-	a.renderSettings(r.Context(), w, scope, csrf, "Invitation sent. Your partner can choose a password from the secure link.", "")
+	a.renderSettings(r.Context(), w, scope, csrf, "Invitation sent to "+email+". The link works for seven days.", "")
+}
+
+func (a *App) cancelInvitation(w http.ResponseWriter, r *http.Request, scope policy.ActorScope, csrf string) {
+	email := strings.TrimSpace(r.PostForm.Get("email"))
+	if err := a.auth.CancelInvitation(r.Context(), scope, email); err != nil {
+		message := "There is no open invitation for that address."
+		if errors.Is(err, household.ErrNotOwner) {
+			message = "Only the household owner can cancel an invitation."
+		}
+		a.renderSettings(r.Context(), w, scope, csrf, "", message)
+		return
+	}
+	a.renderSettings(r.Context(), w, scope, csrf, "Invitation to "+email+" cancelled. The link no longer works.", "")
+}
+
+func (a *App) removePartner(w http.ResponseWriter, r *http.Request, scope policy.ActorScope, csrf string) {
+	email := strings.TrimSpace(r.PostForm.Get("email"))
+	if err := a.auth.RemovePartner(r.Context(), scope, email); err != nil {
+		message := "That person is not a partner in this household."
+		if errors.Is(err, household.ErrNotOwner) {
+			message = "Only the household owner can remove access."
+		}
+		a.renderSettings(r.Context(), w, scope, csrf, "", message)
+		return
+	}
+	a.renderSettings(r.Context(), w, scope, csrf, email+" no longer has access and is signed out everywhere.", "")
 }
 
 func (a *App) saveProviderSetting(w http.ResponseWriter, r *http.Request, scope policy.ActorScope, csrf string) {

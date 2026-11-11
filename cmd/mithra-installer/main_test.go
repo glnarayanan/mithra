@@ -321,14 +321,24 @@ func TestReadBoundedRejectsSymlinkAndListenerDoesNotExposeSecrets(t *testing.T) 
 	}
 }
 
-func TestInstalledAllowlistFencesDemoAccounts(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "mithra.env")
-	if err := os.WriteFile(path, []byte("ALLOWED_EMAILS=owner@example.com,partner@example.com\nMITHRA_DB=/var/lib/mithra/mithra.sqlite3\n"), 0o600); err != nil {
+func TestInstalledOwnerEmailReadsNewAndLegacyConfiguration(t *testing.T) {
+	directory := t.TempDir()
+	legacy := filepath.Join(directory, "legacy.env")
+	if err := os.WriteFile(legacy, []byte("ALLOWED_EMAILS=owner@example.com,partner@example.com\nMITHRA_DB=/var/lib/mithra/mithra.sqlite3\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	allowed := installedAllowlist(path)
-	if !emailAllowed(allowed, "OWNER@example.com") || !emailAllowed(allowed, "partner@example.com") || emailAllowed(allowed, "unknown@example.com") {
-		t.Fatalf("installed allowlist = %#v", allowed)
+	if got := installedOwnerEmail(legacy); got != "owner@example.com" {
+		t.Fatalf("legacy owner = %q", got)
+	}
+	current := filepath.Join(directory, "current.env")
+	if err := os.WriteFile(current, []byte("ALLOWED_EMAILS=a@example.com\nMITHRA_OWNER_EMAIL=owner@example.com\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := installedOwnerEmail(current); got != "owner@example.com" {
+		t.Fatalf("current owner = %q", got)
+	}
+	if got := installedOwnerEmail(filepath.Join(directory, "missing.env")); got != "" {
+		t.Fatalf("missing owner = %q", got)
 	}
 }
 
@@ -451,7 +461,7 @@ func TestLegacyInstallInvocationAuthenticatesAndInstallsRunningInstaller(t *test
 	t.Cleanup(func() {
 		publisherKeyBase64, buildVersion = oldKey, oldVersion
 	})
-	plan, err := installer.BuildPlan(installer.Options{Operation: installer.Install, Root: root, Proxy: installer.AppOnly, Port: 18090, AllowedEmails: []string{"owner@example.com"}, PlunkFrom: "Mithra <mail@example.com>"}, installer.HostFacts{OS: "linux", Arch: "amd64", Systemd: true, SQLite: true, Commands: map[string]string{}, AppPortAvailable: true, FreeBytes: 1 << 30})
+	plan, err := installer.BuildPlan(installer.Options{Operation: installer.Install, Root: root, Proxy: installer.AppOnly, Port: 18090, OwnerEmail: "owner@example.com", PlunkFrom: "Mithra <mail@example.com>"}, installer.HostFacts{OS: "linux", Arch: "amd64", Systemd: true, SQLite: true, Commands: map[string]string{}, AppPortAvailable: true, FreeBytes: 1 << 30})
 	if err != nil {
 		t.Fatal(err)
 	}

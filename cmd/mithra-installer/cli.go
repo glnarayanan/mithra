@@ -23,9 +23,9 @@ type commandSpec struct {
 }
 
 var commandSpecs = []commandSpec{
-	{"install", "install Mithra", installer.Install, []string{"--domain", "--proxy", "--port", "--allowed-emails", "--plunk-key-file", "--plunk-from"}},
-	{"upgrade", "install a verified newer release", installer.Upgrade, []string{"--domain", "--proxy", "--port", "--allowed-emails"}},
-	{"reconfigure", "change Mithra configuration and Plunk credentials", installer.Reconfigure, []string{"--domain", "--proxy", "--port", "--allowed-emails", "--plunk-key-file", "--plunk-from"}},
+	{"install", "install Mithra", installer.Install, []string{"--domain", "--proxy", "--port", "--owner-email", "--allowed-emails", "--plunk-key-file", "--plunk-from"}},
+	{"upgrade", "install a verified newer release", installer.Upgrade, []string{"--domain", "--proxy", "--port", "--owner-email", "--allowed-emails"}},
+	{"reconfigure", "change Mithra configuration and Plunk credentials", installer.Reconfigure, []string{"--domain", "--proxy", "--port", "--owner-email", "--allowed-emails", "--plunk-key-file", "--plunk-from"}},
 	{"backup", "create an encrypted backup", installer.Backup, nil},
 	{"restore", "restore an authenticated backup", installer.Restore, []string{"--domain", "--proxy", "--port", "--allowed-emails", "--archive"}},
 	{"status", "report Mithra status", installer.Status, []string{"--proxy", "--port"}},

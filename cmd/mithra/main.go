@@ -130,7 +130,8 @@ func runWithOutput(args []string, output io.Writer) error {
 	socketPath := flags.String("socket", environmentDefault("MITHRA_SOCKET", ""), "absolute Unix socket path to listen on")
 	databasePath := flags.String("db", environmentDefault("MITHRA_DB", "data/mithra.sqlite3"), "SQLite database path")
 	sourceRoot := flags.String("source-dir", environmentDefault("MITHRA_SOURCE_DIR", "data/sources"), "encrypted source directory")
-	allowedRaw := flags.String("allowed-emails", environmentDefault("ALLOWED_EMAILS", ""), "comma-separated allowed adult emails")
+	ownerRaw := flags.String("owner-email", environmentDefault("MITHRA_OWNER_EMAIL", ""), "email that may start the household at first sign-in")
+	legacyAllowed := flags.String("allowed-emails", environmentDefault("ALLOWED_EMAILS", ""), "deprecated: only the first address is used, as the owner email")
 	originRaw := flags.String("origin", environmentDefault("MITHRA_CANONICAL_ORIGIN", ""), "canonical browser origin")
 	plunkKeyFile := flags.String("plunk-key-file", environmentDefault("MITHRA_PLUNK_KEY_FILE", ""), "Plunk credential file")
 	plunkFrom := flags.String("plunk-from", environmentDefault("MITHRA_PLUNK_FROM", ""), "Plunk sender identity")
@@ -169,9 +170,9 @@ func runWithOutput(args []string, output io.Writer) error {
 		}
 	}
 
-	allowedEmails, err := parseAllowedEmails(*allowedRaw)
+	ownerEmail, err := resolveOwnerEmail(*ownerRaw, *legacyAllowed)
 	if err != nil {
-		return failStartup("allowlist", err)
+		return failStartup("owner_email", err)
 	}
 	secureCookies, err := secureCookiesForOrigin(*originRaw)
 	if err != nil {
@@ -208,7 +209,8 @@ func runWithOutput(args []string, output io.Writer) error {
 	application, err := app.New(context.Background(), app.Config{
 		DatabasePath:    *databasePath,
 		DatabaseKey:     databaseKey,
-		AllowedEmails:   allowedEmails,
+		OwnerEmail:      ownerEmail,
+		RequireOwner:    true,
 		CanonicalOrigin: strings.TrimSpace(*originRaw),
 		SecureCookies:   secureCookies,
 		TrustedProxy:    strings.TrimSpace(*socketPath) != "",
@@ -284,18 +286,14 @@ func runRecoverOwner(args []string) error {
 	flags := flag.NewFlagSet("mithra recover-owner", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	databasePath := flags.String("db", environmentDefault("MITHRA_DB", "data/mithra.sqlite3"), "SQLite database path")
-	allowedRaw := flags.String("allowed-emails", environmentDefault("ALLOWED_EMAILS", ""), "comma-separated allowed adult emails")
 	householdID := flags.String("household", "", "closed household identifier")
-	email := flags.String("email", "", "allowlisted replacement owner email")
+	email := flags.String("email", "", "replacement owner email")
+	flags.String("allowed-emails", "", "deprecated and ignored")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 || strings.TrimSpace(*householdID) == "" || strings.TrimSpace(*email) == "" {
 		return errors.New("recover-owner requires --household and --email")
-	}
-	allowedEmails, err := parseAllowedEmails(*allowedRaw)
-	if err != nil {
-		return err
 	}
 	lock, err := acquireDataLock(environmentDefault("MITHRA_LOCK_FILE", ""))
 	if err != nil {
@@ -320,9 +318,6 @@ func runRecoverOwner(args []string) error {
 	}
 	defer db.Close()
 	service := auth.New(db, auth.Config{})
-	if err := service.SynchronizeAllowlist(context.Background(), allowedEmails); err != nil {
-		return errors.New("synchronize allowlist for recovery")
-	}
 	if err := service.RecoverOwner(context.Background(), strings.TrimSpace(*householdID), strings.TrimSpace(*email)); err != nil {
 		return errors.New("recover Mithra household owner")
 	}
@@ -445,6 +440,28 @@ func environmentDefault(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// resolveOwnerEmail prefers the owner email. Older installs set only the
+// ALLOWED_EMAILS sign-in list; its first address stands in as the owner, and
+// the rest is ignored because people are now invited from Settings. Both may
+// be empty once the household exists.
+func resolveOwnerEmail(owner, legacy string) (string, error) {
+	if strings.TrimSpace(owner) != "" {
+		email, err := household.NormalizeEmail(owner)
+		if err != nil {
+			return "", errors.New("owner email configuration is invalid")
+		}
+		return email, nil
+	}
+	if strings.TrimSpace(legacy) == "" {
+		return "", nil
+	}
+	emails, err := parseAllowedEmails(legacy)
+	if err != nil {
+		return "", err
+	}
+	return emails[0], nil
 }
 
 func parseAllowedEmails(raw string) ([]string, error) {

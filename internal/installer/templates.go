@@ -2,21 +2,21 @@ package installer
 
 import (
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 )
 
 func RuntimeConfig(plan Plan) string {
-	emails := append([]string(nil), plan.Options.AllowedEmails...)
-	sort.Strings(emails)
-	lines := []string{
-		"ALLOWED_EMAILS=" + strings.Join(emails, ","),
+	var lines []string
+	if owner := strings.TrimSpace(plan.Options.OwnerEmail); owner != "" {
+		lines = append(lines, "MITHRA_OWNER_EMAIL="+owner)
+	}
+	lines = append(lines,
 		"MITHRA_DB=/var/lib/mithra/mithra.sqlite3",
 		"MITHRA_SOURCE_DIR=/var/lib/mithra/sources",
-		"MITHRA_PROXY_MODE=" + string(plan.Proxy),
-		"MITHRA_PLUNK_FROM=" + strconv.Quote(plan.Options.PlunkFrom),
-	}
+		"MITHRA_PROXY_MODE="+string(plan.Proxy),
+		"MITHRA_PLUNK_FROM="+strconv.Quote(plan.Options.PlunkFrom),
+	)
 	if plan.Proxy == AppOnly {
 		lines = append(lines, "MITHRA_ADDR="+plan.Listener, "MITHRA_CANONICAL_ORIGIN=http://"+plan.Listener)
 	} else {

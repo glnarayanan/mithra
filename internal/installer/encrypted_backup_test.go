@@ -89,7 +89,7 @@ func TestEncryptedDatabaseBackupAndRestoreStayCiphertext(t *testing.T) {
 	if err := os.MkdirAll(target.Data, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := RestoreBackup(ctx, target, archive, key, []string{"owner@example.com"}, func() error {
+	if err := RestoreBackup(ctx, target, archive, key, func() error {
 		return DatabasePreflightWithKey(ctx, target.Database, key)
 	}); err != nil {
 		t.Fatalf("restore encrypted backup: %v", err)
