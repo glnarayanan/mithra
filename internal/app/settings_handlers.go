@@ -36,15 +36,15 @@ func accessRows(list []household.Access, scope policy.ActorScope) ([]AccessRow, 
 		}
 		switch {
 		case entry.Role == "owner":
-			row.Label, row.Detail = "Owner", "Started this household on "+shortDate(entry.Since)
+			row.Label, row.Detail = "Owner", "Started this household on "+shortDate(entry.Since)+"."
 		case entry.State == "active":
-			row.Label, row.Detail = "Partner", "Joined on "+shortDate(entry.Since)
+			row.Label, row.Detail = "Partner", "Joined on "+shortDate(entry.Since)+"."
 			row.CanRemove = owner
 		case entry.State == "pending":
-			row.Label, row.Detail = "Partner", "Needs to choose a new password with Forgot password"
+			row.Label, row.Detail = "Partner", "Has not chosen a password since the last restore. Forgot password on the sign-in page sets one."
 			row.CanRemove = owner
 		case entry.State == "removed":
-			row.Label, row.Detail = "Partner", "Access removed. Their records stay with the household."
+			row.Label, row.Detail = "Access removed", "Their records stay with the household."
 			row.CanReinvite = owner
 			holder = entry.Email
 		case entry.State == "invited":
@@ -67,21 +67,21 @@ func accessRows(list []household.Access, scope policy.ActorScope) ([]AccessRow, 
 func (a *App) invitePartner(w http.ResponseWriter, r *http.Request, scope policy.ActorScope, csrf string) {
 	email := strings.TrimSpace(r.PostForm.Get("email"))
 	if email == "" || len(email) > 254 {
-		a.renderSettings(r.Context(), w, scope, csrf, "", "Enter your partner’s email address.")
+		a.renderSettingsWith(r.Context(), w, scope, csrf, "", "", HouseholdNotice{InviteEmail: email, InviteError: "Enter your partner’s email address."})
 		return
 	}
 	invitation, err := a.auth.CreateInvitation(r.Context(), scope, email, invitationLifetime)
 	if err != nil {
-		a.renderSettings(r.Context(), w, scope, csrf, "", inviteError(err))
+		a.renderSettingsWith(r.Context(), w, scope, csrf, "", "", HouseholdNotice{InviteEmail: email, InviteError: inviteError(err)})
 		return
 	}
 	link := a.canonicalLink("/auth/invitation", "token", invitation.Token)
 	if err := a.mailer.Send(r.Context(), providers.Message{To: email, Subject: "You have been invited to Mithra", Text: "You have been invited to share a Mithra household. Choose your password within seven days:\n" + link}); err != nil {
 		logRequestError(a.logger, r.Context(), "invitation_delivery_failed")
-		a.renderSettings(r.Context(), w, scope, csrf, "", "The invitation is saved, but the email could not be sent. Use Send again in a few minutes.")
+		a.renderSettingsWith(r.Context(), w, scope, csrf, "", "", HouseholdNotice{Error: "The invitation is saved, but the email could not be sent. Send again in a few minutes."})
 		return
 	}
-	a.renderSettings(r.Context(), w, scope, csrf, "Invitation sent to "+email+". The link works for seven days.", "")
+	a.renderSettingsWith(r.Context(), w, scope, csrf, "", "", HouseholdNotice{Status: "Invitation sent to " + email + ". The link works for seven days."})
 }
 
 func (a *App) cancelInvitation(w http.ResponseWriter, r *http.Request, scope policy.ActorScope, csrf string) {
@@ -91,10 +91,10 @@ func (a *App) cancelInvitation(w http.ResponseWriter, r *http.Request, scope pol
 		if errors.Is(err, household.ErrNotOwner) {
 			message = "Only the household owner can cancel an invitation."
 		}
-		a.renderSettings(r.Context(), w, scope, csrf, "", message)
+		a.renderSettingsWith(r.Context(), w, scope, csrf, "", "", HouseholdNotice{Error: message})
 		return
 	}
-	a.renderSettings(r.Context(), w, scope, csrf, "Invitation to "+email+" cancelled. The link no longer works.", "")
+	a.renderSettingsWith(r.Context(), w, scope, csrf, "", "", HouseholdNotice{Status: "Invitation to " + email + " cancelled. The link no longer works."})
 }
 
 func (a *App) removePartner(w http.ResponseWriter, r *http.Request, scope policy.ActorScope, csrf string) {
@@ -104,10 +104,10 @@ func (a *App) removePartner(w http.ResponseWriter, r *http.Request, scope policy
 		if errors.Is(err, household.ErrNotOwner) {
 			message = "Only the household owner can remove access."
 		}
-		a.renderSettings(r.Context(), w, scope, csrf, "", message)
+		a.renderSettingsWith(r.Context(), w, scope, csrf, "", "", HouseholdNotice{Error: message})
 		return
 	}
-	a.renderSettings(r.Context(), w, scope, csrf, email+" no longer has access and is signed out everywhere.", "")
+	a.renderSettingsWith(r.Context(), w, scope, csrf, "", "", HouseholdNotice{Status: email + " no longer has access and is signed out everywhere."})
 }
 
 func (a *App) saveProviderSetting(w http.ResponseWriter, r *http.Request, scope policy.ActorScope, csrf string) {

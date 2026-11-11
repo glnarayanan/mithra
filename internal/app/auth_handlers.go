@@ -44,6 +44,7 @@ type SettingsView struct {
 	Access                                                   []AccessRow
 	CanInvite                                                bool
 	SlotHolder                                               string
+	Household                                                HouseholdNotice
 	Owner, ProviderConfigured                                bool
 	ProviderID, ProviderName, ProviderModel, ProviderBaseURL string
 	Providers                                                []providers.ModelProvider
@@ -526,6 +527,16 @@ func (a *App) renderAuth(ctx context.Context, w http.ResponseWriter, view AuthVi
 }
 
 func (a *App) renderSettings(ctx context.Context, w http.ResponseWriter, scope policy.ActorScope, csrf, status, problem string) {
+	a.renderSettingsWith(ctx, w, scope, csrf, status, problem, HouseholdNotice{})
+}
+
+// HouseholdNotice keeps household access results inside that section, next
+// to the list and the invite field, instead of at the top of the page.
+type HouseholdNotice struct {
+	Status, Error, InviteEmail, InviteError string
+}
+
+func (a *App) renderSettingsWith(ctx context.Context, w http.ResponseWriter, scope policy.ActorScope, csrf, status, problem string, notice HouseholdNotice) {
 	access, err := a.auth.Access(ctx, scope)
 	if err != nil {
 		logRequestError(a.logger, ctx, "settings_members_failed")
@@ -571,6 +582,10 @@ func (a *App) renderSettings(ctx context.Context, w http.ResponseWriter, scope p
 	}
 	view := SettingsView{Navigation: navigationForPath("/settings"), Owner: scope.Role == "owner", ProviderConfigured: configured, ProviderID: config.ProviderID, ProviderName: providerName(config.ProviderID), ProviderModel: config.Model, ProviderBaseURL: config.BaseURL, Providers: providers.ModelProviders(), Timezone: timezone, Locales: localeOptions(locale), Currencies: currencyOptions(currency), CSRF: csrf, Status: status, Error: problem}
 	view.Access, view.CanInvite, view.SlotHolder = accessRows(access, scope)
+	if notice.InviteError != "" && !view.CanInvite {
+		notice.Error, notice.InviteError, notice.InviteEmail = notice.InviteError, "", ""
+	}
+	view.Household = notice
 	a.renderTemplate(ctx, w, "settings.html", view)
 }
 
