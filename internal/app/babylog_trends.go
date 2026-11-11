@@ -122,13 +122,19 @@ func patternDays(raw string) int {
 	days, _ := strconv.Atoi(raw)
 	for _, allowed := range patternRanges {
 		if days == allowed {
-			return days
+			return allowed
 		}
 	}
 	return 7
 }
 
+// maxPatternDays bounds every per-day slice, whatever the caller passes.
+const maxPatternDays = 90
+
 func dayKeys(now time.Time, days int) []time.Time {
+	if days < 1 || days > maxPatternDays {
+		days = 7
+	}
 	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	out := make([]time.Time, days)
 	for i := range out {
@@ -248,6 +254,7 @@ func formatKG(kg float64) string {
 func patternsView(person people.Person, events, allWeights []carelog.Event, now time.Time, days int) PatternsView {
 	location := now.Location()
 	keys := dayKeys(now, days)
+	days = len(keys)
 	view := PatternsView{Days: days, PageURL: "/family/" + url.PathEscape(person.ID) + "/patterns"}
 	for _, d := range patternRanges {
 		view.Ranges = append(view.Ranges, FamilyOptionView{Value: view.PageURL + "?days=" + strconv.Itoa(d), Label: strconv.Itoa(d) + " days", Selected: d == days})
