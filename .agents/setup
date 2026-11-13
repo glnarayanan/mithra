@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+SECONDS=0
+
+echo 'Checking system dependencies'
+packages=()
+for package in build-essential ca-certificates curl python3 xz-utils; do
+  if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -qx 'install ok installed'; then
+    packages+=("$package")
+  fi
+done
+if ((${#packages[@]})); then
+  sudo apt-get update
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"
+fi
+echo "System dependencies ready (${SECONDS}s)"
+
+go_version=$(awk '$1 == "go" { print $2; exit }' go.mod)
+node_version=$(awk '/node-version:/ { print $2; exit }' .github/workflows/ci.yml)
+case "$(uname -m)" in
+  x86_64) go_arch=amd64; node_arch=x64 ;;
+  aarch64) go_arch=arm64; node_arch=arm64 ;;
+  *) echo 'Unsupported orb architecture' >&2; exit 1 ;;
+esac
+
+tools=/usr/local/lib/mithra-orb
+scratch=$(mktemp -d)
+trap 'rm -rf -- "$scratch"' EXIT
+sudo mkdir -p "$tools"
+
+if [[ ! -x "$tools/go-$go_version/bin/go" ]]; then
+  echo "Installing Go $go_version"
+  archive="go$go_version.linux-$go_arch.tar.gz"
+  curl --fail --silent --show-error --location --retry 3 \
+    "https://go.dev/dl/?mode=json&include=all" -o "$scratch/go-releases.json"
+  checksum=$(python3 - "$scratch/go-releases.json" "$archive" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1]) as releases:
+    print(next(file["sha256"] for release in json.load(releases)
+               for file in release["files"] if file["filename"] == sys.argv[2]))
+PY
+  )
+  curl --fail --silent --show-error --location --retry 3 \
+    "https://go.dev/dl/$archive" -o "$scratch/$archive"
+  (cd "$scratch"; printf '%s  %s\n' "$checksum" "$archive" | sha256sum --check)
+  tar -xzf "$scratch/$archive" -C "$scratch"
+  sudo mv "$scratch/go" "$tools/go-$go_version"
+fi
+sudo ln -sfn "$tools/go-$go_version/bin/go" /usr/local/bin/go
+sudo ln -sfn "$tools/go-$go_version/bin/gofmt" /usr/local/bin/gofmt
+echo "Go ready (${SECONDS}s)"
+
+if [[ ! -x "$tools/node-$node_version/bin/node" ]]; then
+  echo "Installing Node $node_version"
+  archive="node-v$node_version-linux-$node_arch.tar.xz"
+  curl --fail --silent --show-error --location --retry 3 \
+    "https://nodejs.org/dist/v$node_version/SHASUMS256.txt" -o "$scratch/node-checksums"
+  curl --fail --silent --show-error --location --retry 3 \
+    "https://nodejs.org/dist/v$node_version/$archive" -o "$scratch/$archive"
+  (cd "$scratch"; grep -F "  $archive" node-checksums | sha256sum --check)
+  tar -xJf "$scratch/$archive" -C "$scratch"
+  sudo mv "$scratch/node-v$node_version-linux-$node_arch" "$tools/node-$node_version"
+fi
+sudo ln -sfn "$tools/node-$node_version/bin/node" /usr/local/bin/node
+echo "Node ready (${SECONDS}s)"
+
+# Persist the SQLite build contract for later agent and service shells.
+go env -w GOFLAGS=-tags=sqlite_fts5,sqlite_omit_load_extension CGO_ENABLED=1
+echo 'Caching Go modules'
+go mod download
+go mod verify
+echo "Go modules ready (${SECONDS}s)"
+echo 'Warming application and test build caches'
+go build ./...
+go test -run '^$' ./...
+echo "Orb setup finished (${SECONDS}s)"

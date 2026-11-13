@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# SQLite needs no daemon, and this repository needs no per-thread authentication.
+# Toolchains, module downloads, and build caches persist in the orb snapshot.

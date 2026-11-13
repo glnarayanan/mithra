@@ -27,3 +27,6 @@ documentation/deployment-receipt.local.md
 /PLAN.md
 /PRODUCT.md
 /.playwright-cli/
+
+# Amp portal registrations are local to each orb.
+/.amp/portals/

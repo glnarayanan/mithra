@@ -125,3 +125,13 @@ Keep three things independently: the master-key credential, at least one
 verified backup, and the owner email. Losing the key makes encrypted
 sources and authenticated backups unrecoverable. See
 [backup and restore](backup-restore.md) for the recovery drill.
+
+## Amp orbs
+
+`.agents/setup` installs Go from `go.mod` and Node from `.github/workflows/ci.yml`, verifies download checksums, and installs missing C build tools. It downloads Go modules, verifies them, and warms application and test build caches for Amp's project snapshot. Warm setup runs reuse installed tools and caches.
+
+The setup persists the required SQLite build tags and `CGO_ENABLED=1` with `go env -w`. Tools live under `/usr/local/lib/mithra-orb`, with links in `/usr/local/bin` so new login shells can find them. No frontend package install is needed.
+
+`.agents/resume` installs nothing. SQLite needs no daemon, and tests use temporary databases without app credentials. Setup does not create `.env`, seed a household, authenticate services, or start the app. Running the app still needs the credentials described in the README. Container and SQLCipher checks remain separate Docker CI jobs.
+
+Amp reuses exact project snapshots without running setup again. These lifecycle files must reach the project's default branch before future orbs use them.
