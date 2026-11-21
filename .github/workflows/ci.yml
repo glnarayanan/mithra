@@ -22,7 +22,7 @@ jobs:
           go-version-file: go.mod
       - uses: actions/setup-node@v7
         with:
-          node-version: 24.22.1
+          node-version: 24.22.3
       - name: Verify formatting
         run: test -z "$(gofmt -l $(git ls-files '*.go'))"
       - run: go mod verify
@@ -69,7 +69,7 @@ jobs:
       - name: Smoke-test health, the sandboxed parser, and a restart
         run: |
           compose="docker compose --env-file $RUNNER_TEMP/mithra.env"
-          healthz() { docker run --rm --network mithra_default curlimages/curl:8.11.1 -fsS http://app:8080/healthz; }
+          healthz() { docker run --rm --network mithra_default curlimages/curl:8.23.0 -fsS http://app:8080/healthz; }
           healthz
           $compose exec -T app mithra pdf-parser-probe --sample
           $compose exec -T app mithra status | tee "$RUNNER_TEMP/status.txt"
